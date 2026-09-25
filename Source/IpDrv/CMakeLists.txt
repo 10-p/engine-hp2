@@ -1,0 +1,34 @@
+project(IpDrv CXX)
+
+set(SRC_FILES
+  "Src/TcpLink.cpp"
+  "Src/UdpLink.cpp"
+  "Src/IpDrv.cpp"
+  "Src/UnSocket.cpp"
+  "Src/InternetLink.cpp"
+  "Src/TcpNetDriver.cpp"
+  "Src/UMasterServerCommandlet.cpp"
+  "Src/UUpdateServerCommandlet.cpp"
+
+)
+
+add_library(${PROJECT_NAME} ${LIB_TYPE} ${SRC_FILES})
+
+target_include_directories(${PROJECT_NAME}
+  PUBLIC
+  ${CMAKE_CURRENT_SOURCE_DIR}/Inc
+  PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/Src
+  # ufront 2.38 — AUdpLink calls the synthetic LAN in WebRTCDrv (WebRTCLan.h). HEADER ONLY: the
+  # dependency is one-way and resolved at the final --whole-archive link, so IpDrv does NOT link
+  # WebRTCDrv and there is no module cycle. Mirrors engine-ut2004's IpDrv -> WebRTCDiscovery hook.
+  ${CMAKE_CURRENT_SOURCE_DIR}/../WebRTCDrv
+)
+
+target_link_libraries(${PROJECT_NAME} Engine Core)
+
+if(TARGET_IS_WINDOWS)
+  target_link_libraries(${PROJECT_NAME} ws2_32)
+endif()
+
+target_compile_definitions(${PROJECT_NAME} PRIVATE IPDRV_EXPORTS UPACKAGE_NAME=${PROJECT_NAME})

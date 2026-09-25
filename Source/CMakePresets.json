@@ -1,0 +1,89 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": { "major": 3, "minor": 15, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "native",
+      "displayName": "Native (SDL2, all renderers) -- the WASM twin / compat oracle, one binary",
+      "description": "32-bit native Linux build (needs libsdl2-dev:i386). BUILD_STATIC links every package into ONE Game binary -- no Core.so/Engine.so beside it; appGetDllHandle resolves through the internal UNREAL_STATIC registry (the template's ufront 2.34 arrangement). Renderers: XOpenGLDrv + OpenGLDrv/UTGLR (system GL) + SoftDrv + NullDrv. The renderer forks are taken from the sibling clones under /home/ion/hp2-ufrontend (FETCHCONTENT_SOURCE_DIR_*) so the hp2 branches build before they are pushed anywhere. Builds in build-native/.",
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/../build-native",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "CMAKE_C_FLAGS": "-m32",
+        "CMAKE_CXX_FLAGS": "-m32",
+        "BUILD_EDITOR": "ON",
+        "BUILD_XOPENGLDRV": "ON",
+        "BUILD_NOPENGLDRV": "ON",
+        "BUILD_NOPENALDRV": "ON",
+        "BUILD_STATIC": "ON",
+        "FETCHCONTENT_SOURCE_DIR_XOPENGLDRV": "${sourceDir}/../../XOpenGLDrv",
+        "FETCHCONTENT_SOURCE_DIR_UTGLR": "${sourceDir}/../../utglr-copy",
+        "GL4ES_SOURCE_DIR": "${sourceDir}/../../gl4es"
+      }
+    },
+    {
+      "name": "wasm",
+      "displayName": "Web (Emscripten/WASM) -- dev default",
+      "description": "Emscripten web build: -O2 + DWARF + assertions. The everyday dev build -- named stacks and readable errors while the engine still runs at a playable speed. Builds in build-wasm/. Run `source ~/emsdk/emsdk_env.sh` first (sets EMSDK).",
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/../build-wasm",
+      "toolchainFile": "$env{EMSDK}/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "HP2_WEB_PERF": "OFF",
+        "HP2_WEB_DEBUG": "OFF",
+        "SOFTDRV_MAX_SCREEN": "8192",
+        "FETCHCONTENT_SOURCE_DIR_XOPENGLDRV": "${sourceDir}/../../XOpenGLDrv",
+        "FETCHCONTENT_SOURCE_DIR_UTGLR": "${sourceDir}/../../utglr-copy",
+        "GL4ES_SOURCE_DIR": "${sourceDir}/../../gl4es"
+      }
+    },
+    {
+      "name": "wasm-debug",
+      "displayName": "Web (Emscripten/WASM) -- -O0, last resort",
+      "description": "Emscripten web build: -O0, nothing inlined, every local live. Reach for it when the OPTIMISER is the suspect -- a bug that shows at one -O level and not another is almost always undefined behaviour. Builds in build-wasm-debug/.",
+      "inherits": "wasm",
+      "binaryDir": "${sourceDir}/../build-wasm-debug",
+      "cacheVariables": { "HP2_WEB_DEBUG": "ON" }
+    },
+    {
+      "name": "wasm-perf",
+      "inherits": "wasm",
+      "displayName": "Web (Emscripten/WASM) -- max performance",
+      "description": "Emscripten web build (-O3, no debug -> smaller/faster). Builds in build-wasm-perf/. What the ufrontend clone consumes.",
+      "binaryDir": "${sourceDir}/../build-wasm-perf",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release", "HP2_WEB_PERF": "ON" }
+    },
+    {
+      "name": "windows",
+      "displayName": "Windows x86 (MinGW-w64) -- one self-contained Game.exe",
+      "description": "32-bit Windows build, cross-compiled from Linux via the toolchain file (i686-w64-mingw32 + a fetched SDL2); the SAME preset works from an MSYS2 MINGW32 prompt. BUILD_STATIC links every package into the exe -- no Core.dll/Engine.dll. Renderers: UTGLR (OpenGLDrv) + XOpenGLDrv through the system opengl32, plus SoftDrv + NullDrv (CPU-only, verifiable headless under wine+Xvfb). Audio: NOpenALDrv with OpenAL Soft's OpenAL32.dll copied beside the exe. Builds in build-windows/.",
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/../build-windows",
+      "toolchainFile": "${sourceDir}/cmake/toolchain-mingw-w64.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "BUILD_STATIC": "ON",
+        "BUILD_EDITOR": "ON",
+        "BUILD_SOFTDRV": "ON",
+        "BUILD_NULLDRV": "ON",
+        "BUILD_XOPENGLDRV": "ON",
+        "BUILD_NOPENGLDRV": "ON",
+        "USE_GL4ES": "OFF",
+        "BUILD_NULLSOUNDDRV": "ON",
+        "BUILD_NOPENALDRV": "ON",
+        "FETCHCONTENT_SOURCE_DIR_XOPENGLDRV": "${sourceDir}/../../XOpenGLDrv",
+        "FETCHCONTENT_SOURCE_DIR_UTGLR": "${sourceDir}/../../utglr-copy",
+        "GL4ES_SOURCE_DIR": "${sourceDir}/../../gl4es"
+      }
+    }
+  ],
+  "buildPresets": [
+    { "name": "native", "configurePreset": "native" },
+    { "name": "wasm", "configurePreset": "wasm" },
+    { "name": "wasm-debug", "configurePreset": "wasm-debug" },
+    { "name": "wasm-perf", "configurePreset": "wasm-perf" },
+    { "name": "windows", "configurePreset": "windows" }
+  ]
+}

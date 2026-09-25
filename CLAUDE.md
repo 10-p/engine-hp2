@@ -13,6 +13,14 @@ WebGL2, OpenGLDrv/UTGLR + gl4es for WebGL1, the in-tree SoftDrv), helper drivers
 NullDrv, SoundDrv null), web-friendly inis and the WebRTC net driver. Read that repo's `CLAUDE.md` and
 `BUILD.md` for the reasoning behind every convention; this file records only where HP2 differs.
 
+## Start here
+1. **`docs/porting/PLAN.md`** — the work queue: phases A–G, the decisions already made, acceptance
+   lines, the progress checklist. Read it before touching anything.
+2. `docs/porting/analysis/00-critique.md`, then the analysis report for the phase you are in.
+3. The template's `CLAUDE.md` + `BUILD.md` (`/home/ion/engines/engine-ut99`) for the *why* of every convention.
+4. Build: `cd Source && cmake --preset native && cmake --build --preset native -j"$(nproc)"` (see `BUILD.md`
+   once Phase A lands). Three-way-merge helper: `tools/dev/merge3.sh <outdir>`.
+
 ## Map of the world
 | Thing | Path | Role |
 |-------|------|------|
