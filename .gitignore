@@ -1,0 +1,48 @@
+# HarryPotter2 (engine-hp2) — ignore rules.
+#
+# Game content is NEVER tracked: everything under Assets/ (retail runtime tree + the binary import sources
+# of the UnrealScript packages) stays local. Only Assets/README.md is kept so the folder's purpose is
+# documented in the repo.
+/Assets/*
+!/Assets/README.md
+
+# Out-of-tree build dirs (one per CMake preset) + local run trees / smoke scratch.
+/build-native/
+/build-wasm/
+/build-wasm-perf/
+/build-wasm-debug/
+/build-windows/
+/build-*/
+/run-*/
+__smoke.html
+
+# Prebuilt binaries that leak in from a native install or a tool run. Thirdparty/ keeps its original
+# import libraries deliberately (they are the only trace of the closed codecs) — everything else is
+# reproducible.
+*.log
+*.exe
+*.dll
+*.pdb
+*.obj
+*.o
+*.ilk
+*.ncb
+*.opt
+*.plg
+*.aps
+*.clw
+*.sbr
+*.bsc
+*.vsscc
+vssver.scc
+mssccprj.scc
+
+# Editor / OS junk.
+.DS_Store
+Thumbs.db
+desktop.ini
+*~
+*.swp
+
+# Claude Code per-machine local override.
+.claude/settings.local.json
