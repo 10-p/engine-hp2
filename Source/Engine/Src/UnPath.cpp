@@ -856,6 +856,7 @@ int FPathBuilder::createPaths (int optimization)
 	}
 
 	// multi pass build paths from every playerstart or inventory position in level
+	INT i;
 	for (i=0; i<Level->Actors.Num(); i++) 
 	{
 		ANavigationPoint *Nav = (ANavigationPoint *)(Level->Actors(i));
@@ -1204,6 +1205,7 @@ void FPathBuilder::Pass2From(FVector start, FVector moveDirection, FLOAT TurnDir
 	// find an anchor
 	ANavigationPoint *Anchor = NULL;
 	FLOAT BestDistSq = 640000;
+	INT i;
 	for ( i=0; i<Level->Actors.Num(); i++ ) 
 	{
 		ANavigationPoint *Nav = (ANavigationPoint *)(Level->Actors(i));

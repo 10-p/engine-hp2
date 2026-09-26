@@ -271,7 +271,7 @@ void FSortedPathList::findAltEndPoint(APawn *Searcher, AActor *&bestPath)
 	ViewPoint.Z += Searcher->BaseEyeHeight; //look from eyes
 	ULevel *MyLevel = Searcher->GetLevel();
 
-	for ( j=0; j<AltEndPoints.numPoints; j++ )
+	for ( INT j=0; j<AltEndPoints.numPoints; j++ )
 	{
 		if ( MyLevel->Model->FastLineCheck(AltEndPoints.Path[j]->Location, ViewPoint)
 			&& Searcher->pointReachable(AltEndPoints.Path[j]->Location, 1) )

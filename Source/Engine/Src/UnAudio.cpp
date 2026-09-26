@@ -497,6 +497,10 @@ UBOOL USound::CalcLipSyncData( void )
 //-----------------------------------------------------------------------------
 UBOOL USound::CompressXA( const TCHAR* SourceFilename )
 {
+	// Editor-only sound import: spawns the EA "sx" encoder and "cmd /c del" through appCreateProc, and
+	// uses hProcess outside HP2's _WINDOWS guard (which neither MinGW nor GCC/clang defines) -- so it
+	// only exists for MSVC. Every other target imports the sound uncompressed.
+#if _MSC_VER
 	UBOOL	bRet = false;
 
 	Data.Load();
@@ -621,6 +625,9 @@ UBOOL USound::CompressXA( const TCHAR* SourceFilename )
 	}
 
 	return bRet;
+#else
+	return false;
+#endif
 }
 
 

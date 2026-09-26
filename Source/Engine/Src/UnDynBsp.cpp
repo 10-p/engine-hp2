@@ -271,7 +271,8 @@ void FMovingBrushTracker::Update( AActor* InActor )
 	}
 
 	// Make a complete list of all actors that need flushing.
-	for( FActorLink* Link=GroupActors; Link; Link=Link->Next )
+	FActorLink* Link;
+	for( Link=GroupActors; Link; Link=Link->Next )
 	{
 		INT iNode = ((AMover*)Link->Actor)->Brush->MoverLink;
 		while( iNode != INDEX_NONE )
@@ -300,7 +301,8 @@ void FMovingBrushTracker::Update( AActor* InActor )
 		FModelCoords Coords;
 		FLOAT Orientation = ((ABrush*)Actor)->BuildCoords(&Coords,NULL);
 		INT Total=0;
-		for( INT i=0; i<Brush->Polys->Element.Num(); i++ )
+		INT i;
+		for( i=0; i<Brush->Polys->Element.Num(); i++ )
 			Total += Brush->Polys->Element(i).NumVertices;
 		FPoly* TransformedPolys = new( GMem, Brush->Polys->Element.Num() )FPoly;
 		FVector* Points = new( GMem, Total )FVector;

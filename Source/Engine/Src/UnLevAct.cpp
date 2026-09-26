@@ -9,6 +9,9 @@ Revision history:
 #include "EnginePrivate.h"
 #include "UnNet.h"
 
+// Forward declaration
+QSORT_RETURN CDECL CompareHits( const FCheckResult* A, const FCheckResult* B );
+
 /*-----------------------------------------------------------------------------
 	Level actor management.
 -----------------------------------------------------------------------------*/
@@ -625,6 +628,7 @@ APlayerPawn* ULevel::SpawnPlayActor( UPlayer* Player, ENetRole RemoteRole, const
 	}
 
 	// Import properties.
+	INT i;
 	for( i=0; i<Accepted.Num(); i++ )
 	{
 		// Parse all properties.
@@ -737,6 +741,7 @@ UBOOL ULevel::FindSpot
 		return 1;
 	}
 
+	INT i;
 	for (i=-1;i<2;i+=2)
 		for (int j=-1;j<2;j+=2)
 			for (int k=-1;k<2;k+=2)
@@ -1213,7 +1218,8 @@ UBOOL ULevel::CheckEncroachment
 	// Query the mover about what he wants to do with the actors he is encroaching.
 	FMemMark Mark(GMem);
 	FCheckResult* FirstHit = Hash ? Hash->ActorEncroachmentCheck( GMem, Actor, TestLocation, TestRotation, 0 ) : NULL;	
-	for( FCheckResult* Test = FirstHit; Test!=NULL; Test=Test->GetNext() )
+	FCheckResult* Test;
+	for( Test = FirstHit; Test!=NULL; Test=Test->GetNext() )
 	{
 		int noProcess = 0;
 		if
@@ -1385,7 +1391,8 @@ UBOOL ULevel::SingleLineCheck
 	);
 
 	// Skip owned actors and return the one nearest actor.
-	for( FCheckResult* Check = FirstHit; Check!=NULL; Check=Check->GetNext() )
+	FCheckResult* Check;
+	for( Check = FirstHit; Check!=NULL; Check=Check->GetNext() )
 	{
 		if( !SourceActor || !SourceActor->IsOwnedBy( Check->Actor ) )
 		{

@@ -2506,7 +2506,8 @@ FRotator AInterpolationPoint::GetDesiredRotationAtPosition(INT PosOffset, INT Pa
 		else if ( !Prev->bEndOfPath )
 		{
 			// find last pause of previous
-			for (INT i=0; Prev->Pause[i]>0; i++ );
+			INT i;
+			for (i=0; Prev->Pause[i]>0; i++ );
 			return Prev->GetDesiredRotationAtPosition(PosOffset+1,i,NewLocation);
 		}
 		else

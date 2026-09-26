@@ -242,7 +242,8 @@ void UChannel::ReceivedRawBunch( FInBunch& Bunch )
 
 		// Find the place for this item, sorted in sequence.
 		debugfSlow( NAME_DevNetTraffic, TEXT("      Queuing bunch with unreceived dependency") );
-		for( FInBunch** InPtr=&InRec; *InPtr; InPtr=&(*InPtr)->Next )
+		FInBunch** InPtr;
+		for( InPtr=&InRec; *InPtr; InPtr=&(*InPtr)->Next )
 		{
 			if( Bunch.ChSequence==(*InPtr)->ChSequence )
 			{
@@ -349,7 +350,8 @@ INT UChannel::SendBunch( FOutBunch* Bunch, UBOOL Merge )
 			Bunch->ChSequence = ++Connection->OutReliable[ChIndex];
 			NumOutRec++;
 			OutBunch = new(TEXT("FOutBunch"))FOutBunch(*Bunch);
-			for( FOutBunch** OutLink=&OutRec; *OutLink; OutLink=&(*OutLink)->Next );
+			FOutBunch** OutLink;
+			for( OutLink=&OutRec; *OutLink; OutLink=&(*OutLink)->Next );
 			*OutLink = OutBunch;
 		}
 		else
@@ -862,7 +864,8 @@ void UActorChannel::ReceivedBunch( FInBunch& Bunch )
 
 			// See if UnrealScript replication condition is met.
 			UBOOL Ignore=0;
-			for( UFunction* Test=Function; Test->GetSuperFunction(); Test=Test->GetSuperFunction() );
+			UFunction* Test;
+			for( Test=Function; Test->GetSuperFunction(); Test=Test->GetSuperFunction() );
 			if( !Connection->Driver->ServerConnection )
 			{
 				guard(EvalRPCCondition);
@@ -974,7 +977,8 @@ void UActorChannel::ReplicateActor()
 
 	// Owned by connection's player?
 	Actor->bNetOwner = 0;
-	for( AActor* Top=Actor; Top->Owner; Top=Top->Owner );
+	AActor* Top;
+	for( Top=Actor; Top->Owner; Top=Top->Owner );
 	UPlayer* Player = Top->IsA(APlayerPawn::StaticClass()) ? ((APlayerPawn*)Top)->Player : NULL;
 	UBOOL bRecordingDemo = Connection->Driver->IsA( UDemoRecDriver::StaticClass() );
 	UBOOL bClientDemo = bRecordingDemo && Actor->Level->NetMode == NM_Client;
@@ -1064,7 +1068,8 @@ void UActorChannel::ReplicateActor()
 	for( INT i=Dirty.Num()-1; i>=0; i-- )
 	{
 		INT D=Dirty(i);
-		for( INT* R=Reps; R<LastRep; R++ )
+		INT* R;
+		for( R=Reps; R<LastRep; R++ )
 			if( *R==D )
 				break;
 		if( R==LastRep )

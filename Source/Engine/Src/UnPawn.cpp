@@ -154,7 +154,8 @@ void AActor::execMoveCacheEntry( FFrame& Stack, RESULT_DECL )
 	{
 		if( GSys->Paths(i).Right( FileExt.Len() ) == FileExt )
 		{
-			for( const TCHAR* p = *GSys->Paths(i) + GSys->Paths(i).Len() - 1; p >= *GSys->Paths(i); p-- )
+			const TCHAR* p;
+			for( p = *GSys->Paths(i) + GSys->Paths(i).Len() - 1; p >= *GSys->Paths(i); p-- )
 				if( *p=='/' || *p=='\\' || *p==':' )
 					break;
 
@@ -456,7 +457,8 @@ void AActor::execGetMapName( FFrame& Stack, RESULT_DECL )
 				TArray<FString>	TheseNames = GFileManager->FindFiles(Tmp,1,0);
 				for( INT i=0; i<TheseNames.Num(); i++ )
 				{
-					for( INT j=0; j<MapNames.Num(); j++ )
+					INT j;
+					for( j=0; j<MapNames.Num(); j++ )
 						if( appStricmp(*MapNames(j),*TheseNames(i))==0 )
 							break;
 					if( j==MapNames.Num() )
@@ -475,7 +477,7 @@ void AActor::execGetMapName( FFrame& Stack, RESULT_DECL )
 			MapNames(i) = MapNames(i).Right( MapNames(i).Len() - Pos );
 		}
 	}
-	for( i=0; i<MapNames.Num(); i++ )
+	for( INT i=0; i<MapNames.Num(); i++ )
 	{
 		if( appStrcmp(*MapNames(i),*MapName)==0 )
 		{
@@ -1749,7 +1751,8 @@ DWORD APawn::LineOfSightTo(AActor *Other, int bShowSelf)
 	int imax = 0;
 	FLOAT currentmin = Points[0].SizeSquared(); 
 	FLOAT currentmax = currentmin; 
-	for (INT i=1;i<4;i++)
+	INT i;
+	for (i=1;i<4;i++)
 	{
 		FLOAT nextsize = Points[i].SizeSquared(); 
 		if (nextsize > currentmax)

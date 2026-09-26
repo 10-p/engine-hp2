@@ -167,7 +167,7 @@ struct FBoxCheckInfo
 			goto NoBlock; \
 	\
 	/* Check collision against hull edges. */ \
-	for( i=0; i<NumHulls; i++ ) \
+	for( INT i=0; i<NumHulls; i++ ) \
 	{ \
 		for( int j=0; j<i; j++ ) \
 		{ \

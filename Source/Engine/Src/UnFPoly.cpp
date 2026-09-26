@@ -350,7 +350,7 @@ int FPoly::SplitWithPlaneFast
 			StatusPtr         = &VertStatus        [0];
 
 			int N1=0, N2=0;
-			for( i=0; i<NumVertices; i++ )
+			for( INT i=0; i<NumVertices; i++ )
 			{
 				Status = *StatusPtr++;
 				if( Status != PrevStatus )

@@ -874,7 +874,8 @@ FBspNode* FCheckResult::BspNode( FLOAT Radius ) const
 				FVector* PrevVertex = &Model->Points(Verts[Node->NumVertices - 1].pVertex );
 
 				FLOAT Sense = 1.0f;
-				for( INT i=0;i<Node->NumVertices;i++ )
+				INT i;
+				for( i=0;i<Node->NumVertices;i++ )
 				{
 					FVector* Vertex = &Model->Points(Verts[i].pVertex);
 					FVector ClipNorm = Node->Plane ^ (*Vertex - *PrevVertex);

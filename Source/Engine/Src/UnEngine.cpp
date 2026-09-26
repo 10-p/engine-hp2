@@ -285,7 +285,8 @@ UBOOL UEngine::InputEvent( UViewport* Viewport, EInputKey iKey, EInputAction Sta
 	&&	Viewport->Actor->myHUD
 	&&	Viewport->Actor->myHUD->MainMenu )
 	{
-		for( UClass* C = Viewport->Actor->myHUD->MainMenu->GetClass(); C; C=C->GetSuperClass() )
+		UClass* C;
+		for( C = Viewport->Actor->myHUD->MainMenu->GetClass(); C; C=C->GetSuperClass() )
 			if( appStricmp(C->GetName(),TEXT("UnrealQuitMenu"))==0 || appStricmp(C->GetName(),TEXT("UnrealYesNoMenu"))==0 )
 				break;
 		if( C && appToUpper(iKey)==YesKey )

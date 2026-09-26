@@ -13,6 +13,10 @@
 //
 //---------------------------------------------------------------------------
 
+// <list> first: Core defines function-like macros named clock()/check()/verify(), and libc++'s <list>
+// reaches <time.h> (`clock_t clock (void);`), which Core's clock(Timer) macro would mangle.
+#include <list>
+
 #include "EnginePrivate.h"
 #include "UnParticle.h"
 #include "UnParticleList.h"
@@ -20,7 +24,6 @@
 #include "UnRender.h"
 #include "UnStat.h"
 
-#include <list>
 using namespace std;
 
 /*-----------------------------------------------------------------------------

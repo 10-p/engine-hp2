@@ -363,7 +363,15 @@ INT* APlayerPawn::GetOptimizedRepList( BYTE* Recent, FPropertyRetirement* Retire
 				DOREP(PlayerPawn,bFixedCamera);
 				DOREP(PlayerPawn,bNeverAutoSwitch);
 				DOREP(PlayerPawn,bCheatsEnabled);
-				DOREP(PlayerPawn,TargetViewRotation);
+				{
+					FRotator TempTargetViewRotation = TargetViewRotation;
+					FRotator TempRecentTargetViewRotation = ((APlayerPawn*)Recent)->TargetViewRotation;
+					if( NEQ(TempTargetViewRotation,TempRecentTargetViewRotation,Map) )
+					{
+						static UProperty* spTargetViewRotation = FindObjectChecked<UProperty>(APlayerPawn::StaticClass(),TEXT("TargetViewRotation"));
+						*Ptr++ = spTargetViewRotation->RepIndex;
+					}
+				}
 				DOREP(PlayerPawn,TargetEyeHeight);
 				DOREP(PlayerPawn,TargetWeaponViewOffset);
 			}
@@ -1158,7 +1166,7 @@ static UBOOL TouchTo( AActor* Actor, AActor* Other )
 	if( Available == -1 )
 	{
 		// Try to prune touches.
-		for( i=0; i<ARRAY_COUNT(Actor->Touching); i++ )
+		for( INT i=0; i<ARRAY_COUNT(Actor->Touching); i++ )
 		{
 			check(Actor->Touching[i]->IsValid());
 			if( Actor->Touching[i]->Physics == PHYS_None )
@@ -1170,7 +1178,7 @@ static UBOOL TouchTo( AActor* Actor, AActor* Other )
 		if ( (Available == -1) && Other->IsA(APawn::StaticClass()) )
 		{
 			// try to prune in favor of 1. players, 2. other pawns
-			for( i=0; i<ARRAY_COUNT(Actor->Touching); i++ )
+			for( INT i=0; i<ARRAY_COUNT(Actor->Touching); i++ )
 			{
 				if( !Actor->Touching[i]->IsA(APawn::StaticClass()) )
 				{
@@ -1180,7 +1188,7 @@ static UBOOL TouchTo( AActor* Actor, AActor* Other )
 				}
 			}
 			if ( (Available == -1) && ((APawn *)Other)->bIsPlayer )
-				for( i=0; i<ARRAY_COUNT(Actor->Touching); i++ )
+				for( INT i=0; i<ARRAY_COUNT(Actor->Touching); i++ )
 				{
 					if( !Actor->Touching[i]->IsA(APawn::StaticClass()) || !((APawn *)Actor->Touching[i])->bIsPlayer )
 					{
@@ -1252,7 +1260,7 @@ void AActor::EndTouch( AActor* Other, UBOOL NoNotifySelf )
 	}
 
 	// Notify TouchActor.
-	for( i=0; i<ARRAY_COUNT(Other->Touching); i++ )
+	for( INT i=0; i<ARRAY_COUNT(Other->Touching); i++ )
 	{
 		if( Other->Touching[i] == this )
 		{

@@ -331,7 +331,7 @@ static INT DrawString
 	}
 
 	// Unlock font pages.
-	for( i=0; i<5; i++ )
+	for( INT i=0; i<5; i++ )
 		if( Infos[i].Texture )
 			Infos[i].Texture->Unlock( Infos[i] );
 

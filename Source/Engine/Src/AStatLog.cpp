@@ -152,7 +152,7 @@ void AStatLog::execInitialCheck( FFrame& Stack, RESULT_DECL )
 		FileSize = GFileManager->FileSize( *FileName );
 
 		// Capitalize.
-		for (j=0; j<FileName.Len(); j++)
+		for (INT j=0; j<FileName.Len(); j++)
 		{
 			TCHAR c = (*FileName)[j];
 			if ((c >= 'a') && (c <= 'z'))

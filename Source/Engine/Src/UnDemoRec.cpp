@@ -120,8 +120,9 @@ void UDemoRecConnection::HandleClientPlayer( APlayerPawn* Pawn )
 	else
 		Super::HandleClientPlayer(Pawn);
 
-	// Setup music for demo
-	Pawn->Song        = Pawn->Level->Song;
+	// Setup music for demo. Copied through TCHAR*: ALevelInfo::Song is a GCC_PACK(4) member and GCC
+	// cannot bind a packed field to the const FStringNoInit& the copy-assignment takes.
+	Pawn->Song        = *Pawn->Level->Song;
 //	Pawn->SongSection = Pawn->Level->SongSection;
 //	Pawn->CdTrack     = Pawn->Level->CdTrack;
 	Pawn->Transition  = MTRAN_Fade;

@@ -285,7 +285,8 @@ bool ULevel::SavePersistentActors( const FString& MapName )
 	do
 	{	
 		// go through the level's actor list and find out how many need to be saved
-		for(int i=0; i<Actors.Num(); ++i )
+		int i;
+		for(i=0; i<Actors.Num(); ++i )
 		{
 			pAct = Actors(i);
 			if( pAct && pAct->bPersistent )
@@ -307,7 +308,8 @@ bool ULevel::SavePersistentActors( const FString& MapName )
 		debugf(NAME_Log, TEXT("*** Starting to Save Persistent Actors for map %s"), *FinalMapName);
 		
 		// Block 1a.) The first token is a PA file identifier ( "PA0" == unverified PA file, "PA1" == verified PA file )
-		pActAr->Serialize(TEXT("PA0"), sizeof(TEXT("PA0")));
+		TCHAR PAId[] = TEXT("PA0"); // FArchive::Serialize takes a non-const void*; never pass it a literal
+		pActAr->Serialize(PAId, sizeof(PAId));
 		IF_TRUE_MSG_AND_BREAK(pActAr->GetError(),TEXT("ULevelBase::SavePersistentActors ERROR: Saving map PA file identifier!") ) 
 		
 		// Block 1b.) The second token in the save file will be the size of the map name then the map name
@@ -456,7 +458,8 @@ bool ULevel::LoadPersistentActors( const FString& MapName )
 		
 		// Create a map of persistent actors we will need to load
 		iToLoad = 0;
-		for(int i=0; i<Actors.Num(); ++i )
+		int i;
+		for(i=0; i<Actors.Num(); ++i )
 		{
 			pAct = Actors(i);
 			if( pAct && pAct->bPersistent )
@@ -837,6 +840,7 @@ void ULevel::ReconcileActors()
 
 	// Match up all remaining Viewports to actors.
 	guard(MatchEditorOther);
+	INT i;
 	for( i=0; i<Engine->Client->Viewports.Num(); i++ )
 	{
 		// Hook Viewport up to an existing actor or createa a new one.
@@ -848,7 +852,7 @@ void ULevel::ReconcileActors()
 
 	// Handle remaining unassociated view actors.
 	guard(KillViews);
-	for( i=0; i<Actors.Num(); i++ )
+	for( INT i=0; i<Actors.Num(); i++ )
 	{
 		ACamera* View = Cast<ACamera>(Actors(i));
 		if( View )
@@ -1226,10 +1230,15 @@ void ULevel::NotifyReceivedText( UNetConnection* Connection, const TCHAR* Text )
 		else if( ParseCommand(&Text,TEXT("LOGIN")) )
 		{
 			// Admit or deny the player here.
+			// ufront 2.80: the retail test, precedence and all. Epic wrote `!CR(Challenge)==Response`, which
+			// is (!CR)==Response, and BOTH retail Engine.dlls compile exactly that (v400 and v436: sete on
+			// CR==0, cmp with Response, je FAILURE): any non-zero response is admitted. The Dreamcast port
+			// "fixed" it to a real equality test, refusing any client whose response differs from ours --
+			// kept retail's, because what a server admits is what the clients of that era were built for.
 			INT Response=0;
 			if
 			(	!Parse(Text,TEXT("RESPONSE="),Response)
-			||	!Engine->ChallengeResponse(Connection->Challenge)==Response )
+			||	(!Engine->ChallengeResponse(Connection->Challenge))==Response )
 			{
 				Connection->Logf( TEXT("FAILURE CHALLENGE") );
 				Connection->Channels[0]->Close();
@@ -1243,7 +1252,8 @@ void ULevel::NotifyReceivedText( UNetConnection* Connection, const TCHAR* Text )
 			Parse( Text, TEXT("URL="), Str, ARRAY_COUNT(Str) );
 			Connection->RequestURL = Str;
 			debugf( NAME_DevNet, TEXT("Login request: %s"), *Connection->RequestURL );
-			for( const TCHAR* Tmp=Str; *Tmp && *Tmp!='?'; Tmp++ );
+			const TCHAR* Tmp;
+			for( Tmp=Str; *Tmp && *Tmp!='?'; Tmp++ );
 			GetLevelInfo()->Game->eventPreLogin( Tmp, Connection->LowLevelGetRemoteAddress(), Error, FailCode );
 			if( Error!=TEXT("") )
 			{

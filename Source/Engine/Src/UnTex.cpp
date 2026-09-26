@@ -9,7 +9,9 @@
 #include "EnginePrivate.h"
 #include "UnRender.h"
 
-#ifdef WIN32
+// The DirectDraw stand-ins, Heckbert quantiser and closed s3tc.lib API serve only the MSVC-only DXT
+// block below (see its note); MinGW defines WIN32 too, so key on the compiler, not the platform.
+#if _MSC_VER
 #include "UnDDraw.h"
 #include "Palette.h"
 #include "S3tc.h"
@@ -661,6 +663,7 @@ void UPalette::FixPalette()
 			TempColors[16 + iColor + (iShade<<3)] = Colors(iStart + iShade);
 
 	}
+	INT i;
 	for( i=0; i<256; i++ )
 	{
 		Colors(i) = TempColors[i];
@@ -724,7 +727,8 @@ UPalette* UPalette::ReplaceWithExisting()
 		{
 			FColor* C1 = &Colors(0);
 			FColor* C2 = &It->Colors(0);
-			for( int i=0; i<NUM_PAL_COLORS; i++ )
+			INT i;
+			for( i=0; i<NUM_PAL_COLORS; i++ )
 				if( *C1++ != *C2++ ) break;
 			if( i == NUM_PAL_COLORS )
 			{
@@ -744,7 +748,14 @@ UPalette* UPalette::ReplaceWithExisting()
 
 typedef	struct {BYTE rgba[4];} COLOR;
 
-#ifdef WIN32
+// ufront 2.33: was `#ifdef WIN32`. These implementations call into Epic's S3TC encoder and Heckbert
+// quantiser (Engine/Lib/s3tc.lib plus the __declspec(dllexport) declarations in Palette.h), which NO
+// CMake target links — that .lib is an MSVC-era artifact left in the tree. So the block only ever built
+// under Epic's original MSVC project, and "WIN32" quietly meant "MSVC". Under MinGW it compiled and then
+// failed at link with undefined S3TCencode/S3TCdecode/HeckbertQuantize.
+// Every build this repo actually produces — Linux, web, and Windows/MinGW — takes the #else stub
+// below, exactly as it always has, so this changes nothing for any of them.
+#if _MSC_VER
 
 //
 // Compress the texture, with mip-levels if required
@@ -1096,13 +1107,14 @@ UBOOL UTexture::LoadFromBMP( FString BMPPath )
 			// Calculate size of Texture.
 			// Proportions must always be powers of 2
 			
+			int destWidth, destHeight;
 			int widthFactor =0;
-			for (int destWidth = bmhdr->biWidth; destWidth; destWidth>>=1)
+			for (destWidth = bmhdr->biWidth; destWidth; destWidth>>=1)
 				widthFactor ++;
 			destWidth = appPow(2, widthFactor);
 			
 			int heightFactor =0;
-			for (int destHeight = bmhdr->biHeight; destHeight; destHeight>>=1)
+			for (destHeight = bmhdr->biHeight; destHeight; destHeight>>=1)
 				heightFactor ++;
 			destHeight = appPow(2, heightFactor);
 

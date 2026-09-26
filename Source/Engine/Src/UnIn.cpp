@@ -29,7 +29,7 @@ public:
 					Count++;
 			Result = (FInputVarCache*)GCache.Create(CacheId,Item,sizeof(FInputVarCache)+Count*sizeof(UProperty*));
 			Result->Count = Count;
-			for( It=TFieldIterator<UProperty>(Class); It; ++It )
+			for( TFieldIterator<UProperty> It(Class); It; ++It )
 				if( It->PropertyFlags & CPF_Input )
 					Result->Properties[Temp++] = *It;
 		}
@@ -128,7 +128,8 @@ BYTE* UInput::FindButtonName( AActor* Actor, const TCHAR* ButtonName ) const
 	{
 		FMemCache::FCacheItem* Item;
 		FInputVarCache* Cache = FInputVarCache::Get( Actor->GetClass(), Item );
-		for( INT i=0; i<Cache->Count; i++ )
+		INT i;
+		for( i=0; i<Cache->Count; i++ )
 			if
 			(	Cache->Properties[i]->GetFName()==Button
 			&&	Cast<UByteProperty>(Cache->Properties[i]) )
@@ -154,7 +155,8 @@ FLOAT* UInput::FindAxisName( AActor* Actor, const TCHAR* ButtonName ) const
 	{
 		FMemCache::FCacheItem* Item;
 		FInputVarCache* Cache = FInputVarCache::Get( Actor->GetClass(), Item );
-		for( INT i=0; i<Cache->Count; i++ )
+		INT i;
+		for( i=0; i<Cache->Count; i++ )
 			if
 			(	Cache->Properties[i]->GetFName()==Button
 			&&	Cast<UFloatProperty>(Cache->Properties[i]) )

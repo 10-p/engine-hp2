@@ -118,7 +118,7 @@ FCollisionHash::FCollisionHash()
 		{
 			HashX[i] = HashY[i] = HashZ[i] = i;
 		}
-		for( i=0; i<NUM_BUCKETS; i++ )
+		for( INT i=0; i<NUM_BUCKETS; i++ )
 		{
 			Exchange( HashX[i], HashX[appRand() % NUM_BUCKETS] );
 			Exchange( HashY[i], HashY[appRand() % NUM_BUCKETS] );

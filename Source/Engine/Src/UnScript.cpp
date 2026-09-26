@@ -2312,6 +2312,7 @@ static void CalcClippedNodes( UModel* Model, FBspSurf& Surf, FVector* DecalVerts
 			for( INT i=0;i<4;i++ )
 				Pts[i] = DecalVerts[i];
 			NumPts = 4;
+			INT i;
 
 			// check if this node contains any of the decal
 			FVert* Verts = &Model->Verts( Node->iVertPool );
@@ -2325,7 +2326,8 @@ static void CalcClippedNodes( UModel* Model, FBspSurf& Surf, FVector* DecalVerts
 				FVector ClipNorm = SurfNormal ^ (*Vertex - *PrevVertex);
 				FPlane ClipPlane( *Vertex, ClipNorm );
 
-				for(INT j=0;j<NumPts;j++)
+				INT j;
+				for(j=0;j<NumPts;j++)
 					Dots[j] = ClipPlane.PlaneDot( Pts[j] );
 				for(j=0;j<NumPts;j++)
 				{
@@ -2549,6 +2551,7 @@ void ADecal::execAttachDecal( FFrame& Stack, RESULT_DECL )
 
 				// attach decal to secondary surface
 				FDecal* SecDecal = NULL;
+				INT j;
 				for( j=0;j<SecSurf.Decals.Num();j++)
 					if(SecSurf.Decals(j).Actor->Texture == Texture)
 					{

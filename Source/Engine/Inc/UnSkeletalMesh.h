@@ -400,8 +400,11 @@ class ENGINE_API USkeletalMesh : public ULodMesh
 	int BoneIndex( FName BoneName ) const;
 	FName BoneName( int Index ) const;
 
-private:
+	// Public (was private): UnSkeletalMesh.cpp's cache wrapper FSkelCache names it as the template
+	// argument of its base class, which MSVC6 did not access-check and GCC/clang do.
 	struct CFSkelHeader;
+
+private:
 	void GetBones( TArray<FCoords>& Bones, AActor* Owner ) const;
 	void ApplyAnim( AActor* AnimOwner, CFSkelHeader* ParentHdr = NULL, bool bRootOnly = false ) const;
 	FCoords GetMeshCoords( const AActor* Owner ) const;
