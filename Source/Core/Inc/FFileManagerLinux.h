@@ -214,11 +214,102 @@ protected:
 
 class FFileManagerLinux : public FFileManagerGeneric
 {
+	// HP2 port: path normalisation for every entry point. HP2 content hard-codes Windows paths and mixed
+	// case -- HGame.u opens "Cutscenes\\<file>.int" (the directory is System/CUTSCENES), music is
+	// "..\\music\\<Song>.ogg", map strings in HGame.u use a different case from the files on disk. So:
+	// '\\' becomes '/', and when the exact path does not exist each component is resolved case-insensitively
+	// against the directory listing. A component that matches nothing is kept as given (a file about to be
+	// created). Positive resolutions are cached. The web needs the same: under -sWASMFS the glue does not fold
+	// case for direct opens (PLAN §2 "Path normalisation", critique M2-2/M3-2).
+	class FFixedPath
+	{
+	public:
+		ANSICHAR Path[PATH_MAX];
+		FFixedPath( const TCHAR* In ) { FFileManagerLinux::FixPath( In, Path, ARRAY_COUNT(Path) ); }
+		operator const ANSICHAR*() const { return Path; }
+	};
+	static TMap<FString,FString>& FixPathCache()
+	{
+		static TMap<FString,FString>* Cache = new TMap<FString,FString>;
+		return *Cache;
+	}
+	static void FixPath( const TCHAR* In, ANSICHAR* Out, INT OutSize )
+	{
+		appStrncpy( Out, TCHAR_TO_ANSI(In), OutSize );
+		for( ANSICHAR* C=Out; *C; C++ )
+			if( *C=='\\' )
+				*C = '/';
+		struct stat St;
+		if( !*Out || stat( Out, &St )==0 )
+			return;
+		// The cache allocates through GMalloc, which appInit installs before it creates GConfig.
+		const UBOOL CanCache = GConfig!=NULL;
+		if( CanCache )
+		{
+			FString* Cached = FixPathCache().Find( FString(Out) );
+			if( Cached )
+			{
+				appStrncpy( Out, **Cached, OutSize );
+				return;
+			}
+		}
+		// Walk the components; Out is rebuilt in place (a resolved name has the same length as the original).
+		ANSICHAR Original[PATH_MAX];
+		appStrncpy( Original, Out, ARRAY_COUNT(Original) );
+		UBOOL Changed = 0;
+		ANSICHAR* Start = Out;
+		while( *Start=='/' )
+			Start++;
+		while( *Start )
+		{
+			ANSICHAR* End = Start;
+			while( *End && *End!='/' )
+				End++;
+			const ANSICHAR Saved = *End;
+			*End = 0;
+			if( appStrcmp(Start,".")!=0 && appStrcmp(Start,"..")!=0 && stat( Out, &St )!=0 )
+			{
+				// Look the component up in its parent, case-insensitively.
+				ANSICHAR Name[PATH_MAX];
+				appStrncpy( Name, Start, ARRAY_COUNT(Name) );
+				*Start = 0;
+				DIR* Dir = opendir( Start==Out ? "." : Out );
+				UBOOL Found = 0;
+				if( Dir )
+				{
+					for( struct dirent* Ent=readdir(Dir); Ent; Ent=readdir(Dir) )
+						if( appStricmp( Ent->d_name, Name )==0 )
+						{
+							appStrcpy( Start, Ent->d_name );
+							Found = Changed = 1;
+							break;
+						}
+					closedir( Dir );
+				}
+				if( !Found )
+				{
+					// Nothing to fold to: keep the rest verbatim (a new file or directory).
+					appStrcpy( Start, Name );
+					*End = Saved;
+					break;
+				}
+			}
+			*End = Saved;
+			Start = *End ? End+1 : End;
+		}
+		if( Changed && CanCache )
+			FixPathCache().Set( Original, Out );
+	}
+	static UBOOL IsDirectory( const ANSICHAR* Path )
+	{
+		struct stat St;
+		return stat( Path, &St )==0 && S_ISDIR(St.st_mode);
+	}
 public:
 	FArchive* CreateFileReader( const TCHAR* Filename, DWORD Flags, FOutputDevice* Error )
 	{
 		guard(FFileManagerLinux::CreateFileReader);
-		FILE* File = fopen(TCHAR_TO_ANSI(Filename), TCHAR_TO_ANSI(TEXT("rb")));
+		FILE* File = fopen(FFixedPath(Filename), TCHAR_TO_ANSI(TEXT("rb")));
 		if( !File )
 		{
 			if( Flags & FILEREAD_NoFail )
@@ -232,14 +323,15 @@ public:
 	FArchive* CreateFileWriter( const TCHAR* Filename, DWORD Flags, FOutputDevice* Error )
 	{
 		guard(FFileManagerLinux::CreateFileWriter);
+		FFixedPath Fixed( Filename );
 		if( Flags & FILEWRITE_EvenIfReadOnly )
 		{
-			chmod(TCHAR_TO_ANSI(Filename), S_IRUSR | S_IWUSR);
+			chmod(Fixed, S_IRUSR | S_IWUSR);
 		}
 		if( (Flags & FILEWRITE_NoReplaceExisting) && FileSize(Filename)>=0 )
 			return NULL;
 		const TCHAR* Mode = (Flags & FILEWRITE_Append) ? TEXT("ab") : TEXT("wb"); 
-		FILE* File = fopen(TCHAR_TO_ANSI(Filename),TCHAR_TO_ANSI(Mode));
+		FILE* File = fopen(Fixed,TCHAR_TO_ANSI(Mode));
 		if( !File )
 		{
 			if( Flags & FILEWRITE_NoFail )
@@ -254,11 +346,12 @@ public:
 	UBOOL Delete( const TCHAR* Filename, UBOOL RequireExists=0, UBOOL EvenReadOnly=0 )
 	{
 		guard(FFileManagerLinux::Delete);
+		FFixedPath Fixed( Filename );
 		if( EvenReadOnly )
 		{
-			chmod(TCHAR_TO_ANSI(Filename), S_IRUSR | S_IWUSR);
+			chmod(Fixed, S_IRUSR | S_IWUSR);
 		}
-		return unlink(TCHAR_TO_ANSI(Filename))==0 || (errno==ENOENT && !RequireExists);
+		return unlink(Fixed)==0 || (errno==ENOENT && !RequireExists);
 		unguard;
 	}
 	UBOOL MakeDirectory( const TCHAR* Path, UBOOL Tree=0 )
@@ -269,9 +362,9 @@ public:
 		// ufront 2.33: Windows' mkdir takes no mode — permissions are not a filesystem attribute there.
 		// (This manager is the launcher's on every platform; see UnrealTournament/Src/Launch.cpp.)
 #ifdef PLATFORM_WIN32
-		return mkdir(TCHAR_TO_ANSI(Path))==0 || errno==EEXIST;
+		return mkdir(FFixedPath(Path))==0 || errno==EEXIST;
 #else
-		return mkdir(TCHAR_TO_ANSI(Path), S_IRUSR | S_IWUSR | S_IXUSR)==0 || errno==EEXIST;
+		return mkdir(FFixedPath(Path), S_IRUSR | S_IWUSR | S_IXUSR)==0 || errno==EEXIST;
 #endif
 		unguard;
 	}
@@ -280,7 +373,7 @@ public:
 		guard(FFileManagerLinux::DeleteDirectory);
 		if( Tree )
 			return FFileManagerGeneric::DeleteDirectory( Path, RequireExists, Tree );
-		return rmdir(TCHAR_TO_ANSI(Path))==0 || (errno==ENOENT && !RequireExists);
+		return rmdir(FFixedPath(Path))==0 || (errno==ENOENT && !RequireExists);
 		unguard;
 	}
 	TArray<FString> FindFiles( const TCHAR* Filename, UBOOL Files, UBOOL Directories )
@@ -290,19 +383,14 @@ public:
 	
 		DIR *Dirp;
 		struct dirent* Direntp;
-		char Path[256];
-		char File[256];
+		char Path[PATH_MAX];
+		char File[PATH_MAX];
 		char *Filestart;
 		char *Cur;
 		UBOOL Match;
 
-		// Initialize Path to Filename.
-		appStrcpy( Path, Filename );
-
-		// Convert MS "\" to Unix "/".
-		for( Cur = Path; *Cur != '\0'; Cur++ )
-			if( *Cur == '\\' )
-				*Cur = '/';
+		// Initialize Path to Filename. HP2 port: FixPath also folds the directory part's case ('\\' -> '/').
+		FixPath( Filename, Path, ARRAY_COUNT(Path) );
 	
 		// Separate path and filename.
 		Filestart = Path;
@@ -378,6 +466,18 @@ public:
 					Match = true;
 			}
 
+			// HP2 port: honour the Files/Directories flags (the stock body returned both, and "." / "..").
+			if( Match && (!appStrcmp(Direntp->d_name,".") || !appStrcmp(Direntp->d_name,"..")) )
+				Match = false;
+			if( Match && !(Files && Directories) )
+			{
+				char Full[PATH_MAX];
+				appStrncpy( Full, Path, ARRAY_COUNT(Full) );
+				appStrncat( Full, Direntp->d_name, ARRAY_COUNT(Full) );
+				const UBOOL Dir = IsDirectory( Full );
+				Match = Dir ? Directories : Files;
+			}
+
 			// Does this entry match the Filename?
 			if( Match )
 			{
@@ -398,7 +498,7 @@ public:
 	UBOOL SetDefaultDirectory( const TCHAR* Filename )
 	{
 		guard(FFileManagerLinux::SetDefaultDirectory);
-		return chdir(TCHAR_TO_ANSI(Filename))==0;
+		return chdir(FFixedPath(Filename))==0;
 		unguard;
 	}
 	FString GetDefaultDirectory()
