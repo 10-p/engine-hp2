@@ -230,11 +230,7 @@ void ULodMesh::GetFrame
 		if( Seq )
 		{
 			FLOAT Frame   = ::Max(AnimOwner->AnimFrame,0.f) * Seq->NumFrames;
-#if !__PSX2_EE__
 			INT iFrame    = appFloor(Frame);
-#else
-			INT iFrame    = appRound(Frame-0.5f); // Temporary PSX2 appFloor bug workaround
-#endif
 			Alpha         = Frame - iFrame;
 			iFrameOffset1 = (Seq->StartFrame + ((iFrame + 0) % Seq->NumFrames)) * FrameVerts;
 			iFrameOffset2 = (Seq->StartFrame + ((iFrame + 1) % Seq->NumFrames)) * FrameVerts;

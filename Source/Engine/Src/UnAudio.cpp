@@ -798,82 +798,6 @@ UBOOL FWaveModInfo::ReadWaveInfo( TArray<BYTE>& WavData )
 	// The appMemcpy indirect accessing is necessary to avoid PSX2 read alignment problems but
 	// somehow causes a crash on PCs in "Look for a 'smpl' chunk."
 
-#if __PSX2_EE__
-
-	FRiffChunkOld RiffChunk;
-	FRiffChunkOld* RiffChunkPtr = (FRiffChunkOld*)&WavData(3*4);
-	appMemcpy( &RiffChunk, RiffChunkPtr, sizeof(FRiffChunkOld) );
-
-	// Look for the 'fmt ' chunk.
-	while( ( ((BYTE*)RiffChunkPtr + 8) < WaveDataEnd)  && ( RiffChunk.ChunkID != mmioFOURCC('f','m','t',' ') ) )
-	{
-		// Go to next chunk.
-		RiffChunkPtr = (FRiffChunkOld*) ( (BYTE*)RiffChunkPtr + Pad16Bit(RiffChunk.ChunkLen) + 8);
-		appMemcpy( &RiffChunk, RiffChunkPtr, sizeof(FRiffChunkOld) );
-	}
-	// Chunk found ?
-	if( RiffChunk.ChunkID != mmioFOURCC('f','m','t',' ') )
-		return 0;
-
-	FmtChunk = (FFormatChunk*)((BYTE*)RiffChunkPtr + 8);
-	pBitsPerSample  = &FmtChunk->wBitsPerSample;
-	pSamplesPerSec  = &FmtChunk->nSamplesPerSec;
-	pAvgBytesPerSec = &FmtChunk->nAvgBytesPerSec;
-	pBlockAlign		= &FmtChunk->nBlockAlign;
-	pChannels       = &FmtChunk->nChannels;
-
-	// re-initalize the RiffChunk pointer
-	RiffChunkPtr = (FRiffChunkOld*)&WavData(3*4);
-	appMemcpy( &RiffChunk, RiffChunkPtr, sizeof(FRiffChunkOld) );
-
-	// Look for the 'data' chunk.
-	while( ( ((BYTE*)RiffChunkPtr + 8) < WaveDataEnd) && ( RiffChunk.ChunkID != mmioFOURCC('d','a','t','a') ) )
-	{
-		// Go to next chunk.
-		RiffChunkPtr = (FRiffChunkOld*) ( (BYTE*)RiffChunkPtr + Pad16Bit(RiffChunk.ChunkLen) + 8); 
-		appMemcpy( &RiffChunk, RiffChunkPtr, sizeof(FRiffChunkOld) );
-	} 
-	// Chunk found ?
-	if( RiffChunk.ChunkID != mmioFOURCC('d','a','t','a') )
-		return 0;
-
-	SampleDataStart = (BYTE*)RiffChunkPtr + 8;
-	pWaveDataSize   = &RiffChunkPtr->ChunkLen;
-	SampleDataSize  =  RiffChunk.ChunkLen;
-	OldBitsPerSample = FmtChunk->wBitsPerSample;
-	SampleDataEnd   =  SampleDataStart+SampleDataSize;
-
-	NewDataSize	= SampleDataSize;
-
-	// Re-initalize the RiffChunk pointer
-	RiffChunkPtr = (FRiffChunkOld*)&WavData(3*4);
-	appMemcpy( &RiffChunk, RiffChunkPtr, sizeof(FRiffChunkOld) );
-
-	// Look for a 'smpl' chunk.
-	while( ( (((BYTE*)RiffChunkPtr) + 8) < WaveDataEnd) && ( RiffChunk.ChunkID != mmioFOURCC('s','m','p','l') ) )
-	{
-		// Go to next chunk.
-		RiffChunkPtr = (FRiffChunkOld*) ( (BYTE*)RiffChunkPtr + Pad16Bit(RiffChunk.ChunkLen) + 8); 
-		appMemcpy( &RiffChunk, RiffChunkPtr, sizeof(FRiffChunkOld) );
-	} 
-
-	// Chunk found ? smpl chunk is optional.
-	// Find the first sample-loop structure, and the total number of them.
-	if( (INT)RiffChunkPtr+4<(INT)WaveDataEnd && RiffChunk.ChunkID == mmioFOURCC('s','m','p','l') )
-	{
-		FSampleChunk pSampleChunk;
-		appMemcpy(&pSampleChunk, (BYTE*)RiffChunkPtr + 8, sizeof(FSampleChunk));
-		SampleLoopsNum = pSampleChunk.cSampleLoops;
-		pSampleLoop = (FSampleLoop*) ((BYTE*)RiffChunkPtr + 8 + sizeof(FSampleChunk)); 
-		/*
-		FSampleChunk* pSampleChunk =  (FSampleChunk*)( (BYTE*)RiffChunk + 8);
-		SampleLoopsNum  = pSampleChunk->cSampleLoops; // Number of tSampleLoop structures.
-		// First tSampleLoop structure starts right after the tSampleChunk.
-		pSampleLoop = (FSampleLoop*) ((BYTE*)pSampleChunk + sizeof(FSampleChunk)); 
-		*/		
-	}
-
-#else
 	
 	FRiffChunkOld* RiffChunk = (FRiffChunkOld*)&WavData(3*4);
 	// Look for the 'fmt ' chunk.
@@ -944,7 +868,6 @@ UBOOL FWaveModInfo::ReadWaveInfo( TArray<BYTE>& WavData )
 		pSampleLoop = (FSampleLoop*) ((BYTE*)pSampleChunk + sizeof(FSampleChunk)); 
 		*/
 	}
-#endif
 	
 	return 1;
 	unguard;
