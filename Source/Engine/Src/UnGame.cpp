@@ -181,7 +181,10 @@ void UGameEngine::Init()
 	if
 	(	!ParseToken( Tmp, Parm, ARRAY_COUNT(Parm), 0 )
 	||	(appStricmp(Parm,TEXT("SERVER"))==0 && !ParseToken( Tmp, Parm, ARRAY_COUNT(Parm), 0 ))
-	||	Parm[0]=='-' )
+	||	Parm[0]=='-'
+	// ufront 2.38: …and a global option is not a map either. See appIsGlobalOptionToken — one launcher
+	// dropping its leading flag turned `CPUSPEED=3000` into "the map" and cost the main menu entirely.
+	||	appIsGlobalOptionToken(Parm) )
 		appStrcpy( Parm, *FURL::DefaultLocalMap );
 
 	FString ReplayFile;
@@ -211,7 +214,19 @@ void UGameEngine::Init()
 
 	// Handle failure.
 	if( !Success )
+#ifdef __EMSCRIPTEN__
+	{
+		// 2.6g (mirrors engine-unreal1): a bad startup/autoplay map must not be fatal — appErrorf throws to
+		// unwind, which can't cross Asyncify frames (uncaught -> module abort). Entry (the menu) is already
+		// loaded into GEntry; fall back to it so the user can pick a valid map / host from the UI instead of
+		// crashing. LoadMap now returns NULL gracefully for a missing map (above), so Success is a clean false.
+		debugf( NAME_Warning, TEXT("Startup map '%s' failed to load (%s) — falling back to the menu"), Parm, *Error );
+		if( !GLevel )
+			GLevel = GEntry;
+	}
+#else
 		appErrorf( LocalizeError("FailedBrowse"), Parm, *Error );
+#endif
 	
 
 	// Open initial Viewport.
@@ -247,8 +262,8 @@ void UGameEngine::Init()
 	if( Parse( appCmdLine(), TEXT("-LOAD="), LoadGameSlot ) )
 	{
 		TCHAR Filename[512];
-		GFileManager->MakeDirectory( *GSys->SavePath, 0 );
-		GFileManager->MakeDirectory( *GSys->SaveSlotPath, 0 );
+		GFileManager->MakeDirectory( *GSys->SavePath, 1 );
+		GFileManager->MakeDirectory( *GSys->SaveSlotPath, 1 );
 		appSprintf( Filename, TEXT("%s") PATH_SEPARATOR TEXT("Save%i.usa"), *GSys->SaveSlotPath, appAtoi(*LoadGameSlot) );
 		
 		debugf( NAME_Log, TEXT("Loading game... filename: %s"), Filename );
@@ -300,7 +315,11 @@ void UGameEngine::Destroy()
 void UGameEngine::SetProgress( const TCHAR* Str1, const TCHAR* Str2, FLOAT Seconds )
 {
 	guard(UGameEngine::SetProgress);
-	if( Client && Client->Viewports.Num() )
+	// 2.12 hardening: the viewport can exist with a NULL Actor — e.g. right after DissociateViewports tears the
+	// player pawn down during a failed travel/open. SetProgress dereferences Actor below (Actor->ProgressMessage[0]
+	// = Str1 is an FString assignment → FArray::Realloc), so without an Actor null-check this is a NULL/garbage-heap
+	// deref → "memory access out of bounds" abort on the web build (catching is off). Only message a live actor.
+	if( Client && Client->Viewports.Num() && Client->Viewports(0)->Actor )
 	{
 		APlayerPawn* Actor = Client->Viewports(0)->Actor;
 		if( Seconds==-1.f )
@@ -442,8 +461,8 @@ UBOOL UGameEngine::Exec( const TCHAR* Cmd, FOutputDevice& Ar )
 	{
 		if( appIsDigit(Str[0]) )
 		{
-			GFileManager->MakeDirectory( *GSys->SavePath, 0 );
-			GFileManager->MakeDirectory( *GSys->SaveSlotPath, 0 );
+			GFileManager->MakeDirectory( *GSys->SavePath, 1 );
+			GFileManager->MakeDirectory( *GSys->SaveSlotPath, 1 );
 			
 			
 			//DEBUG
@@ -467,8 +486,8 @@ UBOOL UGameEngine::Exec( const TCHAR* Cmd, FOutputDevice& Ar )
 			LoadPersistentActorCache();
 			
 			TCHAR Filename[256];
-			GFileManager->MakeDirectory( *GSys->SavePath, 0 );
-			GFileManager->MakeDirectory( *GSys->SaveSlotPath, 0 );
+			GFileManager->MakeDirectory( *GSys->SavePath, 1 );
+			GFileManager->MakeDirectory( *GSys->SaveSlotPath, 1 );
 			appSprintf( Filename, TEXT("%s") PATH_SEPARATOR TEXT("Save%i.usa"), *GSys->SaveSlotPath, appAtoi(Str) );
 			
 			debugf( NAME_Log, TEXT("Loading game... filename: %s"), Filename );
@@ -483,8 +502,8 @@ UBOOL UGameEngine::Exec( const TCHAR* Cmd, FOutputDevice& Ar )
 		
 		// Make sure we have the save directory
 
-		GFileManager->MakeDirectory( *GSys->SavePath, 0 );
-		GFileManager->MakeDirectory( *GSys->SaveSlotPath, 0 );
+		GFileManager->MakeDirectory( *GSys->SavePath, 1 );
+		GFileManager->MakeDirectory( *GSys->SaveSlotPath, 1 );
 		
 		// ********* Persistent Actor  *****************
 		
@@ -698,8 +717,14 @@ UBOOL UGameEngine::Browse( FURL URL, const TMap<FString,FString>* TravelInfo, FS
 			TCHAR Filename[256], SavedPortal[256];
 			appSprintf( Filename, TEXT("%s") PATH_SEPARATOR TEXT("Game%i.usa"), *GSys->SaveSlotPath, GLevel->GetLevelInfo()->HubStackLevel-1 );
 			appStrcpy( SavedPortal, *URL.Portal );
-			URL = FURL( &URL, Filename, TRAVEL_Partial );
-			URL.Portal = SavedPortal;
+			// Same Unix '/' vs URL-syntax hazard as the load branch below: parsing this "../Save/GameN.usa"
+			// path as URL text would mangle it to the default map. Carry the base's options via TRAVEL_Partial
+			// (which also drops the "pop"/push/peer ops as before), then set the file path on Map directly.
+			FURL PopURL( &URL, TEXT(""), TRAVEL_Partial );
+			PopURL.Map    = Filename;
+			PopURL.Portal = SavedPortal;
+			PopURL.Valid  = 1;
+			URL = PopURL;
 		}
 		else return 0;
 		unguard;
@@ -716,11 +741,20 @@ UBOOL UGameEngine::Browse( FURL URL, const TMap<FString,FString>* TravelInfo, FS
 		// Handle loadgame.
 		guard(LoadURL);
 		FPushMemTag Push(TEXT("LoadGame"));
-		FString Error, Temp=FString::Printf( TEXT("%s") PATH_SEPARATOR TEXT("Save%i.usa?load"), *GSys->SaveSlotPath, appAtoi(Option) );
-		if( LoadMap(FURL(&LastURL,*Temp,TRAVEL_Partial),NULL,NULL,Error) )
+		FString Error;
+		// The savegame file path (e.g. "../Save/Slot1/Save9.usa") must NOT be parsed as URL text. On Unix
+		// PATH_SEPARATOR is '/', which FURL treats as URL host/portal syntax and mangles the path down to
+		// the default map ("Index.unr") -- so quickload failed with "Can't find file 'Index.unr'". (On
+		// Windows the separator is '\', which FURL leaves alone, so this never bit there.) Build the URL
+		// from the base's carried options plus the "load" flag, then assign the file path to Map directly,
+		// bypassing the text parser. This reproduces exactly the FURL layout stock UT gets on Windows.
+		FURL LoadURL( &LastURL, TEXT("?load"), TRAVEL_Partial );
+		LoadURL.Map = FString::Printf( TEXT("%s") PATH_SEPARATOR TEXT("Save%i.usa"), *GSys->SaveSlotPath, appAtoi(Option) );
+		if( LoadMap(LoadURL,NULL,NULL,Error) )
 		{
 			// Copy the hub stack.
-			for( INT i=0; i<GLevel->GetLevelInfo()->HubStackLevel; i++ )
+			INT i;
+			for( i=0; i<GLevel->GetLevelInfo()->HubStackLevel; i++ )
 			{
 				TCHAR Src[256], Dest[256];//!!
 				appSprintf( Src, TEXT("%s") PATH_SEPARATOR TEXT("Save%i%i.usa"), *GSys->SaveSlotPath, appAtoi(Option), i );
@@ -729,7 +763,7 @@ UBOOL UGameEngine::Browse( FURL URL, const TMap<FString,FString>* TravelInfo, FS
 			}
 			while( 1 )
 			{
-				Temp = FString::Printf( TEXT("%s") PATH_SEPARATOR TEXT("Game%i.usa"), *GSys->SaveSlotPath, i++ );
+				FString Temp = FString::Printf( TEXT("%s") PATH_SEPARATOR TEXT("Game%i.usa"), *GSys->SaveSlotPath, i++ );
 				if( GFileManager->FileSize(*Temp)<=0 )
 					break;
 				GFileManager->Delete( *Temp );
@@ -893,7 +927,8 @@ ULevel* UGameEngine::LoadMap( const FURL& URL, UPendingLevel* Pending, const TMa
 		if( Pending )
 		{
 			// Verify that we can load everything needed for client in this network level.
-			for( INT i=0; i<PackageMap->List.Num(); i++ )
+			INT i;
+			for( i=0; i<PackageMap->List.Num(); i++ )
 				PackageMap->List(i).Linker = GetPackageLinker
 				(
 					PackageMap->List(i).Parent,
@@ -902,13 +937,47 @@ ULevel* UGameEngine::LoadMap( const FURL& URL, UPendingLevel* Pending, const TMa
 					NULL,
 					&PackageMap->List(i).Guid
 				);
+#ifdef __EMSCRIPTEN__
+			// ufront (2.79o): with catching off, a package that cannot be had comes back NULL from GetPackageLinker --
+			// not found, or found in ANOTHER VERSION than the server's ("version mismatch": a mod the player has in a
+			// different version, which aborted the whole module on a real server). Fail the join HERE with the reason
+			// the native throw carries: before VerifyLinker dereferences it, and before the live level is torn down.
+			for( i=0; i<PackageMap->List.Num(); i++ )
+				if( !PackageMap->List(i).Linker )
+				{
+					const TCHAR* Name = PackageMap->List(i).Parent->GetName();
+					TCHAR Found[256];
+					const UBOOL HaveFile = appFindPackageFile( Name, &PackageMap->List(i).Guid, Found );
+					Error = FString::Printf( HaveFile ? LocalizeError("PackageVersion") : LocalizeError("PackageNotFound"), Name );
+					EndLoad();
+					SetProgress( LocalizeError(TEXT("UrlFailed"),TEXT("Core")), *Error, 6.0 );
+					return NULL;
+				}
+#endif
 			for( i=0; i<PackageMap->List.Num(); i++ )
 				VerifyLinker( PackageMap->List(i).Linker );
 			if( PackageMap->List.Num() )
 				MapParent = PackageMap->List(0).Parent;
 		}
-		LoadObject<ULevel>( MapParent, TEXT("MyLevel"), *URL.Map, LOAD_Verify | LOAD_Throw | LOAD_NoWarn, NULL );
+		ULevel* Verified = LoadObject<ULevel>( MapParent, TEXT("MyLevel"), *URL.Map, LOAD_Verify | LOAD_Throw | LOAD_NoWarn, NULL );
 		EndLoad();
+#ifdef __EMSCRIPTEN__
+		// 2.12 hardening (mirrors engine-unreal1 LoadMap / ut2004): with C++ exception CATCHING disabled on the
+		// web build, SafeLoadError no longer re-throws, so a failed VERIFY of a missing/bad map arrives here as a
+		// NULL object (the catch() below is dead code). Bail NOW — BEFORE DissociateViewports/ExitLevel tear down
+		// the live level + player actor. Otherwise a RUNTIME `open <missing>` destroys the current player actor and
+		// nulls GLevel, then the old post-teardown guard returns NULL leaving Client->Viewports(0)->Actor dangling,
+		// and the very next UGameEngine::Tick NULL-derefs it (Actor->GetLevel()). At boot the teardown is a no-op
+		// (no viewport yet, GLevel already NULL), which is why the old guard sufficed only for the autostart path (2.6g).
+		if( !Verified )
+		{
+			Error = FString(TEXT("Could not load map ")) + URL.Map;
+			SetProgress( LocalizeError(TEXT("UrlFailed"),TEXT("Core")), *URL.Map, 6.0 );
+			return NULL;
+		}
+#else
+		(void)Verified;
+#endif
 
 #if HPDEMO
 		if( !Pending || !Pending->DemoRecDriver )
@@ -1065,6 +1134,19 @@ ULevel* UGameEngine::LoadMap( const FURL& URL, UPendingLevel* Pending, const TMa
 	guard(LoadLevel);
 	GLevel = LoadObject<ULevel>( MapParent, TEXT("MyLevel"), *URL.Map, LOAD_NoFail, NULL );
 	unguard;
+
+#ifdef __EMSCRIPTEN__
+	// 2.6g (mirrors engine-unreal1): the real load can now return NULL on the web build — a missing package/map
+	// resolves to NULL (GetPackageLinker) and StaticLoadObject no longer throws ObjectNotFound — even under
+	// LOAD_NoFail. Return NULL gracefully (the caller / UGameEngine::Init falls back to the Entry menu) instead
+	// of falling through to check(GLevel) below, which would abort on the NULL level.
+	if( !GLevel )
+	{
+		Error = FString(TEXT("Could not load map ")) + URL.Map;
+		SetProgress( LocalizeError(TEXT("UrlFailed"),TEXT("Core")), *URL.Map, 6.0 );
+		return NULL;
+	}
+#endif
 	
 	// If pending network level.
 	if( Pending )
@@ -1172,9 +1254,10 @@ ULevel* UGameEngine::LoadMap( const FURL& URL, UPendingLevel* Pending, const TMa
 	guard(SetupZoneTable);
 	QWORD OldConvConn[64];
 	QWORD ConvConn[64];
-	for( INT i=0; i<64; i++ )
+	INT i, j;
+	for( i=0; i<64; i++ )
 	{
-		for( INT j=0; j<64; j++ )
+		for( j=0; j<64; j++ )
 		{
 			OldConvConn[i] = GLevel->Model->Zones[i].Connectivity;
 			if( i == j )
@@ -1280,9 +1363,10 @@ ULevel* UGameEngine::LoadMap( const FURL& URL, UPendingLevel* Pending, const TMa
 					GLevel->Actors(i)->Touching[j] = NULL;
 
 		// Kill off actors that aren't interesting to the client.
+		INT i;
 		if( !GLevel->IsServer() )
 		{
-			for( INT i=0; i<GLevel->Actors.Num(); i++ )
+			for( i=0; i<GLevel->Actors.Num(); i++ )
 			{
 				AActor* Actor = GLevel->Actors(i);
 				if( Actor )
@@ -1370,7 +1454,8 @@ ULevel* UGameEngine::LoadMap( const FURL& URL, UPendingLevel* Pending, const TMa
 	TArray<AActor*> Actors;
 	Actors.AddItem(GLevel->Actors(0));
 	Actors.AddItem(GLevel->Actors(1));
-	for( INT i=2; i<GLevel->Actors.Num(); i++ )
+	INT i;
+	for( i=2; i<GLevel->Actors.Num(); i++ )
 		if( GLevel->Actors(i) && GLevel->Actors(i)->bStatic && !GLevel->Actors(i)->bAlwaysRelevant )
 			Actors.AddItem( GLevel->Actors(i) );
 	GLevel->iFirstNetRelevantActor=Actors.Num();
@@ -1719,6 +1804,28 @@ void UGameEngine::Tick( FLOAT DeltaSeconds )
 	}
 
 	// If game is paused, release the cursor.
+	//
+	// ufront 2.12 (web mouse — pointer-lock RE-engagement): NATIVE ONLY. On the web this stock
+	// pause/unpause path FIGHTS the whole-game-lock block below and strands the pointer permanently
+	// unlocked after the first menu. In a menu the web sets bShowWindowsMouse=1, so IsPaused flips
+	// true and this calls SetMouseCapture(0,0,0) -> SDL_SetRelativeMouseMode(SDL_FALSE). The block
+	// below only re-asserts capture when its cached Want CHANGES — but Want never changes (a live
+	// level stays up in the menu), so relative-mouse-mode is left OFF, and SDL's Emscripten mousedown
+	// re-grab (relative_mode && !has_pointer_lock -> emscripten_request_pointerlock) can then never
+	// fire again. Net effect the owner saw: the mouse locks EXACTLY ONCE, then never re-locks after
+	// the first ESC (the console shows zero further requestPointerLock calls). On the web the block
+	// below is the SOLE capture authority (owner wants the whole game LOCKED, menus included), so
+	// skip this release entirely — relative-mouse-mode is set once at boot and stays on.
+	//
+	// ufront 2.12 (native menu mouse): NATIVE SDL is now excluded here too (guard broadened to also skip
+	// PLATFORM_SDL) and uses the whole-game-lock block below. The native menu was broken the same way as the
+	// web one: releasing relative-mouse-mode in a menu drops NSDLViewport::TickInput into its ABSOLUTE-motion
+	// branch, where the OS pointer is window-bounded, so xrel/yrel stop at the screen edge and the UWindow
+	// cursor (driven by IK_MouseX/Y axis deltas) can't reach the corners in fullscreen. Holding relative mode
+	// (whole-game-lock) feeds unbounded deltas -> full-speed, corner-reachable cursor. This stock release block
+	// is thus left only for the legacy Win32 (WinDrv) path. WEB PREPROCESSING IS UNCHANGED: __EMSCRIPTEN__ is
+	// defined on web, so this block stays excluded exactly as before (was plain #ifndef __EMSCRIPTEN__).
+#if !defined(__EMSCRIPTEN__) && !defined(PLATFORM_SDL)
 	static UBOOL WasPaused=1;
 	if
 	(	Client
@@ -1737,6 +1844,58 @@ void UGameEngine::Tick( FLOAT DeltaSeconds )
 		WasPaused = IsPaused;
 	}
 	else WasPaused=0;
+#endif
+
+#ifdef PLATFORM_SDL
+	// ufront 2.12 (web + native SDL mouse — robust pointer lock; guard broadened __EMSCRIPTEN__ -> PLATFORM_SDL
+	// so NATIVE SDL uses this same whole-game-lock, fixing the native menu mouse — see the stock-block note
+	// above). WEB PREPROCESSING IS UNCHANGED: PLATFORM_SDL is defined on web too (USE_SDL is ON for Emscripten),
+	// so this block is still compiled on web exactly as before -> web wasm byte-identical. On native,
+	// SetMouseCapture -> SDL_SetRelativeMouseMode directly (there is no browser pointer-lock/ESC dance, so the
+	// SDL Emscripten re-grab notes below are web-only, harmless as comments).
+	//
+	// The stock capture path above only arms via the
+	// pause->unpause transition gated on Client->CaptureMouse (or the MOUSE_FirstHit click gates), and neither
+	// reliably engages SDL relative-mouse-mode on the web. Drive it directly here instead.
+	//
+	// Owner feedback (2.12): keep the mouse LOCKED for the WHOLE game, menus included. ⚠ SUPERSEDED BY
+	// 2.38 — see below. The 2.12 reasoning was: "UT99's UWindow menu cursor is RELATIVE (moved by
+	// IK_MouseX/IK_MouseY axis; UWindow ignores the absolute WindowsMouseX/Y). An UNLOCKED relative cursor
+	// desynced from the browser cursor (~half speed + offscreen-reentry drift, so the lower-right menu
+	// buttons were unreachable)."
+	//
+	// ★★ The premise was WRONG. UWindow does NOT ignore WindowsMouseX/Y — `WindowConsole.RenderUWindow`
+	// reads them directly, gated on `Viewport.bWindowsMouseAvailable`, and NSDLViewport simply never set
+	// that flag (engine-ut2004's SDL2Viewport does, which is why its menus have always been absolute).
+	// So the 2.12 cursor was relative only because the absolute path was switched off, and locking the
+	// pointer through menus was a workaround for a flag.
+	//
+	// 2.38 sets the flag (NSDLViewport::ResizeViewport) and pairs it here: RELEASE relative capture while
+	// a menu is up, so the browser delivers absolute motion, WindowsMouseX/Y track the real cursor, and
+	// the UWindow cursor lands exactly under it — the UT2004 model, and what makes a menu button
+	// addressable by position at all. Captured whenever a live level is up and NO menu is showing; the
+	// browser drops pointer lock on ESC anyway (which is what opens the menu), and SDL's Emscripten
+	// mousedown handler re-grabs it on the first click after the menu closes. State-change only (no
+	// per-frame SetRelativeMouseMode churn).
+	{
+		static INT WebCap = -1;
+		static INT WebMenu = -1;
+		UViewport* WV = ( Client && Client->Viewports.Num()==1 ) ? Client->Viewports(0) : NULL;
+		INT Menu = ( WV && WV->Actor && ( WV->Actor->bShowMenu || WV->bShowWindowsMouse ) ) ? 1 : 0;
+		INT Want = ( WV && GLevel && WV->Actor && !Menu ) ? 1 : 0;
+		if( WV && ( Want != WebCap || Menu != WebMenu ) )
+		{
+			debugf( TEXT("[webmouse] relative-capture=%i menu=%i (bShowMenu=%i bShowWinMouse=%i)"),
+				Want, Menu, WV->Actor ? (INT)WV->Actor->bShowMenu : -1, (INT)WV->bShowWindowsMouse );
+			if( Want != WebCap )
+			{
+				WV->SetMouseCapture( Want, Want, 0 );
+				WebCap = Want;
+			}
+			WebMenu = Menu;
+		}
+	}
+#endif
 
 	// Update subsystems.
 	UObject::StaticTick();				
@@ -1758,14 +1917,17 @@ void UGameEngine::Tick( FLOAT DeltaSeconds )
 
 	// HP2 specific - Handle player saving
 	guard(PlayerSaving);
-	APlayerPawn* Player = Client->Viewports(0)->Actor;
-	if( Client && Client->Viewports.Num() && Player->bQueuedToSaveGame )
+	// HP2 port: test Client/Viewports/Actor BEFORE dereferencing them (the original read
+	// Client->Viewports(0)->Actor first and never tested Player) -- a dedicated server/ucc has no Client,
+	// and after DissociateViewports the viewport's Actor is NULL; with exceptions off both abort here.
+	APlayerPawn* Player = ( Client && Client->Viewports.Num() ) ? Client->Viewports(0)->Actor : NULL;
+	if( Player && Player->bQueuedToSaveGame )
 	{
 		// We are queued to save the game...
 	
 		// Make sure we have a path to save to
-		GFileManager->MakeDirectory( *GSys->SavePath, 0 );
-		GFileManager->MakeDirectory( *GSys->SaveSlotPath, 0 );
+		GFileManager->MakeDirectory( *GSys->SavePath, 1 );
+		GFileManager->MakeDirectory( *GSys->SaveSlotPath, 1 );
 		
 		//DEBUG
 		TCHAR Filename[256];
@@ -1969,8 +2131,13 @@ void UGameEngine::SaveGame( INT Position )
 	guard(UGameEngine::SaveGame);
 
 	TCHAR Filename[256];
-	GFileManager->MakeDirectory( *GSys->SavePath, 0 );
-	GFileManager->MakeDirectory( *GSys->SaveSlotPath, 0 );
+	// Tree=1 (ufront 2.35): stock passed 0, a single mkdir. HP2 nests its saves one level deeper
+	// (SaveSlotPath = ../Save/SlotN), so the single mkdir can fail with ENOENT, ULinkerSave's
+	// CreateFileWriter then returns NULL and appThrowf's "Error opening file" — a caught "save failed"
+	// with exceptions enabled, ___cxa_throw -> abort() with -fno-exceptions (the web build). Every
+	// SavePath/SaveSlotPath MakeDirectory in this file passes 1 for the same reason.
+	GFileManager->MakeDirectory( *GSys->SavePath, 1 );
+	GFileManager->MakeDirectory( *GSys->SaveSlotPath, 1 );
 	appSprintf( Filename, TEXT("%s") PATH_SEPARATOR TEXT("Save%i.usa"), *GSys->SaveSlotPath, Position );
 	
 	debugf( NAME_Log, TEXT("Saving game... filename: %s"), Filename );
@@ -1987,7 +2154,8 @@ void UGameEngine::SaveGame( INT Position )
 	if( SavePackage( GLevel->GetOuter(), GLevel, 0, Filename, GLog ) )
 	{
 		// Copy the hub stack.
-		for( INT i=0; i<GLevel->GetLevelInfo()->HubStackLevel; i++ )
+		INT i;
+		for( i=0; i<GLevel->GetLevelInfo()->HubStackLevel; i++ )
 		{
 			TCHAR Src[256], Dest[256];
 			appSprintf( Src, TEXT("%s") PATH_SEPARATOR TEXT("Game%i.usa"), *GSys->SaveSlotPath, i );
