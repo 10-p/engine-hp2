@@ -354,3 +354,20 @@ boot download.
 1. Wildcard matching in `FFileManagerLinux::FindFiles`, or the `*_pa.usa` pattern (§2.4).
 2. Once (1) is done, an equivalent of the retail New-Game slot wipe.
 3. Optionally, a guard on `THUMBNAIL`/`SAVETHUMBNAIL` before the first frame.
+
+## 10. Loading a save at startup (checked 2026-09-26)
+
+| Engine | Startup form | Evidence |
+|---|---|---|
+| HP2 | `Game ?load=<n>` — straight into `<SaveSlotPath>/Save<n>.usa` | **run natively**: `LoadMap: ../Save/Save0.usa?load` → `Possessed PlayerPawn: harry Save0.Harry0` |
+| HP2 | `Game -LOAD=<n>` (retail "Continue"; with `-SAVESLOT=<k>` for a slot folder) — boots the title level, then travels into the save | **run natively**: `Loading game... filename: ../Save/Save0.usa` → `Possessed … Save0.Harry0` |
+| Unreal 1 | `Unreal ?load=<n>` | code only (tree is read-only here): the first token starts with `?` so `UGameEngine::Init` takes it as the URL, and `Browse`'s `load=` branch (`UnGame.cpp:424`) loads `Save<n>.usa` |
+| UT99 / OldSkool / 436 | `UnrealTournament ?load=<n>` | code only: same `Browse` branch (`UnGame.cpp:589` / `:1026`); `appIsGlobalOptionToken` returns false for a token starting with `?`. The frontend's 2.75 E2E proves the in-session `open ?load=0` |
+| UT2004 | n/a | the engine keeps `SAVEGAME`/`?load=` from UE2, but UT2004 ships no saved games — single-player progress is profiles (`Saves/*.uvx`), chosen in the menu |
+
+**On the web** (the generic launcher, so the same for every target): page-URL parameters become travel options, but
+**only when a `map` is present** — `/?load=0` alone reaches the engine as `Name=… CPUSPEED=3000` and boots the default
+level. `/?map=<any>&load=<n>` works: verified on hp2 (`Command line: PrivetDr?load=0 …` → `LoadMap:
+../Save/Save0.usa?load`, the saved Ch1Rictusempra state came up although the URL named PrivetDr). The Play panel's
+travel-options field (`load=0` + any map) is the same path. A launcher change that forwards travel options without a
+map (or a "Continue" button that picks the map itself) would make `?load=<n>` alone work — not implemented.
