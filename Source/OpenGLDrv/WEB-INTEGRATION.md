@@ -1,5 +1,10 @@
 # Integrating UTGLR (`OpenGLDrv`) into the UT99 web build — instructions for the ufront/web agent
 
+> **HP2 note.** This is the template's (UT99) integration record, kept for the *why*. For Harry Potter 2 the
+> driver is the fork's `hp2` branch built against the UE1 433 render face (see `PORTING.md` § HP2 / build 433);
+> the web wiring is the same (`USE_GL4ES` forced on under Emscripten, `OpenGLDrv.OpenGLRenderDevice` chosen by
+> `-UTGLRRENDERER` or the ini), with no engine, ABI or glue change. The HP2 target is `hp2`, not `ut99`.
+
 **Audience:** the agent integrating engine artifacts into the `ufront` monorepo (host page, build
 assembly, `targets/ut99`). This document is written by the engine-side (UTGLR port) author; it does **not**
 modify the monorepo — it tells you exactly what to change there.

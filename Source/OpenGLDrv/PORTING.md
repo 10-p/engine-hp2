@@ -1,5 +1,9 @@
 # Porting UTGLR to engine-ut99 (UE1 v400) — status & handoff
 
+> **HP2 (UE1 build 433) copy.** This file is the template's (engine-ut99) record, kept verbatim for the *why*
+> of the platform work. What differs for Harry Potter 2 — the macro split and the 433 render face (H1–H7) on
+> fork branch `hp2` — is in [§ HP2 / build 433](#hp2--build-433-fork-branch-hp2) at the end. Read that first.
+
 **What this is.** `Source/OpenGLDrv/` is [UTGLR](https://www.cwdohnal.com/utglr/) — Chris Dohnal's mature
 legacy-OpenGL UE1 render device (`OpenGLDrv.OpenGLRenderDevice`, written for **UT v436**) — ported to this
 engine (**ut99dc / UE1 v400**) and wired to run on **WebGL** via the **gl4es** (desktop-GL→GLES2)
@@ -167,3 +171,44 @@ an ini selecting `OpenGLDrv.OpenGLRenderDevice`:
 - Re-check the two type assumptions that differed from v436: **`DECLARE_CLASS` arity** and **absence of
   `FTime`**. If v200 differs again, extend the same `UTGLR_ENGINE_UT99DC`-style gate (or add a `_V200` one).
 - Everything is gated so upstream UTGLR and a v200 flavor can coexist; no engine edits to rebase.
+
+## HP2 / build 433 (fork branch `hp2`)
+
+Source: `/home/ion/hp2-ufrontend/utglr-copy`, branch `hp2` (FetchContent via `FETCHCONTENT_SOURCE_DIR_UTGLR`;
+the default fetch ref is `hp2`, `Source/CMakeLists.txt`). This package's CMake defines **both**
+`UTGLR_ENGINE_UT99DC` and `UTGLR_ENGINE_HP2`. Spec: `docs/porting/analysis/renderer-forks.md` §2–§3, §5.2
+(retail `Source/D3DDrv/Src/Direct3D7.cpp` is the behavioural reference), §6.
+
+**Macro scheme** (`OpenGL.h`, after the build-config check):
+
+| Macro | Meaning | Defined for |
+|-------|---------|-------------|
+| `UTGLR_ENGINE_UT99DC` | ufront **platform** layer (SDL2 shims, NSDLDrv-owned context, gl4es, web tweaks) | UT99 v400 and HP2 |
+| `UTGLR_ENGINE_V400` | derived: ut99dc engine **types** (3-arg `DECLARE_CLASS`, no `FTime`) | UT99 v400 only (`UT99DC && !HP2`) |
+| `UTGLR_ENGINE_HP2` | the 433 render face + HP2 blend semantics | HP2 only |
+| `UTGLR_HAS_ALPHABLEND` | derived feature: upstream's Rune/227 `PF_AlphaBlend` plumbing | Rune, 227, HP2 |
+| `PF_AlphaBlend` | synthetic `0x20000000` — the one `EPolyFlags` bit 433 leaves free; stripped from every incoming flag set | HP2 |
+
+HP2 takes upstream v436's branches at the three type sites (U1 4-arg `DECLARE_CLASS`, U2/U3 `FTime`
+frame limiter — `appSeconds()` returns `FTime`, `FTime - FTime` is `float`).
+
+**The 433 face and its semantics** (all under `UTGLR_ENGINE_HP2`):
+
+| # | What | Why |
+|---|------|-----|
+| H1 | `DrawComplexSurface(Frame, Surface, Facet, DWORD PolyFlags, BYTE cAlpha)`: draws with the flags **argument**. Lumos = `PF_HighShadowDetail` AND (`PF_Modulated`\|`PF_Translucent`): markers stripped, opacity `1 - cAlpha/255` as straight alpha (`glColor4f` alpha on unit 0; later modulate units pass alpha through with `COMBINE_ALPHA = REPLACE(PREVIOUS)`); fully faded non-occluding surfaces skipped; no detail pass and a faded fog pass over a see-through surface | `cAlpha` is transparency (255 = gone), only meaningful on Lumos surfaces (`Render/Src/UnRender.cpp` Lumos block); plain `PF_Modulated` (blob shadows) keeps the classic modulate blend |
+| H2 | `MaxVertices()` = **256**; `DrawTriangles(…, _WORD* Indices, INT NumIndices, …)`: indexed list / `Indices==NULL && NumIndices==NumPts` fan / plain list, each triangle through the buffered gouraud path | Render sizes its mesh/particle batch buffers from `MaxVertices()` once; all meshes (skeletal included), particles and decals use `DrawTriangles` |
+| — | the driver does **not** declare `DrawGouraudPolygon` (433's is a non-pure base forwarder to `DrawTriangles`); UTGLR's buffered body is the non-virtual `HP2DrawGouraudPolygon` | `nm` shows `MaxVertices`, `DrawTriangles`, 5-arg `DrawComplexSurface`, no `UOpenGLRenderDevice::DrawGouraudPolygon` |
+| H3 | `HP2AdjustPolyFlags`: `PF_Highlighted\|PF_Translucent` → `PF_AlphaBlend` (masked wins) | fading actors (`Opacity < 1`) must blend straight, not additive |
+| H4 | `PF_AlphaBlend` → `GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA`, no `PF_Occlude` added, no additive fog pass; vertex alpha = `Light.W` (`FPlaneTo_RGBA`) | 433 puts per-vertex opacity in `Light.W` |
+| H5 | alpha-palette tiles: `PF_Highlighted` without `PF_Occlude` | D3D7 433; transparent texels of world sprites must not write depth |
+| H6 | two-sided depth bias (`PF_TwoSided` polygon offset) | **deferred**: decide at first light (renderer-forks Q3) |
+| H7 | `Draw3DLine` honours `LINE_PreTransformed` | mirrors the 433 base `Draw3DLine` |
+
+Also on HP2: `UseFragmentProgram` is forced off (the ARB complex-surface programs use the primary alpha as the
+lightmap-scale selector and cannot carry Lumos opacity; off by default and unavailable on gl4es anyway).
+`GetOsSurface` is not overridden (WinDrv-only). The UT99 v400 build of the same branch preprocesses
+byte-identically to `e60807b` (checked against the template's headers and exact flags, native and wasm).
+Web ini: keep `UseFragmentProgram=False`, `OneXBlending=False`.
+The comment above `target_compile_definitions` in this package's `CMakeLists.txt` still reads "ut99dc / UE1 v400";
+it is left as is on purpose (editing a `CMakeLists.txt` re-runs CMake in every configured build tree). The table above is current.
