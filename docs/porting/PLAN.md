@@ -259,7 +259,7 @@ Commit + `BUILD.md` native section.
 
 ## 11. Open questions
 
-Owner decisions — **answered 2026-09-26** (recorded in §2):
+Owner decisions — **answered 2026-09-26**:
 - **O1** `travel`: the Story-mode fallback (contract §1.5) — done as shipped. Enhancement for the END of the project
   (investigate only, implement nothing): how HP2 stores save games vs Unreal 1 and UT99 "oldskool" — is there a
   common pattern (e.g. the launcher reading every file in `Save/`) the frontend could share? Keep the inis in
