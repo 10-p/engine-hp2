@@ -70,7 +70,18 @@ the `[layout]` guard prints any C++/script size mismatch).
    After changing the web ini, clear the `hp2-user-data` store (or the site data): a persisted `Game.ini`
    shadows the preloaded `Default.ini`.
 
-Audio is the null `SoundDrv.NullAudioSubsystem` until PLAN Phase E lands `NOpenALDrv`.
+## Audio (NOpenALDrv)
+
+`Source/NOpenALDrv` is HP2's retail ALAudio ported to openal-soft (OpenAL 1.1; EFX, no EAX), native and web:
+compressed sounds are EA-XA ADPCM decoded by `EAXADecoder.{h,cpp}`, music is Ogg Vorbis opened by path
+(`../Music/<Song>.ogg`; libogg 1.3.5 + libvorbis 1.3.7 via FetchContent, built without `-fpack-struct` — Init
+checks `sizeof(OggVorbis_File)` agrees), dialog carries lip-sync data. Config: `[NOpenALDrv.NOpenALAudioSubsystem]`
+with ALAudio's float volumes (`SoundVolume`, `MusicVolume`) plus `OutputRate`/`UseHRTF`/`UseReverb`. Natively
+`libopenal.so.1` sits beside `Game` (Windows: `OpenAL32.dll`). The decoder's oracle test (decoded amplitude vs
+the lip-sync tables shipped in `AllDialog.uax`):
+`cmake --build <native tree> --target eaxa_oracle && <tree>/NOpenALDrv/eaxa_oracle Assets/Sounds` (see the
+header of `Source/NOpenALDrv/Test/EAXAOracle.cpp`). Headless runs: `SDL_AUDIODRIVER=dummy` or openal-soft's
+`ALSOFT_DRIVERS=null`.
 
 ## Windows (MinGW-w64, PLAN Phase F)
 

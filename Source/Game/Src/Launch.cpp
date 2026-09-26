@@ -418,16 +418,14 @@ static UEngine* InitEngine()
 	// driver auto-switches IpDrv.TcpNetDriver -> WebRTCDrv in step 2.7d. Keeping this in code (not the asset
 	// inis) leaves the game data pristine — the override travels with the engine.
 	GConfig->SetString( TEXT("Engine.Engine"), TEXT("ViewportManager"),      TEXT("NSDLDrv.NSDLClient") );
-	// ufront 2.12 (web audio): route audio to the real OpenAL subsystem (NOpenALDrv) instead of the silent
-	// null one — SFX via Emscripten's built-in OpenAL + .umx tracker music via a FetchContent'd libxmp,
-	// pumped from Update() (the web build is single-threaded; EFX/HRTF compiled out under NOPENAL_WEB). The
-	// driver's constructor defaults are audible (MasterVolume=255) so no ini is required. Native uses the
-	// same driver (openal-soft, full EFX). Mirrors engine-unreal1.
+	// Audio: NOpenALDrv, HP2's ALAudio ported to openal-soft (its web backend here): EA-XA sounds decoded in the
+	// driver, Ogg Vorbis music opened by path, streams pumped from Update(); the ini's [NOpenALDrv...] section
+	// carries ALAudio's float volumes. Native uses the same driver.
 #if HP2_HAS_NOPENALDRV
 	GConfig->SetString( TEXT("Engine.Engine"), TEXT("AudioDevice"),          TEXT("NOpenALDrv.NOpenALAudioSubsystem") );
 #else
-	// HP2: until the 433 NOpenALDrv exists (PLAN Phase E) the web build is silent. InitAudio loads the
-	// AudioDevice class LOAD_NoFail, so it must name a driver that is compiled in.
+	// A build without NOpenALDrv is silent. InitAudio loads the AudioDevice class LOAD_NoFail, so it must name a
+	// driver that is compiled in.
 	GConfig->SetString( TEXT("Engine.Engine"), TEXT("AudioDevice"),          TEXT("SoundDrv.NullAudioSubsystem") );
 #endif
 	// ufront 2.7d: BSD sockets don't work in a browser — auto-switch the net driver to the engine-local
