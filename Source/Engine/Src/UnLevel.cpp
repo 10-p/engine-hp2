@@ -587,8 +587,16 @@ bool ULevel::LoadPersistentActors( const FString& MapName )
 			// 
 			// *********
 			// Block 3.3i ) Load the Persistence Properties
+			// ufront: resync to the size the writer recorded, so a property block the reader did not consume
+			// exactly (a class that changed shape) cannot shift every following actor. Retail trusted the parse.
+			INT iPropStart = pActAr->Tell();
 			pAct->SerializePersistence( *pActAr );
 			IF_TRUE_MSG_AND_BREAK(pActAr->GetError(),TEXT("ULevelBase::LoadPersistentActors ERROR: Loading tagged properties!") ) 
+			if( pActAr->Tell() != iPropStart + iPropSize )
+			{
+				debugf( NAME_Warning, TEXT("*** Persistent actor %s: read %i of %i property bytes, resyncing"), strName, pActAr->Tell()-iPropStart, iPropSize );
+				pActAr->Seek( iPropStart + iPropSize );
+			}
 			
 			// bScriptInitialized should be set to false so that the actor will be placed 
 			// in there proper collision zone during level init at at UGameEngine::LoadMap

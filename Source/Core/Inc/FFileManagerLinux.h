@@ -122,6 +122,39 @@ public:
 		}
 		unguardSlow;
 	}
+	// HP2 persistent actors (ULevel::Save/LoadPersistentActors write <Map>_pa.usa through a PLAIN file archive,
+	// so the property tags' FNames need a file form): an INT byte length including the terminator, then the
+	// TCHARs -- retail FFileManagerWindows.h, "Added for LoadPersistence support". Without it the base FArchive
+	// skips names: the writer stored none and the reader left FPropertyTag::Name uninitialised, and reloading a
+	// revisited level crashed in appStrcpy(PrevTag,*Tag.Name). Hardened over retail: an implausible length or
+	// an unterminated string (e.g. a file written before this fix) sets the archive error and yields NAME_None,
+	// so the tag loop ends without applying garbage and the loader stops at its error check.
+	FArchive& operator<<( FName& Name )
+	{
+		guard(FArchiveFileReader<<Name);
+		if( ArIsLoading )
+		{
+			TCHAR Buffer[NAME_SIZE];
+			INT   Len = 0;
+			Serialize( &Len, sizeof(Len) );
+			if( ArIsError || Len < (INT)sizeof(TCHAR) || Len > (INT)sizeof(Buffer) || Len % sizeof(TCHAR) )
+			{
+				ArIsError = 1;
+				Name = NAME_None;
+				return *this;
+			}
+			Serialize( Buffer, Len );
+			if( ArIsError || Buffer[Len/sizeof(TCHAR)-1] != 0 )
+			{
+				ArIsError = 1;
+				Name = NAME_None;
+				return *this;
+			}
+			Name = FName( Buffer );
+		}
+		return *this;
+		unguard;
+	}
 protected:
 	FILE*			File;
 	FOutputDevice*	Error;
@@ -194,6 +227,22 @@ public:
 			appMemcpy( Buffer+BufferCount, V, Length );
 			BufferCount += Length;
 		}
+	}
+	// HP2 persistent actors: the writer half of FArchiveFileReader's FName form (see there) -- retail
+	// FFileManagerWindows.h, "Added for SavePersistence support".
+	FArchive& operator<<( FName& Name )
+	{
+		guard(FArchiveFileWriter<<Name);
+		if( ArIsSaving )
+		{
+			TCHAR Buffer[NAME_SIZE];
+			appStrncpy( Buffer, *Name, NAME_SIZE );
+			INT Len = (appStrlen(Buffer)+1)*sizeof(TCHAR);
+			Serialize( &Len, sizeof(Len) );
+			Serialize( Buffer, Len );
+		}
+		return *this;
+		unguard;
 	}
 	void Flush()
 	{
