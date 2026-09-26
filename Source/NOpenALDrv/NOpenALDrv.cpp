@@ -1117,6 +1117,15 @@ INT UNOpenALAudioSubsystem::PlaySound( AActor* Actor, INT Id, USound* Sound, FVe
 		{
 			Stream->Looping = 1;
 			Stream->Eof = 0;
+			// A short sound primed fewer buffers than it has; fill the rest (rewinding) so the loop has its cushion.
+			while( Stream->NumPrimed < Stream->NumBuffers )
+			{
+				const INT Bytes = FillStreamChunk( *Stream, &StreamScratch(0), StreamChunkSize );
+				if( Bytes <= 0 )
+					break;
+				alBufferData( Stream->Buffer[Stream->NumPrimed], Stream->Format, &StreamScratch(0), Bytes, Stream->Rate );
+				Stream->NumPrimed++;
+			}
 		}
 	}
 	else if( Sound->GetHandle() < 1 || Sound->GetHandle() > Buffers.Num() )
