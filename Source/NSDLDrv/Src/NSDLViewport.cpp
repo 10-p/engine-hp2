@@ -1110,6 +1110,10 @@ void UNSDLViewport::SetMouseCapture( UBOOL Capture, UBOOL Clip, UBOOL OnlyFocus 
 {
 	guard(UNSDLViewport::SetMouseCapture);
 
+	// HP2: the retail WinViewport flips this with capture. HPConsole/UWindow only trust WindowsMouseX/Y while
+	// it is up, so menus (uncaptured) get the absolute cursor and gameplay (captured) relative deltas only.
+	bWindowsMouseAvailable = !Capture;
+
 	// If only focus, reject.
 #ifndef __EMSCRIPTEN__
 	if( OnlyFocus )
@@ -1151,8 +1155,8 @@ UBOOL UNSDLViewport::TickInput()
 
 	SDL_Event Ev;
 	INT Tmp;
-	const FLOAT CurTime = appSeconds();
-	const FLOAT DeltaTime = CurTime - InputUpdateTime;
+	const FTime CurTime = appSeconds();
+	const FLOAT DeltaTime = CurTime - InputUpdateTime; // HP2 433: FTime - FTime -> FLOAT seconds
 
 	while( SDL_PollEvent( &Ev ) )
 	{
@@ -1342,13 +1346,45 @@ UBOOL UNSDLViewport::Exec( const TCHAR* Cmd, FOutputDevice& Ar )
 		Ar.Logf( TEXT("%ix%i"), SizeX, SizeY );
 		return 1;
 	}
+	else if( ParseCommand(&Cmd, TEXT("GetCurrentColorDepth")) )
+	{
+		// HP2's video options page (FESoundVideoPage) asks for these three, as the retail WinViewport answered.
+		Ar.Logf( TEXT("%i"), (ColorBytes?ColorBytes:2)*8 );
+		return 1;
+	}
+	else if( ParseCommand(&Cmd, TEXT("GetColorDepths")) )
+	{
+		Ar.Log( TEXT("16 32") );
+		return 1;
+	}
+	else if( ParseCommand(&Cmd, TEXT("GetCurrentRenderDevice")) )
+	{
+		if( RenDev )
+			Ar.Log( RenDev->GetClass()->GetPathName() );
+		return 1;
+	}
 	else if( ParseCommand(&Cmd, TEXT("SetRes")) )
 	{
 		INT X=appAtoi(Cmd), Y=appAtoi(appStrchr(Cmd,TEXT('x')) ? appStrchr(Cmd,TEXT('x'))+1 : appStrchr(Cmd,TEXT('X')) ? appStrchr(Cmd,TEXT('X'))+1 : TEXT(""));
 		if( X && Y )
 		{
+#ifdef __EMSCRIPTEN__
+			// HP2's options page calls SetRes on Apply; on the web the page owns the canvas size.
+			debugf( NAME_Log, TEXT("SetRes %ix%i ignored: the page sizes the canvas"), X, Y );
+#else
 			// Note: FullscreenViewport tracking removed - Unreal 1 specific
-			MakeFullscreen( X, Y, 1 );
+			// HP2: stay windowed unless already fullscreen (the retail SetRes kept the current mode).
+			if( IsFullscreen() )
+				MakeFullscreen( X, Y, 1 );
+			else
+			{
+				// Same path as a window resize event; remember it as the windowed size.
+				SetClientSize( X, Y, false );
+				Client->WindowedViewportX = X;
+				Client->WindowedViewportY = Y;
+				Client->SaveConfig();
+			}
+#endif
 		}
 		return 1;
 	}

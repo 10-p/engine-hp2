@@ -23,7 +23,7 @@ extern NSDLDRV_API UBOOL GTickDue;
 //
 class NSDLDRV_API UNSDLViewport : public UViewport
 {
-	DECLARE_CLASS( UNSDLViewport, UViewport, CLASS_Transient )
+	DECLARE_CLASS( UNSDLViewport, UViewport, CLASS_Transient, NSDLDrv )
 	NO_DEFAULT_CONSTRUCTOR( UNSDLViewport )
 
 	// Constructors.
@@ -84,7 +84,7 @@ private:
 	SDL_Rect DisplaySize;
 	SWORD JoyAxis[SDL_CONTROLLER_AXIS_MAX];
 	UBOOL QuitRequested;
-	FLOAT InputUpdateTime;
+	FTime InputUpdateTime; // HP2 433: appSeconds() returns FTime
 public:
 	INT HoldCount;
 private:
@@ -106,7 +106,7 @@ private:
 //
 class NSDLDRV_API UNSDLClient : public UClient, public FNotifyHook
 {
-	DECLARE_CLASS( UNSDLClient, UClient, CLASS_Transient|CLASS_Config )
+	DECLARE_CLASS( UNSDLClient, UClient, CLASS_Transient|CLASS_Config, NSDLDrv )
 
 	// Configuration.
 	INT DefaultDisplay;

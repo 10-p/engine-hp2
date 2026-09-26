@@ -86,6 +86,10 @@ void UNSDLClient::StaticConstructor()
 	InvertY             = 0;
 	InvertV             = 0;
 
+	// HP2 433: UClient's two extra config keys (registered in UnCamMgr.cpp); retail Default.ini values.
+	NoFractalAnim       = 0;
+	ParticleDensity     = 1;
+
 	unguard;
 }
 
@@ -245,7 +249,7 @@ void UNSDLClient::Tick()
 		}
 		else if (	Viewport->IsRealtime()
 			&&	Viewport->SizeX && Viewport->SizeY && Viewport->HoldCount == 0
-			&&	(!BestViewport || Viewport->LastUpdateTime<BestViewport->LastUpdateTime) )
+			&&	(!BestViewport || BestViewport->LastUpdateTime>Viewport->LastUpdateTime) ) // HP2 433: FTime has > but no <
 		{
 			BestViewport = Viewport;
 		}
@@ -457,7 +461,8 @@ void UNSDLClient::TryRenderDevice( UViewport* Viewport, const char* ClassName, U
 		}
 		else
 		{
-			debugf( NAME_Log, LocalizeError("Failed3D") );
+			// The Failed3D string lives in WinDrv.int, which this package has no localisation for.
+			debugf( NAME_Log, TEXT("Failed to initialize 3D rendering device") );
 			delete Viewport->RenDev;
 			Viewport->RenDev = NULL;
 		}
