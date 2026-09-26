@@ -374,11 +374,13 @@ map (or a "Continue" button that picks the map itself) would make `?load=<n>` al
 
 ## 11. Next: the single-player save list (designed, not implemented)
 
-The owner's follow-up is to let the launcher list saves and launch straight into one, driven by descriptor data.
-It is specified for the implementing agent in the ufrontend clone:
-`docs/migration/steps/SAVE-GAMES-KICKOFF-PROMPT.md` (branch `hp2`, rev 3 `9f33da3`). In short:
-- an optional `saveGames` block; absent = off (ut99, ut2004);
-- `layout: "slotsIni"` for unreal1 and OldSkool: the slot names in `Unreal.ini` / `oldskool.ini` are the list;
-- `layout: "slotsFolder"` for HP2 with the fixed folder `Save`: ONE save, `load=0`, no `-SAVESLOT`;
+Specified for the implementing agent in the ufrontend clone:
+`docs/migration/steps/SAVE-GAMES-KICKOFF-PROMPT.md` (branch `hp2`, rev 4). In short:
+- `saveGames { slotsIni {iniPath, section, key?, empty?}, load {travel} }` for unreal1 and OldSkool: the slot
+  names in `Unreal.ini` / `oldskool.ini` are the list;
+- absent = off (ut99, ut2004, hp2);
+- HP2 needs no list. A generic `defaults.engineOptions` gives it `CPUSPEED=3000 -LOAD=0` with map `PrivetDr`: verified
+  natively to continue when `Save/Save0.usa` exists and to start the Privet Drive intro when it does not;
 - a new HP2 game = the Storage panel's "Clear User Data";
+- a launch with no map lands on the title level and never loads the save;
 - the launch is always `<map>?load=<n>`, never a bare `load=`.
