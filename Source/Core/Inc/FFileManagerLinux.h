@@ -300,6 +300,33 @@ class FFileManagerLinux : public FFileManagerGeneric
 		if( Changed && CanCache )
 			FixPathCache().Set( Original, Out );
 	}
+	static UBOOL WildcardMatch( const ANSICHAR* Pattern, const ANSICHAR* Name )
+	{
+		// Iterative '*'/'?' glob with single-star backtracking; case-insensitive.
+		const ANSICHAR *Star=NULL, *Resume=NULL;
+		while( *Name )
+		{
+			if( *Pattern=='*' )
+			{
+				Star = Pattern++;
+				Resume = Name;
+			}
+			else if( *Pattern=='?' || (*Pattern && appToUpper(*Pattern)==appToUpper(*Name)) )
+			{
+				Pattern++;
+				Name++;
+			}
+			else if( Star )
+			{
+				Pattern = Star+1;
+				Name = ++Resume;
+			}
+			else return 0;
+		}
+		while( *Pattern=='*' )
+			Pattern++;
+		return *Pattern==0;
+	}
 	static UBOOL IsDirectory( const ANSICHAR* Path )
 	{
 		struct stat St;
@@ -415,56 +442,11 @@ public:
 		// Check each entry.
 		while( Direntp != NULL )
 		{
-			Match = false;
-
-			if( appStrcmp( File, "*" ) == 0 )
-			{
-				// Any filename.
-				Match = true;
-			}
-			else if( appStrcmp( File, "*.*" ) == 0 )
-			{
-				// Any filename with a '.'.
-				if( appStrchr( Direntp->d_name, '.' ) != NULL )
-					Match = true;
-			}
-			else if( File[0] == '*' )
-			{
-				// "*.ext" filename.
-				if( appStrstr( Direntp->d_name, (File + 1) ) != NULL )
-					Match = true;
-			}
-			else if( File[appStrlen( File ) - 1] == '*' )
-			{
-				// "name.*" filename.
-				if( appStrncmp( Direntp->d_name, File, appStrlen( File ) - 1 ) == 
-					0 )
-					Match = true;
-			}
-			else if( appStrstr( File, "*" ) != NULL )
-			{
-				// single str.*.str match.
-				TCHAR* star = appStrstr( File, "*" );
-				INT filelen = appStrlen( File );
-				INT starlen = appStrlen( star );
-				INT starpos = filelen - (starlen - 1);
-				TCHAR prefix[256];
-				appStrncpy( prefix, File, starpos );
-				star++;
-				if( appStrncmp( Direntp->d_name, prefix, starpos - 1 ) == 0 )
-				{
-					// part before * matches
-					TCHAR* postfix = Direntp->d_name + (appStrlen(Direntp->d_name) - starlen) + 1;
-					if ( appStrcmp( postfix, star ) == 0 )
-						Match = true;
-				}
-			}
-			else
-			{
-				// Literal filename.
-				if( appStrcmp( Direntp->d_name, File ) == 0 )
-					Match = true;
-			}
+			// HP2 port: a real wildcard match ('*' and '?' anywhere, case-insensitive, "*.*" = everything), the
+			// semantics of the Win32 FindFirstFile the retail game ran on. The stock Linux matcher only knew a few
+			// shapes and treated "*.ext" as a substring test, so HP2's "*_pa.*" (the persistent-actor files
+			// SavePersistentActorCache copies into the save slot) matched nothing and level progress was lost.
+			Match = appStrcmp( File, "*.*" ) == 0 || WildcardMatch( File, Direntp->d_name );
 
 			// HP2 port: honour the Files/Directories flags (the stock body returned both, and "." / "..").
 			if( Match && (!appStrcmp(Direntp->d_name,".") || !appStrcmp(Direntp->d_name,"..")) )
