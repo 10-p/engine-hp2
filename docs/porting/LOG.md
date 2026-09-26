@@ -78,3 +78,9 @@ One dated line per green milestone (PLAN §10). Newest last.
   --target targets/hp2/target.json` rebuilt both web engines at HEAD and wrote a verified 369 MB tree (zstd -19
   assets, 460/460 manifest entries, 714/714 deps, one-card portal one level up). `publish-hp2/hp2/` served as a
   site root boots `Ch1Rictusempra` on WebGL 2 with audio bound and no debug overlay. Upload/Azure await the owner.
+- 2026-09-26 — Save-game investigation (owner O1 enhancement, report only): `docs/porting/save-games-investigation.md`
+  (`33ad149`) — all three UE1 games write player files only under `Save/` + `System/<Game>.ini`/`User.ini`; a
+  recursive `Save/**` rule (skip `cache/`, `*.tmp`) is the shared pattern, needing a glue glob extension (not
+  implemented). It surfaced a port bug, fixed: `FindFiles` could not match `*_pa.*`, so HP2's per-level progress
+  (Jellybeans, secrets) never reached the save slot (`79b21ff`). After it: hp2 E2E 10/10, Windows rebuilt, and the
+  publish folder re-published at `150e6fb` and boot-checked (title level, WebGL 2, openal-soft, music, debug off).
