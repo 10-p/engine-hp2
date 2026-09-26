@@ -289,7 +289,7 @@ Verify on the first boots (do not decide in advance):
 - [x] A: Core (atomic header commit → UnUnix → Src files → UnMisc → UnObj/UnLinker) · Engine · Render+Fire · SoftDrv (template base) · Editor · syntax probe + varargs census · `compare.py` on all four `.u`
 - [x] B: NullDrv · SoundDrv · NSDLDrv · launcher delta + native ini table · IpDrv · run tree · **boots to `startup.MyLevel` (SoftDrv, NullDrv), zero `[layout]`** · first-boot log committed · RSS measured · SoftDrv screenshots · UCC smoke
 - [x] C: XOpenGLDrv hp2-v433-compat (`a5ec7d5..5b376cc`) · UTGLR hp2 (`6ad2b62..48b2681`) · native GL `Ch1Rictusempra` renders on both (Mesa llvmpipe, no GL errors); C7/H6 two-sided depth bias still open
-- [ ] D: web inis ✓ · W1 link ✓ · W2 smoke ✓ · `targets/hp2` + manifests + tests ✓ (ufrontend `22aa692..17b0852`) · W3 loader sites · `targets/hp2` + manifests + tests + E2E · **web boot to the title map on XOpenGL** · map load · persistence
+- [~] D: web inis ✓ · W1 link ✓ · W2 smoke ✓ · `targets/hp2` + manifests + tests ✓ (ufrontend `22aa692..17b0852`) · **web boot to the title map on XOpenGL ✓** (`yarn e2e --target hp2` 6/6; UTGLR/gl4es, SoftDrv, NullDrv also boot) · map load ✓ (PrivetDr, Ch1Rictusempra) · persistence (key binding survives reload) — TODO · W3 loader-robustness sweep — TODO · W3 loader sites · `targets/hp2` + manifests + tests + E2E · **web boot to the title map on XOpenGL** · map load · persistence
 - [ ] E: EA-XA decoder + oracle · NOpenALDrv from ALAudio · vorbis · web audio ON
 - [ ] F: Windows `Game.exe` under wine
 - [ ] G: root publish track chosen · Azure Option A prepared (deploy on go-ahead)

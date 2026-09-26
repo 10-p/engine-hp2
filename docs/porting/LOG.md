@@ -53,3 +53,10 @@ One dated line per green milestone (PLAN §10). Newest last.
   `Name subsystem initialized` … all 15 packages bound … `LoadMap: Entry` → `FailedBrowse`; no UWeb.
   ufrontend `targets/hp2` complete (460 files / 476 MB served, 714/714 refs, precache 231 files / 131.7 MB
   without AllDialog.uax), `yarn gates` green; web log name fixed (`GModule="Game"`, `36e321c`).
+- 2026-09-26 — **THE WEB BUILD RUNS.** `build-wasm-perf` → `yarn build --target hp2` → `yarn e2e --target hp2`:
+  **6/6 pass** (XOpenGL WebGL 2 first light to `startup.MyLevel` + `Possessed PlayerPawn`; SoftDrv discriminator;
+  `?map=PrivetDr` direct load; launcher UI + telemetry silence). Visually confirmed in headless Chromium (GPU via
+  ANGLE/Vulkan): the title level on XOpenGL (`Created WebGL 2.0 context on the worker`) and on UTGLR/gl4es
+  (`Created WebGL 1.0 context`, `GL_VERSION 2.1 gl4es wrapper 1.1.7`), `Ch1Rictusempra` gameplay on XOpenGL,
+  NullDrv boots. Silent (SoundDrv) until Phase E. Remaining for Acceptance D: key-binding persistence across a
+  reload, the W3 loader sweep, `docs` (BUILD.md web section).
