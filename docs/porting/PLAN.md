@@ -281,7 +281,7 @@ Verify on the first boots (do not decide in advance):
 - **O10** ~~Resident heap~~ — **native answer: no `-LAZY`**: RSS 168 MB (menu), 185 MB `Ch6WizardCard`, 189 MB `Ch1Rictusempra`, 199 MB `Entryhall_hub`, 204 MB `Adv6Goyle` (SoftDrv, null audio). Re-measure the wasm heap in Phase D.
 - **O11** HUD scale at 21:9 (HP2 sizes from `Canvas.SizeX`).
 - **O12** Menu cursor double-move when NSDL emits both `MousePosition` and `IK_MouseX/Y` in absolute mode?
-- **O13** Stereo placement sign after the openal-soft coordinate conversion.
+- **O13** ~~Stereo sign~~ — **answered**: a source to the Unreal right plays in the right channel only (measured natively, Phase E).
 - **O14** Do the shipped `.u` files contain `EX_DebugInfo` tokens?
 - **O15** `UEngineTextureFactory` (declared package `Editor`, implemented in Engine) — any duplicate registration in the static binary? (`obj list class=EngineTextureFactory`).
 - **O16** Does HP2 ever push hubs (`HubStackLevel`/`?pop` → extra `Game<i>.usa`)?
@@ -297,7 +297,7 @@ Verify on the first boots (do not decide in advance):
 - [x] B: NullDrv · SoundDrv · NSDLDrv · launcher delta + native ini table · IpDrv · run tree · **boots to `startup.MyLevel` (SoftDrv, NullDrv), zero `[layout]`** · first-boot log committed · RSS measured · SoftDrv screenshots · UCC smoke
 - [x] C: XOpenGLDrv hp2-v433-compat (`a5ec7d5..5b376cc`) · UTGLR hp2 (`6ad2b62..48b2681`) · native GL `Ch1Rictusempra` renders on both (Mesa llvmpipe, no GL errors); C7/H6 two-sided depth bias still open
 - [x] D: web inis · W1 link · W2 smoke · W3 loader sweep (L10 `fd6910c`) · `targets/hp2` + manifests + tests (ufrontend `22aa692..42012c7`) · **web boot to the title map on XOpenGL** (`yarn e2e --target hp2`: boot, SoftDrv, direct map load, config persistence, save/load — all green; UTGLR/gl4es + NullDrv boot too) · BUILD.md web section
-- [ ] E: EA-XA decoder + oracle · NOpenALDrv from ALAudio · vorbis · web audio ON
+- [x] E: EA-XA decoder + oracle (`463bc88`; r ≥ 0.993 on 50 dialog lines) · NOpenALDrv from ALAudio (`d60cb36`, `c7141b6`) · vorbis · web audio ON (`8c61da4`) — native, web (E2E "audio" test) and Windows/wine all play music, EA-XA and lip-synced dialog
 - [x] F: Windows `Game.exe` under wine — first MinGW build, imports on the allow-list, `startup.MyLevel` on SoftDrv and `Ch1Rictusempra` gameplay on XOpenGL (wine + Mesa); fixed the thumbnail overrun it exposed (`0bda916`). Audio (L6) rides on Phase E
 - [ ] G: servable publish folder `/home/ion/hp2-ufrontend/publish-hp2` (Track A, no upload) · root publish + Azure — LAST (owner O2)
 - [ ] Last: investigate save-game storage HP2 vs Unreal 1 vs UT99 oldskool (+ ini naming) for a shared frontend pattern — report only, no implementation (owner O1)

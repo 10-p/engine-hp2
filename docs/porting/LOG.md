@@ -65,3 +65,12 @@ One dated line per green milestone (PLAN §10). Newest last.
   on SoftDrv, `Ch1Rictusempra` on XOpenGL (Mesa 4.3). Wine exposed a real bug on every target: HP2's 160×120
   save thumbnail read 960 rows from a 720-row 16:9 frame → fixed `0bda916` (web/native artifacts need a rebuild
   to carry it). Also: web persistence + save/load E2E green (ufrontend `42012c7`), W3 L10 `fd6910c`, BUILD.md.
+- 2026-09-26 — **Phase E (audio) complete** (agent): EA-XA decoder reproduces the shipped lip-sync oracle
+  (r 0.9959–0.9997 on the §11.1 sounds; min 0.9934 over 50 lines; all 2,994 XA sounds decode to their declared
+  length); NOpenALDrv = HP2's ALAudio on openal-soft 1.25.2 (EFX, no EAX), Ogg by path, lip sync; native capture
+  confirms music (`Music_StoryBook_v2.ogg`, r 0.997), XA owl hoots, Dobby/narrator lines; a 240 s PrivetDr →
+  FlyingFordCutScene → Adv1Willow run clean; O13 stereo sign correct. Web: hp2 E2E **10/10** incl. the new audio
+  test; Windows `Game.exe` + `OpenAL32.dll` under wine plays XA + lip-synced dialog. Corrections to the plan:
+  the title song is `Music_StoryBook_v2.ogg` (not `Intro_Movie_Music_Edit`); `Peeves_chase_v2 _mx.ogg` has a
+  space in its name (FetchFS encodes it); `PrivetDr` asks for `Music_temp_E3_cut_scene`, absent from retail.
+  Owner decisions O1–O5 applied (`-DEBUGMODE` `febcffb`; multiplayer hidden, ufrontend `6662d08`; gl4es original).
