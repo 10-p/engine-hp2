@@ -3,14 +3,17 @@
 	ufront: a no-op URenderDevice for a headless / "poor-man's dedicated server" run.
 =============================================================================*/
 
-#include "RenderPrivate.h"
+// HP2 433: no Render/Src/RenderPrivate.h; FSceneNode/FSurfaceInfo/FTransTexture/FSpanBuffer are declared
+// in Engine's UnRender.h.
+#include "Engine.h"
+#include "UnRender.h"
 
 /*------------------------------------------------------------------------------------
 	UNullRenderDevice.
 ------------------------------------------------------------------------------------*/
 
 //
-// ufront: a null render device — implements the v400 URenderDevice interface with no-op draw calls and no
+// ufront: a null render device — implements the URenderDevice interface (HP2: the 433 face) with no-op draw calls and no
 // GL context. Selected via -NULLRENDERER. The NSDL viewport decides GL-vs-software purely from the render
 // device NAME containing "OPENGL" (UNSDLViewport::OpenWindow, before Init runs; it ignores the BLIT_* type
 // and the device class). "NullDrv.NullRenderDevice" lacks "OPENGL", so the viewport creates an SDL_Texture
@@ -20,7 +23,7 @@
 //
 class DLL_EXPORT UNullRenderDevice : public URenderDevice
 {
-	DECLARE_CLASS(UNullRenderDevice,URenderDevice,CLASS_Config)
+	DECLARE_CLASS(UNullRenderDevice,URenderDevice,CLASS_Config,NullDrv)
 
 	// Constructors.
 	void StaticConstructor();
@@ -32,8 +35,12 @@ class DLL_EXPORT UNullRenderDevice : public URenderDevice
 	void Flush( UBOOL AllowPrecache );
 	void Lock( FPlane FlashScale, FPlane FlashFog, FPlane ScreenClear, DWORD RenderLockFlags, BYTE* HitData, INT* HitSize );
 	void Unlock( UBOOL Blit );
-	void DrawComplexSurface( FSceneNode* Frame, FSurfaceInfo& Surface, FSurfaceFacet& Facet );
-	void DrawGouraudPolygon( FSceneNode* Frame, FTextureInfo& Info, FTransTexture** Pts, INT NumPts, DWORD PolyFlags, FSpanBuffer* Span );
+	void DrawComplexSurface( FSceneNode* Frame, FSurfaceInfo& Surface, FSurfaceFacet& Facet, DWORD PolyFlags, BYTE cAlpha );
+	// HP2 433: Render sizes its mesh/particle vertex buffers from MaxVertices() and fills them before calling the
+	// device, so it must be > 0 -- 256, like every retail HP2 device. DrawGouraudPolygon is a non-pure base
+	// forwarder to DrawTriangles; devices do not declare it.
+	INT MaxVertices();
+	void DrawTriangles( FSceneNode* Frame, FTextureInfo& Info, FTransTexture** Pts, INT NumPts, _WORD* Indices, INT NumIndices, DWORD PolyFlags, FSpanBuffer* Span );
 	void DrawTile( FSceneNode* Frame, FTextureInfo& Info, FLOAT X, FLOAT Y, FLOAT XL, FLOAT YL, FLOAT U, FLOAT V, FLOAT UL, FLOAT VL, FSpanBuffer* Span, FLOAT Z, FPlane Light, FPlane Fog, DWORD PolyFlags );
 	void Draw2DLine( FSceneNode* Frame, FPlane Color, DWORD LineFlags, FVector P1, FVector P2 );
 	void Draw2DPoint( FSceneNode* Frame, FPlane Color, DWORD LineFlags, FLOAT X1, FLOAT Y1, FLOAT X2, FLOAT Y2, FLOAT Z );

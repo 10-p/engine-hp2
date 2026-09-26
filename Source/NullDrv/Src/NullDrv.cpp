@@ -51,8 +51,9 @@ void UNullRenderDevice::Exit() {}
 void UNullRenderDevice::Flush( UBOOL /*AllowPrecache*/ ) {}
 void UNullRenderDevice::Lock( FPlane, FPlane, FPlane, DWORD, BYTE*, INT* ) {}
 void UNullRenderDevice::Unlock( UBOOL /*Blit*/ ) {}
-void UNullRenderDevice::DrawComplexSurface( FSceneNode*, FSurfaceInfo&, FSurfaceFacet& ) {}
-void UNullRenderDevice::DrawGouraudPolygon( FSceneNode*, FTextureInfo&, FTransTexture**, INT, DWORD, FSpanBuffer* ) {}
+void UNullRenderDevice::DrawComplexSurface( FSceneNode*, FSurfaceInfo&, FSurfaceFacet&, DWORD, BYTE ) {}
+INT UNullRenderDevice::MaxVertices() { return 256; }
+void UNullRenderDevice::DrawTriangles( FSceneNode*, FTextureInfo&, FTransTexture**, INT, _WORD*, INT, DWORD, FSpanBuffer* ) {}
 void UNullRenderDevice::DrawTile( FSceneNode*, FTextureInfo&, FLOAT, FLOAT, FLOAT, FLOAT, FLOAT, FLOAT, FLOAT, FLOAT, FSpanBuffer*, FLOAT, FPlane, FPlane, DWORD ) {}
 void UNullRenderDevice::Draw2DLine( FSceneNode*, FPlane, DWORD, FVector, FVector ) {}
 void UNullRenderDevice::Draw2DPoint( FSceneNode*, FPlane, DWORD, FLOAT, FLOAT, FLOAT, FLOAT, FLOAT ) {}

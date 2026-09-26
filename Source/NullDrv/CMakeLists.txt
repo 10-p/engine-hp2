@@ -16,11 +16,8 @@ add_library(${PROJECT_NAME} ${LIB_TYPE} ${SRC_FILES})
 target_include_directories(${PROJECT_NAME}
   PUBLIC
   ${CMAKE_CURRENT_SOURCE_DIR}/Src
-  PRIVATE
-  # RenderPrivate.h / UnRender.h (FSceneNode / FSurfaceInfo / FSpanBuffer decls) come from ../Render/Src,
-  # exactly as SoftDrv / NOpenGLESDrv / XOpenGLDrv do.
-  ${CMAKE_CURRENT_SOURCE_DIR}/../Render/Src
 )
+# HP2 433: FSceneNode / FSurfaceInfo / FSpanBuffer come from Engine's UnRender.h (no RenderPrivate.h).
 
 target_link_libraries(${PROJECT_NAME} Render Engine Core)
 
