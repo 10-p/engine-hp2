@@ -108,20 +108,9 @@ CORE_API FString appClipboardPaste();
 	#define unguard				}
 	#define unguardf(msg)		}
 #else
-	#if _MSC_VER
-		#define guard(func)			{static const TCHAR __FUNC_NAME__[]=TEXT(#func); try{
-		#define unguard				}catch(TCHAR*Err){throw Err;}catch(...){appUnwindf(TEXT("%s"),__FUNC_NAME__); throw;}}
-		#define unguardf(msg)		}catch(TCHAR*Err){throw Err;}catch(...){appUnwindf(TEXT("%s"),__FUNC_NAME__); appUnwindf msg; throw;}}
-	#else
-		#define guard(func)			{static const TCHAR __FUNC_NAME__[]=TEXT(#func); \
-									__Context __LOCAL_CONTEXT__; try{ \
-									if(setjmp(__Context::Env)) { throw 1; } else {
-		#define unguard				}}catch(char*Err){throw Err;}catch(...) \
-									{appUnwindf(TEXT("%s"),__FUNC_NAME__); throw;}}
-		#define unguardf(msg)		}}catch(char*Err){throw Err;}catch(...) \
-									{appUnwindf(TEXT("%s"),__FUNC_NAME__); \
-									appUnwindf msg; throw;}}
-	#endif
+	#define guard(func)			{static const TCHAR __FUNC_NAME__[]=TEXT(#func); try{
+	#define unguard				}catch(TCHAR*Err){throw Err;}catch(...){appUnwindf(TEXT("%s"),__FUNC_NAME__); throw;}}
+	#define unguardf(msg)		}catch(TCHAR*Err){throw Err;}catch(...){appUnwindf(TEXT("%s"),__FUNC_NAME__); appUnwindf msg; throw;}}
 #endif
 
 //
@@ -203,18 +192,18 @@ CORE_API FString appFormat( FString Src, const TMultiMap<FString,FString>& Map )
 	Localization.
 -----------------------------------------------------------------------------*/
 
-CORE_API const TCHAR* Localize( const TCHAR* Section, const TCHAR* Key, const TCHAR* Package=GPackage, const TCHAR* LangExt=NULL, UBOOL Optional=0 );
-CORE_API const TCHAR* LocalizeError( const TCHAR* Key, const TCHAR* Package=GPackage, const TCHAR* LangExt=NULL );
-CORE_API const TCHAR* LocalizeProgress( const TCHAR* Key, const TCHAR* Package=GPackage, const TCHAR* LangExt=NULL );
-CORE_API const TCHAR* LocalizeQuery( const TCHAR* Key, const TCHAR* Package=GPackage, const TCHAR* LangExt=NULL );
-CORE_API const TCHAR* LocalizeGeneral( const TCHAR* Key, const TCHAR* Package=GPackage, const TCHAR* LangExt=NULL );
+CORE_API const TCHAR* Localize( const TCHAR* Section, const TCHAR* Key, const TCHAR* Package=THIS_PACKAGE, const TCHAR* LangExt=NULL, UBOOL Optional=0 );
+CORE_API const TCHAR* LocalizeError( const TCHAR* Key, const TCHAR* Package=THIS_PACKAGE, const TCHAR* LangExt=NULL );
+CORE_API const TCHAR* LocalizeProgress( const TCHAR* Key, const TCHAR* Package=THIS_PACKAGE, const TCHAR* LangExt=NULL );
+CORE_API const TCHAR* LocalizeQuery( const TCHAR* Key, const TCHAR* Package=THIS_PACKAGE, const TCHAR* LangExt=NULL );
+CORE_API const TCHAR* LocalizeGeneral( const TCHAR* Key, const TCHAR* Package=THIS_PACKAGE, const TCHAR* LangExt=NULL );
 
 #if UNICODE
-	CORE_API const TCHAR* Localize( const ANSICHAR* Section, const ANSICHAR* Key, const TCHAR* Package=GPackage, const TCHAR* LangExt=NULL, UBOOL Optional=0 );
-	CORE_API const TCHAR* LocalizeError( const ANSICHAR* Key, const TCHAR* Package=GPackage, const TCHAR* LangExt=NULL );
-	CORE_API const TCHAR* LocalizeProgress( const ANSICHAR* Key, const TCHAR* Package=GPackage, const TCHAR* LangExt=NULL );
-	CORE_API const TCHAR* LocalizeQuery( const ANSICHAR* Key, const TCHAR* Package=GPackage, const TCHAR* LangExt=NULL );
-	CORE_API const TCHAR* LocalizeGeneral( const ANSICHAR* Key, const TCHAR* Package=GPackage, const TCHAR* LangExt=NULL );
+	CORE_API const TCHAR* Localize( const ANSICHAR* Section, const ANSICHAR* Key, const TCHAR* Package=THIS_PACKAGE, const TCHAR* LangExt=NULL, UBOOL Optional=0 );
+	CORE_API const TCHAR* LocalizeError( const ANSICHAR* Key, const TCHAR* Package=THIS_PACKAGE, const TCHAR* LangExt=NULL );
+	CORE_API const TCHAR* LocalizeProgress( const ANSICHAR* Key, const TCHAR* Package=THIS_PACKAGE, const TCHAR* LangExt=NULL );
+	CORE_API const TCHAR* LocalizeQuery( const ANSICHAR* Key, const TCHAR* Package=THIS_PACKAGE, const TCHAR* LangExt=NULL );
+	CORE_API const TCHAR* LocalizeGeneral( const ANSICHAR* Key, const TCHAR* Package=THIS_PACKAGE, const TCHAR* LangExt=NULL );
 #endif
 
 /*-----------------------------------------------------------------------------
@@ -303,6 +292,7 @@ CORE_API TCHAR* appStrcpy( TCHAR* Dest, const TCHAR* Src );
 CORE_API INT appStrcpy( const TCHAR* String );
 CORE_API INT appStrlen( const TCHAR* String );
 CORE_API TCHAR* appStrstr( const TCHAR* String, const TCHAR* Find );
+CORE_API char* appStrstrFs( const TCHAR* String, const TCHAR* Find );
 CORE_API TCHAR* appStrchr( const TCHAR* String, INT c );
 CORE_API TCHAR* appStrcat( TCHAR* Dest, const TCHAR* Src );
 CORE_API INT appStrcmp( const TCHAR* String1, const TCHAR* String2 );
@@ -311,9 +301,9 @@ CORE_API INT appStrncmp( const TCHAR* String1, const TCHAR* String2, INT Count )
 CORE_API TCHAR* appStaticString1024();
 CORE_API ANSICHAR* appAnsiStaticString1024();
 
-CORE_API const TCHAR* appSpc( int Num );
-CORE_API TCHAR* appStrncpy( TCHAR* Dest, const TCHAR* Src, int Max);
-CORE_API TCHAR* appStrncat( TCHAR* Dest, const TCHAR* Src, int Max);
+CORE_API const TCHAR* appSpc( INT Num );
+CORE_API TCHAR* appStrncpy( TCHAR* Dest, const TCHAR* Src, INT Max);
+CORE_API TCHAR* appStrncat( TCHAR* Dest, const TCHAR* Src, INT Max);
 CORE_API TCHAR* appStrupr( TCHAR* String );
 CORE_API const TCHAR* appStrfind(const TCHAR* Str, const TCHAR* Find);
 CORE_API DWORD appStrCrc( const TCHAR* Data );
@@ -332,7 +322,7 @@ CORE_API void appTrimSpaces( ANSICHAR* String);
 	#include <stdarg.h>
 #endif
 
-typedef int QSORT_RETURN;
+typedef INT QSORT_RETURN;
 typedef QSORT_RETURN(CDECL* QSORT_COMPARE)( const void* A, const void* B );
 CORE_API void appQsort( void* Base, INT Num, INT Width, QSORT_COMPARE Compare );
 
@@ -377,6 +367,23 @@ CORE_API UBOOL ParseUBOOL( const TCHAR* Stream, const TCHAR* Match, UBOOL& OnOff
 CORE_API UBOOL ParseObject( const TCHAR* Stream, const TCHAR* Match, class UClass* Type, class UObject*& DestRes, class UObject* InParent );
 CORE_API UBOOL ParseLine( const TCHAR** Stream, TCHAR* Result, INT MaxLen, UBOOL Exact=0 );
 CORE_API UBOOL ParseLine( const TCHAR** Stream, FString& Resultd, UBOOL Exact=0 );
+// ufront 2.38 — is this command-line token a GLOBAL OPTION (`Key=Value`) rather than a URL?
+//
+// ★ The startup code takes the FIRST token of the command line as the map/URL to browse, skipping it
+// only when it starts with '-'. That was enough while every launcher happened to pass a flag first —
+// and it silently stopped being enough the moment one did not: `CPUSPEED=3000` (a global option every
+// web launch carries) became "the map", failed to load, and the game never reached its main menu.
+// A `Key=Value` token is an option wherever it sits; a URL that carries options spells them after a
+// '?' (`DM-Deck16][?Game=X`), which is exactly what tells the two apart.
+CORE_API UBOOL appIsGlobalOptionToken( const TCHAR* Token );
+// ufront 2.38 — apply every `-ini:<File>:[<Section>]:<Key>=<Value>` token on the command line.
+//
+// ★ The shipped launcher emits `-ini:User:[DefaultPlayer]:Name=<player>` for the Network panel's Player
+// Name box, and until 2.38 NOTHING in any of the four engines read it: the name only ever took effect
+// via a travel URL's `?Name=`, so hosting or joining from the game's OWN menus always logged you in as
+// "Player". `User` / `System` are the config cache's generic file names, translated by
+// FConfigCacheIni::Find, so no ini path is hardcoded. Call once, right after GConfig->Init.
+CORE_API void appApplyIniOverrides();
 CORE_API UBOOL ParseToken( const TCHAR*& Str, TCHAR* Result, INT MaxLen, UBOOL UseEscape );
 CORE_API UBOOL ParseToken( const TCHAR*& Str, FString& Arg, UBOOL UseEscape );
 CORE_API FString ParseToken( const TCHAR*& Str, UBOOL UseEscape );
@@ -434,21 +441,14 @@ CORE_API UBOOL appSaveStringToFile( const FString& String, const TCHAR* Filename
 	Memory functions.
 -----------------------------------------------------------------------------*/
 
-CORE_API void* appMemmove( void* Dest, const void* Src, INT Count );
 CORE_API INT appMemcmp( const void* Buf1, const void* Buf2, INT Count );
 CORE_API UBOOL appMemIsZero( const void* V, int Count );
 CORE_API DWORD appMemCrc( const void* Data, INT Length, DWORD CRC=0 );
 CORE_API void appMemswap( void* Ptr1, void* Ptr2, DWORD Size );
-CORE_API void appMemset( void* Dest, INT C, INT Count );
-
-#ifndef DEFINED_appMemcpy
-CORE_API void appMemcpy( void* Dest, const void* Src, INT Count );
-#endif
-
-#ifndef DEFINED_appMemzero
 CORE_API void appMemzero( void* Dest, INT Count );
-#endif
-
+CORE_API void* appMemmove( void* Dest, const void* Src, INT Count );
+CORE_API void appMemset( void* Dest, INT C, INT Count );
+CORE_API void appMemcpy( void* Dest, const void* Src, INT Count );
 //
 // C style memory allocation stubs.
 //
@@ -459,19 +459,40 @@ CORE_API void appMemzero( void* Dest, INT Count );
 //
 // C++ style memory allocation.
 //
-inline void* operator new( unsigned int Size, const TCHAR* Tag )
+// ufront 2.7b (web port): the C++ standard requires the first parameter of a replacement global
+// operator new to be size_t. On 32-bit x86/SH4 (native/Dreamcast) size_t == unsigned int, so UT99's
+// original `unsigned int` matched; on wasm32 size_t == unsigned long, so clang rejects `unsigned int`.
+// Use size_t (as engine-unreal1 does) — correct everywhere; identical to unsigned int on the 32-bit twins.
+//
+// UT_REPLACEMENT_ALLOC -- ufront 2.19d. The four no-extra-argument forms below are the REPLACEABLE
+// global ones, and a replacement operator new/delete may not be `inline` (clang says so:
+// -Winline-new-delete). Declared that way they are emitted OUT-OF-LINE as weak symbols whenever the
+// compiler does not inline them -- which at -O0 is always, in every object that allocates. wasm-ld then
+// resolves the PROGRAM-WIDE operator new to one of those, so Emscripten's own WasmFS static initializer
+// (priority 100, long before appInit) allocates through GMalloc, which at that moment is still the
+// pre-init error allocator and returns NULL -- make_shared builds its control block on nothing,
+// `weak_this` is never set, and OpenFileState::create dies in shared_from_this() with bad_weak_ptr.
+//
+// At -O2 and above they are inlined everywhere and never emitted, so system code keeps libc++'s
+// operator new. Forcing the inline makes -O0 behave EXACTLY as the optimised builds already did --
+// engine allocations to appMalloc, system allocations to libc++ -- rather than inventing a third
+// behaviour. Diagnosed on engine-ut2004 (110 objects emitted it at -O0, 0 at -O3); this engine carries
+// the same pattern and the same -sWASMFS. The Tag-taking placement forms are NOT replacement functions
+// and are left alone.
+#define UT_REPLACEMENT_ALLOC __attribute__((always_inline))
+inline void* operator new( size_t Size, const TCHAR* Tag )
 {
 	guardSlow(new);
 	return appMalloc( Size, Tag );
 	unguardSlow;
 }
-inline void* operator new( unsigned int Size )
+UT_REPLACEMENT_ALLOC inline void* operator new( size_t Size )
 {
 	guardSlow(new);
 	return appMalloc( Size, TEXT("new") );
 	unguardSlow;
 }
-inline void operator delete( void* Ptr )
+UT_REPLACEMENT_ALLOC inline void operator delete( void* Ptr )
 {
 	guardSlow(delete);
 	appFree( Ptr );
@@ -479,19 +500,19 @@ inline void operator delete( void* Ptr )
 }
 
 #if PLATFORM_NEEDS_ARRAY_NEW
-inline void* operator new[]( unsigned int Size, const TCHAR* Tag )
+inline void* operator new[]( size_t Size, const TCHAR* Tag )
 {
 	guardSlow(new);
 	return appMalloc( Size, Tag );
 	unguardSlow;
 }
-inline void* operator new[]( unsigned int Size )
+UT_REPLACEMENT_ALLOC inline void* operator new[]( size_t Size )
 {
 	guardSlow(new);
 	return appMalloc( Size, TEXT("new") );
 	unguardSlow;
 }
-inline void operator delete[]( void* Ptr )
+UT_REPLACEMENT_ALLOC inline void operator delete[]( void* Ptr )
 {
 	guardSlow(delete);
 	appFree( Ptr );

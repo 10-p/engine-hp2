@@ -7,9 +7,19 @@
 		* Severely amputated and mutilated by Brandon Reinhart
 		* Surgically altered by Jack Porter
 		* Mangled and rehabilitated by Brandon Reinhart
-		* Obfuscated by Daniel Vogel
 =============================================================================*/
 #if __GNUG__
+
+
+#if defined(PLATFORM_SDL)
+#include <SDL2/SDL.h>
+#else
+#error "Unsupported platform."
+#endif
+
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>  // ufront 2.12: EM_ASM for the return-to-launcher reload on normal exit (appRequestExit)
+#endif
 
 // Standard includes.
 #include <stdio.h>
@@ -25,12 +35,26 @@
 #include <utime.h>
 #include <sys/time.h>
 #include <sys/stat.h>
+#ifndef UNREAL_STATIC
 #include <dlfcn.h>
+#endif
+// ufront 2.33 (Windows/MinGW): this file is the platform layer for every GCC/Clang target now, Windows
+// included (Core/CMakeLists.txt gives UnVcWin32.cpp to MSVC only). Name resolution there is WinSock, and
+// UnMinGW.cpp holds the calls with no POSIX equivalent at all.
+#ifdef PLATFORM_WIN32
+#include <winsock2.h>
+#include <windows.h>
+#include <process.h>	// _spawnl / _spawnv
+#else
 #include <netdb.h>
+#endif
+#if !defined(PLATFORM_WIN32) && !defined(__EMSCRIPTEN__)
+#include <sys/wait.h>	// HP2 433: appGetProcReturnCode (waitpid)
+#endif
 
 // Core includes.
 #include "CorePrivate.h"
-
+#include "UnUnix.h"
 /*-----------------------------------------------------------------------------
 	Globals
 -----------------------------------------------------------------------------*/
@@ -40,11 +64,6 @@ ANSICHAR GModule[32];
 
 // Environment
 extern char **environ;
-
-// Signal
-static int SignalExit = 0;
-static int SignalCritical = 0;
-static bool AlreadyAborting = false;
 
 /*-----------------------------------------------------------------------------
 	USystem.
@@ -91,6 +110,12 @@ UBOOL USystem::Exec( const TCHAR* Cmd, FOutputDevice& Ar )
 		Ar.Logf( TEXT("MEMSTAT command not available.") );
 		return 1;
 	}
+	else if( ParseCommand(&Cmd,TEXT("EXIT")) )
+	{
+		Ar.Log( TEXT("Closing by request") );
+		appRequestExit( 0 );
+		return 1;
+	}
 	else if( ParseCommand(&Cmd,TEXT("APP")) )
 	{
 		//!UNIX No APP command.
@@ -108,18 +133,25 @@ UBOOL USystem::Exec( const TCHAR* Cmd, FOutputDevice& Ar )
 		INT RestLen = appStrlen( EndArg0 );
 		TCHAR Arg0[256];
 		appStrncpy( Arg0, Cmd, (CmdLen - RestLen) + 1 );
-		
+
+#ifdef PLATFORM_WIN32
+		// ufront 2.33: no fork() on Windows. _spawnl already means "start a new process and keep going",
+		// so the child/parent split collapses into spawn-then-exit.
+		if( _spawnl( _P_NOWAIT, "./ucc.exe", "ucc", "server", Arg0, (char*)NULL ) == -1 )
+			appErrorf( TEXT("Failed to launch process.") );
+		appRequestExit( 0 );
+#else
 		pid_t pid = fork();
 		if (pid != 0)
 		{
 			appSleep(3);
-			INT error = execl("./ucc", "ucc", "server", Arg0, NULL );
+			INT error = execl("./ucc", "ucc", "server", Arg0, (char*)NULL );
 			if (error == -1)
-				appErrorf( TEXT("Failed to launch process.") );			
+				appErrorf( TEXT("Failed to launch process.") );
 		} else {
 			appRequestExit( 0 );
 		}
-
+#endif
 		return 1;
 	}
 	else if( ParseCommand( &Cmd, TEXT("DEBUG") ) )
@@ -178,6 +210,30 @@ CORE_API void appRequestExit( UBOOL Force )
 		// Tell the platform specific code we want to exit cleanly from the main loop.
 		//!UNIX No quit message in UNIX.
 		GIsRequestingExit = 1;
+#ifdef __EMSCRIPTEN__
+		// ufront 2.12 (web): a NORMAL exit (Exit menu / `exit` console command / RELAUNCH route here; the crash
+		// path is the Force branch above — exit(1), typically via the error device — NOT this one) returns the
+		// page to the launcher instead of leaving a dead canvas. Navigate to location.pathname, which strips any
+		// autostart query (?map=…) so the shared frontend shows the launcher (its autostart gate keys off
+		// location.search). Deferred via setTimeout(0) so it fires after the blocking ASYNCIFY main loop unwinds.
+		// Crashes never reach here, so their console/error stays on screen. Mirrors engine-unreal1/engine-ut2004.
+		// ufront 2.13.2: MAIN_THREAD_EM_ASM, not EM_ASM. Under -sPROXY_TO_PTHREAD this runs on the worker,
+		// where `window` does not exist and WorkerLocation is read-only — the guard below would simply skip
+		// and the page would sit on a dead canvas forever (the E2E caught exactly that on the pilot:
+		// waitForURL timed out). Only the browser main thread can navigate. It is a plain EM_ASM on a
+		// non-threaded build, so both configurations keep working.
+#ifdef __EMSCRIPTEN_PTHREADS__
+		MAIN_THREAD_EM_ASM({
+#else
+		EM_ASM({
+#endif
+			if( typeof window !== 'undefined' )
+			{
+				console.log('[SHELL] Engine exit requested, returning to launcher');
+				setTimeout(function(){ window.location.href = window.location.pathname; }, 0);
+			}
+		});
+#endif
 	}
 	unguard;
 }
@@ -203,18 +259,39 @@ CORE_API void ClipboardPaste( FString& Result )
 /*-----------------------------------------------------------------------------
 	Shared libraries.
 -----------------------------------------------------------------------------*/
+#ifdef UNREAL_STATIC
 
 //
 // Load a library.
 //
-void* appGetDllHandle( const TCHAR* Filename )
+CORE_API void* appGetDllHandle( const char* Filename )
 {
 	guard(appGetDllHandle);
 
-	#if __STATIC_LINK
-		INT* FalseHandle;
-		return (void*) FalseHandle;
-	#endif
+	char Test[1024];
+	const char* PackageName = Filename;
+	char* Cur;
+
+	check(Filename);
+
+	// Get GLoadedPackage symbol name from full path.
+	while( ( Cur = appStrchr( PackageName, '/' ) ) != NULL )
+		PackageName = Cur + 1;
+	while( ( Cur = appStrchr( PackageName, '\\' ) ) != NULL )
+		PackageName = Cur + 1;
+	appSprintf( Test, "GLoaded%s", PackageName );
+	if( (Cur = appStrchr( Test, '.' )) != NULL )
+		*Cur = '\0';
+
+	return appGetStaticExport( Test );
+
+	unguard;
+}
+
+#else
+void* appGetDllHandle( const TCHAR* Filename )
+{
+	guard(appGetDllHandle);
 	check(Filename);
 	const TCHAR* PackageName = Filename;
 	TCHAR* Cur;
@@ -259,7 +336,7 @@ void* appGetDllHandle( const TCHAR* Filename )
 	return Result;
 	unguard;
 }
-
+#endif
 //
 // Free a library.
 //
@@ -268,8 +345,13 @@ void appFreeDllHandle( void* DllHandle )
 	guard(appFreeDllHandle);
 	check(DllHandle);
 
+#if defined(UNREAL_STATIC)
+	// nothing
+#elif defined(PLATFORM_WIN32)
+	FreeLibrary( (HMODULE)DllHandle );
+#else
 	dlclose( DllHandle );
-
+#endif
 	unguard;
 }
 
@@ -284,15 +366,16 @@ void* appGetDllExport( void* DllHandle, const TCHAR* ProcName )
 
 	void* Result;
 	TCHAR* Error;
-
+#if defined(UNREAL_STATIC)
+	return appGetStaticExport( ProcName );
+#else
 	dlerror();	// Clear any error condition.
-
 	Result = (void*)dlsym( DllHandle, appToAnsi(ProcName) );
 	Error = dlerror();
 	if( Error != NULL )
 		debugf( "dlerror: %s", Error );
 	return Result;
-
+#endif
 	unguard;
 }
 
@@ -303,9 +386,7 @@ void* appGetDllExport( void* DllHandle, const TCHAR* ProcName )
 void appDebugBreak()
 {
 	guard(appDebugBreak);
-#ifdef ASMLINUX
-	asm("int $03");
-#endif
+	//!UNIX Not implemented in UNIX.
 	unguard;
 }
 #endif
@@ -313,47 +394,88 @@ void appDebugBreak()
 /*-----------------------------------------------------------------------------
 	External processes.
 -----------------------------------------------------------------------------*/
-static TMap<pid_t,int>* ExitCodeMap = NULL;
 
-void* appCreateProc( const TCHAR* URL, const TCHAR* Parms , UBOOL bRealTime )
+// HP2 433 API (Inc/UnFile.h): returns a handle the caller polls with appGetProcReturnCode (Engine AStatLog
+// and the editor-only XA encoder in UnAudio.cpp). The template's 2-arg fire-and-forget form does not fit.
+void* appCreateProc( const TCHAR* URL, const TCHAR* Parms, UBOOL bRealTime )
 {
 	guard(appCreateProc);
 
 	debugf( TEXT("Create Proc: %s %s"), URL, Parms );
 
+#if defined(__EMSCRIPTEN__)
+	// No processes in the browser; appGetProcReturnCode(NULL) reports "finished, failed".
+	return NULL;
+#else
 	TCHAR LocalParms[PATH_MAX] = TEXT("");
-	appStrcpy(LocalParms, URL);
-	appStrcat(LocalParms, " ");
-	appStrcat(LocalParms, Parms);
+	appStrncpy( LocalParms, Parms, ARRAY_COUNT(LocalParms) );
 
-	pid_t pid = fork(); 
-	if (pid == 0)
-		_exit( system( LocalParms ) );
+	char* argv[128];
+	argv[0] = (char*) URL;
+	argv[1] = (char*) LocalParms;
+	INT j = 2;
+	INT k = appStrlen(LocalParms) - 1;
+	for( INT i=0; i<k && j<ARRAY_COUNT(argv)-1; i++ )
+	{
+		if (LocalParms[i] == ' ')
+		{
+			LocalParms[i] = 0;
+			argv[j++] = LocalParms + i + 1;
+		}
+	}
+	argv[j] = 0;
 
-	return (void*)pid;
+#ifdef PLATFORM_WIN32
+	// _spawnv(_P_NOWAIT) returns the process handle.
+	intptr_t Handle = _spawnv( _P_NOWAIT, URL, argv );
+	return Handle==-1 ? NULL : (void*)Handle;
+#else
+	pid_t pid = fork();
+	if( pid == 0 )
+	{
+		execv( URL, argv );
+		_exit( 127 );
+	}
+	return pid>0 ? (void*)(intptr_t)pid : NULL;
+#endif
+#endif
 	unguard;
 }
 
+// Returns 1 once the process has finished (exit code in *ReturnCode), 0 while it still runs. A NULL handle
+// (spawn failed, or the web) is reported as finished with -1 so polling loops terminate.
 UBOOL appGetProcReturnCode( void* ProcHandle, INT* ReturnCode )
 {
 	guard(appGetProcReturnCode);
-	int* p = ExitCodeMap->Find( (pid_t)ProcHandle );
-	if(p)
+	if( !ProcHandle )
 	{
-		*ReturnCode = *p;
-		ExitCodeMap->Remove( (pid_t)ProcHandle );
+		*ReturnCode = -1;
 		return 1;
 	}
-	return 0;
+#if defined(__EMSCRIPTEN__)
+	*ReturnCode = -1;
+	return 1;
+#elif defined(PLATFORM_WIN32)
+	DWORD Code = 0;
+	if( !GetExitCodeProcess( (HANDLE)ProcHandle, &Code ) )
+	{
+		*ReturnCode = -1;
+		return 1;
+	}
+	if( Code == STILL_ACTIVE )
+		return 0;
+	CloseHandle( (HANDLE)ProcHandle );
+	*ReturnCode = (INT)Code;
+	return 1;
+#else
+	int Status = 0;
+	pid_t Result = waitpid( (pid_t)(intptr_t)ProcHandle, &Status, WNOHANG );
+	if( Result == 0 )
+		return 0;
+	*ReturnCode = (Result>0 && WIFEXITED(Status)) ? WEXITSTATUS(Status) : -1;
+	return 1;
+#endif
 	unguard;
-}
-
-void HandleChild(int Signal)
-{
-	int Status;
-	pid_t pid;
-	while( (pid=waitpid(-1, &Status, WNOHANG)) > 0 )
-		ExitCodeMap->Set( pid, WEXITSTATUS(Status) );
 }
 
 /*-----------------------------------------------------------------------------
@@ -402,9 +524,9 @@ CORE_API DWORD appGetTime( const TCHAR* Filename )
 //
 CORE_API FTime appSecondsSlow()
 {
-	static double InitialTime = 0.0;
-	static double TimeCounter = 0.0;
-	double NewTime;
+	static DOUBLE InitialTime = 0.0;
+	static DOUBLE TimeCounter = 0.0;
+	DOUBLE NewTime;
 	struct timeval TimeOfDay;
 
 	gettimeofday( &TimeOfDay, NULL );
@@ -421,12 +543,6 @@ CORE_API FTime appSecondsSlow()
 	return TimeCounter;
 }
 
-#if !DEFINED_appCycles
-CORE_API DWORD appCycles()
-{
-	return (DWORD)appSeconds();
-}
-#endif
 
 //
 // Return the system time.
@@ -459,7 +575,7 @@ CORE_API void appSleep( FLOAT Seconds )
 {
 	guard(appSleep);
 
-	INT SleepTime = appRound(Seconds * 1000000);
+	INT SleepTime = (INT) (Seconds * 1000000);
 	usleep( SleepTime );
 
 	unguard;
@@ -500,8 +616,8 @@ static INT GetFileAgeDays( const TCHAR* Filename )
 		time_t CurrentTime, FileTime;
 		FileTime = Buf.st_mtime;
 		time( &CurrentTime );
-		FLOAT DiffSeconds = difftime( CurrentTime, FileTime );
-		return appRound(DiffSeconds / 60.0f / 60.0f / 24.0f);
+		DOUBLE DiffSeconds = difftime( CurrentTime, FileTime );
+		return (INT)(DiffSeconds / 60.0 / 60.0 / 24.0);
 	}
 	return 0;
 	unguard;
@@ -565,20 +681,18 @@ CORE_API FGuid appCreateGuid()
 /*-----------------------------------------------------------------------------
 	Clipboard
 -----------------------------------------------------------------------------*/
-//static FString ClipboardText;
+static FString ClipboardText;
 CORE_API void appClipboardCopy( const TCHAR* Str )
 {
 	guard(appClipboardCopy);
-//	ClipboardText = FString( Str );
+	ClipboardText = FString( Str );
 	unguard;
 }
 
 CORE_API FString appClipboardPaste()
 {
 	guard(appClipboardPaste);
-//	return ClipboardText;
-	FString Empty;
-	return Empty;
+	return ClipboardText;
 	unguard;
 }
 /*-----------------------------------------------------------------------------
@@ -586,28 +700,44 @@ CORE_API FString appClipboardPaste()
 -----------------------------------------------------------------------------*/
 
 // Get startup directory.
-CORE_API const TCHAR* appBaseDir()
+CORE_API const char* appBaseDir()
 {
-	guard(appBaseDir);
-	static TCHAR BaseDir[PATH_MAX]=TEXT("");
+	static char BaseDir[1024]="";
+
 	if( !BaseDir[0] )
 	{
-		// If the executable isn't launched from its own directory, then the
-		// dynamic linker won't be able to find the shared libraries.
-		getcwd( BaseDir, sizeof(BaseDir) );
-		appStrcat( BaseDir, "/" );
+		// Get directory this executable was launched from.
+#if defined(__EMSCRIPTEN__)
+		// ufront 2.7b: SDL_GetBasePath() returns "/" under Emscripten. The launcher chdir's to /System, so
+		// use getcwd() — config + the package-search Paths then resolve like a native install.
+		if( getcwd( BaseDir, sizeof(BaseDir) ) )
+			appStrcat( BaseDir, "/" );
+#elif defined(PLATFORM_SDL)
+		char* BasePath = SDL_GetBasePath();
+		appStrncpy( BaseDir, BasePath, sizeof(BaseDir) );
+		SDL_free( BasePath );
+#endif
+		// Fallback to CWD.
+		if ( !BaseDir[0] )
+			strcpy( BaseDir, "./" );
 	}
-	return BaseDir;
-	unguard;
-}
 
+	return BaseDir;
+}
 // Get computer name.
 CORE_API const TCHAR* appComputerName()
 {
 	guard(appComputerName);
 	static TCHAR Result[256]="";
 	if( !Result[0] )
+	{
+		// ufront 2.33: on Windows gethostname is a WinSock call and fails with WSANOTINITIALISED until
+		// WSAStartup has run — and this can be reached before IpDrv is loaded at all.
+#ifdef PLATFORM_WIN32
+		appWinSockInit();
+#endif
 		gethostname( Result, sizeof(Result) );
+	}
 	return Result;
 	unguard;
 }
@@ -618,7 +748,17 @@ CORE_API const TCHAR* appUserName()
 	guard(appUserName);
 	static TCHAR Result[256]="";
 	if( !Result[0] )
+#ifdef PLATFORM_WIN32
+	{
+		// ufront 2.33: no getlogin() on Windows. GetUserName is the equivalent; fall back to a constant
+		// rather than leaving the buffer empty, since callers treat this as always-valid.
+		DWORD Size = ARRAY_COUNT(Result);
+		if( !GetUserNameA( Result, &Size ) )
+			appStrcpy( Result, TEXT("Player") );
+	}
+#else
 		appStrncpy( Result, getlogin(), sizeof(Result) );
+#endif
 	return Result;
 	unguard;
 }
@@ -655,25 +795,21 @@ void appPlatformInit()
 	// Randomize.
 	srand( (unsigned)time( NULL ) );
 
-	// Exit code handling
-	ExitCodeMap = new TMap<pid_t,int>;
-
 	// CPU speed.
 	GTimestamp = 1;
-	DWORD a = appCycles();
-	appSleep(1);
-	DWORD b = appCycles();
-	DWORD CyclesPerSecond = b - a;
-	double ASecond = 1.0;
-	GSecondsPerCycle = 1.0 / CyclesPerSecond;
-	debugf( NAME_Init, TEXT("CPU Speed=%f MHz"), 0.000001 / GSecondsPerCycle );
+#if defined(PLATFORM_SDL)
+	debugf( NAME_Init, "Detected: %s", SDL_GetPlatform() );
 
-	struct sigaction sa_child;
-	sa_child.sa_handler = HandleChild;
-	sigemptyset( &sa_child.sa_mask );
-	sa_child.sa_flags = 0;
-	sigaction(SIGCHLD, &sa_child, 0);
-	
+	// CPU speed.
+	DOUBLE Frequency = SDL_GetPerformanceFrequency();
+	check(Frequency!=0.0);
+	GSecondsPerCycle = 1.0 / Frequency;
+	debugf( NAME_Init, "CPU Timer Freq=%f Hz", (FLOAT)Frequency );
+
+	// Get CPU info.
+	GPageSize = 4096; // TODO: sysconf?
+	GProcessorCount = SDL_GetCPUCount();
+#endif // PLATFORM_
 	unguard;
 }
 
@@ -716,179 +852,113 @@ char* appUnixPath( const TCHAR* Path )
 unsigned long appGetLocalIP( void )
 {
 	static unsigned long LocalIP = 0;
-	struct hostent *Hostinfo;
-	char Hostname[256];
 
 	if( LocalIP==0 )
 	{
+		struct hostent *Hostinfo;
+		char Hostname[256];
+#ifdef PLATFORM_WIN32
+		appWinSockInit();	// ufront 2.33 — see appComputerName above.
+#endif
 		gethostname( Hostname, sizeof(Hostname) );
 		Hostinfo = gethostbyname( Hostname );
-		LocalIP = *(unsigned long*)Hostinfo->h_addr_list[0];
+		if( Hostinfo && Hostinfo->h_addr_list[0] )
+			LocalIP = *(unsigned long*)Hostinfo->h_addr_list[0];
 	}
 	
 	return LocalIP;
 }
 
+//
+// Get time in seconds.
+//
+// HP2 433: returns FTime (32.32 fixed point). The counter is rebased on its first reading so FTime::GetFloat()
+// (a FLOAT) keeps sub-millisecond precision however long the machine has been up.
+static QWORD GStartCounter = 0;
+static QWORD appReadCounter()
+{
+#ifdef PLATFORM_MSVC
+	LARGE_INTEGER ret;
+	QueryPerformanceCounter(&ret);
+	return ret.QuadPart;
+#elif defined(PLATFORM_SDL)
+	return SDL_GetPerformanceCounter();
+#else
+	return 0;
+#endif
+}
+CORE_API FTime appSeconds()
+{
+	QWORD Now = appReadCounter();
+	if( !GStartCounter )
+		GStartCounter = Now - 1;
+	// FTime(double) scales by 2^32 into a signed 64-bit value: ~2.1e9 s of range.
+	return FTime( (DOUBLE)(Now - GStartCounter) * (DOUBLE)GSecondsPerCycle );
+}
+
+CORE_API DWORD appCycles()
+{
+	return (DWORD)appReadCounter();
+}
+
 /*-----------------------------------------------------------------------------
-	String functions.
+	HP2 433 additions: platform functions HP2's headers declare that only the
+	Win32 core (UnVcWin32.cpp, MSVC-only) defines.
 -----------------------------------------------------------------------------*/
 
-int stricmp( const char* s, const char* t )
+//
+// Per-user directory prefix for inis, the log and saves. Empty: everything stays relative to the
+// working directory (System/), the template's UT99 layout and the web's /System MEMFS/IDB tree.
+// Callers concatenate, so a non-empty value must end with a path separator.
+//
+CORE_API const TCHAR* appUserDir()
 {
-	int	i;
-	for( i = 0; tolower(s[i]) == tolower(t[i]); i++ )
-		if( s[i] == '\0' )
-			return 0;
-	return s[i] - t[i];
+	return TEXT("");
 }
 
-int strnicmp( const char* s, const char* t, int n )
+//
+// Process CPU time (UnGame.cpp load-time line, UnRender.cpp stats). Wall time on the web.
+// NOTE: never call clock() in Core -- UnFile.h #defines clock(Timer) as a stat macro.
+//
+CORE_API FTime appProcessSeconds()
 {
-	int	i;
-	if( n <= 0 )
-		return 0;
-	for( i = 0; tolower(s[i]) == tolower(t[i]); i++ )
-		if( (s[i] == '\0') || (i == n - 1) )
-			return 0;
-	return s[i] - t[i];
+#if defined(__EMSCRIPTEN__) || defined(PLATFORM_WIN32)
+	return appSeconds();
+#else
+	struct timespec ts;
+	if( clock_gettime( CLOCK_PROCESS_CPUTIME_ID, &ts ) != 0 )
+		return appSeconds();
+	return FTime( (DOUBLE)ts.tv_sec + (DOUBLE)ts.tv_nsec * 1e-9 );
+#endif
 }
 
-char* strupr( char* s )
+//
+// Streaming reader. The Win32 core runs vorbisfile/coda on a thread (UnVcWin32.cpp); off MSVC the audio
+// driver owns its streaming, so Core only provides link stubs (UnMisc.cpp's DestroyStream calls these).
+//
+UBOOL FFileStream::Read( INT StreamId, INT Bytes )
 {
-	int	i;
-	for( i = 0; s[i] != '\0'; i++ )
-		s[i] = toupper(s[i]);
-	return s;
+	return 0;
+}
+UBOOL FFileStream::Create( INT StreamId, const TCHAR* Filename )
+{
+	return 0;
+}
+UBOOL FFileStream::Create( INT StreamId, TLazyArray<BYTE>* RawData, INT NumBytes )
+{
+	return 0;
+}
+UBOOL FFileStream::Destroy( INT StreamId )
+{
+	return 1;
 }
 
-/*-----------------------------------------------------------------------------
-	Signal Handling
------------------------------------------------------------------------------*/
-jmp_buf __Context::Env;
-struct sigaction __Context::Act_SIGHUP;
-struct sigaction __Context::Act_SIGQUIT;
-struct sigaction __Context::Act_SIGILL;
-struct sigaction __Context::Act_SIGTRAP;
-struct sigaction __Context::Act_SIGIOT;
-struct sigaction __Context::Act_SIGBUS;
-struct sigaction __Context::Act_SIGFPE;
-struct sigaction __Context::Act_SIGSEGV;
-struct sigaction __Context::Act_SIGTERM;
-
-void __Context::StaticInit()
+//
+// Windows version probe used by the 433 launcher/engine paths.
+//
+CORE_API bool IsOSVer2kOrXP()
 {
-	// Only try once.
-	INT DefaultFlag = SA_ONESHOT;
-
-	// Install a handler for all signals.
-	Act_SIGHUP.sa_handler = HandleSignal;
-	sigemptyset( &Act_SIGHUP.sa_mask );
-	Act_SIGHUP.sa_flags = DefaultFlag;
-	sigaction( SIGHUP, &Act_SIGHUP, 0 );
-
-	Act_SIGQUIT.sa_handler = HandleSignal;
-	sigemptyset( &Act_SIGQUIT.sa_mask );
-	Act_SIGQUIT.sa_flags = DefaultFlag;
-	sigaction( SIGQUIT, &Act_SIGQUIT, 0 );
-
-	Act_SIGILL.sa_handler = HandleSignal;
-	sigemptyset( &Act_SIGILL.sa_mask );
-	Act_SIGILL.sa_flags = DefaultFlag;
-	sigaction( SIGILL, &Act_SIGILL, 0 );
-
-	Act_SIGTRAP.sa_handler = HandleSignal;
-	sigemptyset( &Act_SIGTRAP.sa_mask );
-	Act_SIGTRAP.sa_flags = DefaultFlag;
-	sigaction( SIGTRAP, &Act_SIGTRAP, 0 );
-
-	Act_SIGIOT.sa_handler = HandleSignal;
-	sigemptyset( &Act_SIGIOT.sa_mask );
-	Act_SIGIOT.sa_flags = DefaultFlag;
-	sigaction( SIGIOT, &Act_SIGIOT, 0 );
-
-	Act_SIGBUS.sa_handler = HandleSignal;
-	sigemptyset( &Act_SIGBUS.sa_mask );
-	Act_SIGBUS.sa_flags = DefaultFlag;
-	sigaction( SIGBUS, &Act_SIGBUS, 0 );
-
-	Act_SIGFPE.sa_handler = HandleSignal;
-	sigemptyset( &Act_SIGFPE.sa_mask );
-	Act_SIGFPE.sa_flags = DefaultFlag;
-	sigaction( SIGFPE, &Act_SIGFPE, 0 );
-
-	Act_SIGSEGV.sa_handler = HandleSignal;
-	sigemptyset( &Act_SIGSEGV.sa_mask );
-	Act_SIGSEGV.sa_flags = DefaultFlag;
-	sigaction( SIGSEGV, &Act_SIGSEGV, 0 );
-
-	Act_SIGTERM.sa_handler = HandleSignal;
-	sigemptyset( &Act_SIGTERM.sa_mask );
-	Act_SIGTERM.sa_flags = DefaultFlag;
-	sigaction( SIGTERM, &Act_SIGTERM, 0 );
-
-	signal( SIGPIPE, SIG_IGN );
-}
-
-void __Context::HandleSignal( int Sig )
-{
-	switch (Sig)
-	{
-		case SIGHUP:
-			printf( "Signal: SIGHUP [hangup]\n" );
-			SignalExit++;
-			break;
-		case SIGQUIT:
-			printf( "Signal: SIGQUIT [quit]\n" );
-			SignalExit++;
-			break;
-		case SIGILL:
-			printf( "Signal: SIGILL [illegal instruction]\n" );
-			SignalCritical++;
-			break;
-		case SIGTRAP:
-			printf( "Signal: SIGTRAP [trap]\n" );
-			SignalCritical++;
-			break;
-		case SIGIOT:
-			printf( "Signal: SIGIOT [iot trap]\n" );
-			SignalCritical++;
-			break;
-		case SIGBUS:
-			printf( "Signal: SIGBUS [bus error]\n" );
-			SignalCritical++;
-			break;
-		case SIGFPE:
-			printf( "Signal: SIGFPE [floating point exception]\n" );
-			SignalCritical++;
-			break;
-		case SIGSEGV:
-			printf( "Signal: SIGSEGV [segmentation fault]\n" );
-			SignalCritical++;
-			break;
-		case SIGTERM:
-			printf( "Signal: SIGTERM [terminate]\n" );
-			SignalExit++;
-			break;
-	}
-
-	if ( (SignalCritical > 0) || (SignalExit > 1) )
-	{
-		if (AlreadyAborting)
-		{
-			// Avoid calling appExit again.
-			AlreadyAborting = true;
-			printf( "Aborting.\n" );
-			appExit();
-		}
-		exit(1);
-	}
-	if ( SignalExit == 1 )
-	{
-		printf("Requesting Exit.\n");
-		appRequestExit( 0 );
-	}
-
-	longjmp( Env, 1 );
+	return 1;
 }
 
 #endif

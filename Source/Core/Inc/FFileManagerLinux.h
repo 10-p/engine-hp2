@@ -8,6 +8,8 @@
 
 #include <dirent.h>
 #include <unistd.h>
+#include <sys/stat.h>
+#include <cerrno>
 #include "FFileManagerGeneric.h"
 
 /*-----------------------------------------------------------------------------
@@ -231,7 +233,9 @@ public:
 	{
 		guard(FFileManagerLinux::CreateFileWriter);
 		if( Flags & FILEWRITE_EvenIfReadOnly )
-			chmod(TCHAR_TO_ANSI(Filename), __S_IREAD | __S_IWRITE);
+		{
+			chmod(TCHAR_TO_ANSI(Filename), S_IRUSR | S_IWUSR);
+		}
 		if( (Flags & FILEWRITE_NoReplaceExisting) && FileSize(Filename)>=0 )
 			return NULL;
 		const TCHAR* Mode = (Flags & FILEWRITE_Append) ? TEXT("ab") : TEXT("wb"); 
@@ -251,7 +255,9 @@ public:
 	{
 		guard(FFileManagerLinux::Delete);
 		if( EvenReadOnly )
-			chmod(TCHAR_TO_ANSI(Filename), __S_IREAD | __S_IWRITE);
+		{
+			chmod(TCHAR_TO_ANSI(Filename), S_IRUSR | S_IWUSR);
+		}
 		return unlink(TCHAR_TO_ANSI(Filename))==0 || (errno==ENOENT && !RequireExists);
 		unguard;
 	}
@@ -260,7 +266,13 @@ public:
 		guard(FFileManagerLinux::MakeDirectory);
 		if( Tree )
 			return FFileManagerGeneric::MakeDirectory( Path, Tree );
-		return mkdir(TCHAR_TO_ANSI(Path), __S_IREAD && __S_IWRITE && __S_IEXEC)==0 || errno==EEXIST;
+		// ufront 2.33: Windows' mkdir takes no mode — permissions are not a filesystem attribute there.
+		// (This manager is the launcher's on every platform; see UnrealTournament/Src/Launch.cpp.)
+#ifdef PLATFORM_WIN32
+		return mkdir(TCHAR_TO_ANSI(Path))==0 || errno==EEXIST;
+#else
+		return mkdir(TCHAR_TO_ANSI(Path), S_IRUSR | S_IWUSR | S_IXUSR)==0 || errno==EEXIST;
+#endif
 		unguard;
 	}
 	UBOOL DeleteDirectory( const TCHAR* Path, UBOOL RequireExists=0, UBOOL Tree=0 )
@@ -394,7 +406,11 @@ public:
 		guard(FFileManagerLinux::GetDefaultDirectory);
 		{
 			ANSICHAR Buffer[1024]="";
-			getcwd( Buffer, ARRAY_COUNT(Buffer) );
+			if( getcwd( Buffer, ARRAY_COUNT(Buffer) ) == NULL )
+			{
+				// Fallback to current directory string if getcwd fails.
+				appStrcpy( Buffer, "." );
+			}
 			return appFromAnsi( Buffer );
 		}
 		unguard;

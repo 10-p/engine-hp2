@@ -48,6 +48,7 @@ enum EPackageFlags
 enum ENativeConstructor    {EC_NativeConstructor};
 enum EStaticConstructor    {EC_StaticConstructor};
 enum EInternal             {EC_Internal};
+enum ENoInitConstructor    {EC_NoInitConstructor};
 enum ECppProperty          {EC_CppProperty};
 enum EInPlaceConstructor   {EC_InPlaceConstructor};
 
@@ -281,7 +282,6 @@ public:
 
 // Declare the base UObject class.
 
-#if !__STATIC_LINK
 #define DECLARE_BASE_CLASS( TClass, TSuperClass, TStaticFlags, TPackage ) \
 public: \
 	/* Identification */ \
@@ -295,34 +295,21 @@ public: \
 		{ return StaticAllocateObject( StaticClass(), Outer, Name, SetFlags ); } \
 	void* operator new( size_t Size, EInternal* Mem ) \
 		{ return (void*)Mem; }
-#else
-#define DECLARE_BASE_CLASS( TClass, TSuperClass, TStaticFlags, TPackage ) \
-public: \
-	/* Identification */ \
-	enum {StaticClassFlags=TStaticFlags}; \
-	private: \
-	static UClass* PrivateStaticClass; \
-	public: \
-	typedef TSuperClass Super;\
-	typedef TClass ThisClass;\
-	static UClass* GetPrivateStaticClass##TClass( TCHAR* Package ); \
-	static void InitializePrivateStaticClass##TClass(); \
-	static UClass* StaticClass() \
-	{ \
-		if (!PrivateStaticClass) \
-		{ \
-			PrivateStaticClass = GetPrivateStaticClass##TClass( TEXT(#TPackage) ); \
-			InitializePrivateStaticClass##TClass(); \
-		} \
-		return PrivateStaticClass; \
-	} \
-	void* operator new( size_t Size, UObject* Outer=(UObject*)GetTransientPackage(), FName Name=NAME_None, DWORD SetFlags=0 ) \
-		{ return StaticAllocateObject( StaticClass(), Outer, Name, SetFlags ); } \
-	void* operator new( size_t Size, EInternal* Mem ) \
-		{ return (void*)Mem; }
-#endif
 
 // Declare a concrete class.
+//
+// NOTE the placement-new in InternalConstructor is deliberately written WITHOUT parentheses
+// (`new(X)TClass`, not `new(X)TClass()`). Empty parens mean VALUE-initialization, and under modern
+// C++ a class with no USER-PROVIDED default constructor is ZERO-INITIALIZED before its (implicit)
+// constructor runs. That would wipe the UObject header -- Index/Name/Outer/Class/ObjectFlags --
+// which StaticAllocateObject has just written, because StaticConstructObject calls the class
+// constructor immediately AFTER allocating and initializing the object. The result is a live object
+// with Class==NULL, which crashes the moment anything calls GetClass() (e.g. GetFullName()).
+// The 1998 MSVC this engine was written against did not zero-initialize here, so the parens were
+// harmless then; GCC implements the current rule. Dropping them restores default-initialization:
+// identical behaviour for every class that DOES declare a default constructor (the vast majority),
+// and no header clobbering for the plain ones (e.g. the legacy UVectors/UVerts/UBspNodes/UBspSurfs
+// containers in UnModel.cpp that only load <=v61 maps -- the case that exposed this).
 #define DECLARE_CLASS( TClass, TSuperClass, TStaticFlags, TPackage ) \
 	DECLARE_BASE_CLASS( TClass, TSuperClass, TStaticFlags, TPackage ) \
 	friend FArchive &operator<<( FArchive& Ar, TClass*& Res ) \
@@ -330,7 +317,8 @@ public: \
 	virtual ~TClass() \
 		{ ConditionalDestroy(); } \
 	static void InternalConstructor( void* X ) \
-		{ new( (EInternal*)X )TClass(); } \
+		{ new( (EInternal*)X )TClass; } \
+
 
 // Declare an abstract class.
 #define DECLARE_ABSTRACT_CLASS( TClass, TSuperClass, TStaticFlags, TPackage ) \
@@ -346,7 +334,6 @@ public: \
 	TWithinClass* GetOuter##TWithinClass() const { return (TWithinClass*)GetOuter(); }
 
 // Register a class at startup time.
-#if _MSC_VER
 	#define IMPLEMENT_CLASS(TClass) \
 		UClass TClass::PrivateStaticClass \
 		( \
@@ -357,81 +344,19 @@ public: \
 			TClass::WithinClass::StaticClass(), \
 			FGuid(TClass::GUID1,TClass::GUID2,TClass::GUID3,TClass::GUID4), \
 			TEXT(#TClass)+1, \
-			GPackage, \
-			StaticConfigName(), \
-			RF_Public | RF_Standalone | RF_Transient | RF_Native, \
-			(void(*)(void*))TClass::InternalConstructor, \
-			(void(UObject::*)())TClass::StaticConstructor \
-		); \
-		extern "C" DLL_EXPORT UClass* autoclass##TClass;\
-		DLL_EXPORT UClass* autoclass##TClass = TClass::StaticClass();
-#elif !__STATIC_LINK
-	#define IMPLEMENT_CLASS(TClass) \
-		UClass TClass::PrivateStaticClass \
-		( \
-			EC_NativeConstructor, \
-			sizeof(TClass), \
-			TClass::StaticClassFlags, \
-			TClass::Super::StaticClass(), \
-			TClass::WithinClass::StaticClass(), \
-			FGuid(TClass::GUID1,TClass::GUID2,TClass::GUID3,TClass::GUID4), \
-			TEXT(#TClass)+1, \
-			GPackage, \
+			THIS_PACKAGE, \
 			StaticConfigName(), \
 			RF_Public | RF_Standalone | RF_Transient | RF_Native, \
 			(void(*)(void*))TClass::InternalConstructor, \
 			(void(UObject::*)())&TClass::StaticConstructor \
 		); \
-		DLL_EXPORT {UClass* autoclass##TClass = TClass::StaticClass();}
-#else
-	#define IMPLEMENT_CLASS(TClass) \
-		UClass* TClass::PrivateStaticClass = NULL; \
-		UClass* TClass::GetPrivateStaticClass##TClass( TCHAR* Package ) \
-		{ \
-			UClass* ReturnClass; \
-			ReturnClass = ::new UClass \
-			( \
-				EC_StaticConstructor, \
-				sizeof(TClass), \
-				StaticClassFlags, \
-				FGuid(GUID1,GUID2,GUID3,GUID4), \
-				TEXT(#TClass)+1, \
-				Package, \
-				StaticConfigName(), \
-				RF_Public | RF_Standalone | RF_Transient | RF_Native, \
-				(void(*)(void*))TClass::InternalConstructor, \
-				(void(UObject::*)())&TClass::StaticConstructor \
-			); \
-			check(ReturnClass); \
-			return ReturnClass; \
-		} \
-		/* Called from ::StaticClass after GetPrivateStaticClass */ \
-		void TClass::InitializePrivateStaticClass##TClass() \
-		{ \
-			/* No recursive ::StaticClass calls allowed. Setup extras. */ \
-			if (TClass::Super::StaticClass() != TClass::PrivateStaticClass) \
-				TClass::PrivateStaticClass->SuperField = TClass::Super::StaticClass(); \
-			else \
-				TClass::PrivateStaticClass->SuperField = NULL; \
-			TClass::PrivateStaticClass->ClassWithin = TClass::WithinClass::StaticClass(); \
-			TClass::PrivateStaticClass->SetClass(UClass::StaticClass()); \
-			/* Perform UObject native registration. */ \
-			if( TClass::PrivateStaticClass->GetInitialized() && TClass::PrivateStaticClass->GetClass()==TClass::PrivateStaticClass->StaticClass() ) \
-				TClass::PrivateStaticClass->Register(); \
-		}
-#endif
+		DLL_EXPORT UClass* autoclass##TClass = TClass::StaticClass(); \
+		STATIC_EXPORT( TClass, autoclass##TClass )
 
 // Define the package of the current DLL being compiled.
-#if _MSC_VER
 	#define IMPLEMENT_PACKAGE(pkg) \
-		extern "C" DLL_EXPORT TCHAR GPackage[]; \
-		DLL_EXPORT TCHAR GPackage[] = TEXT(#pkg); \
+	extern "C" { DLL_EXPORT GCC_HIDDEN TCHAR THIS_PACKAGE[] = TEXT(#pkg);} \
 		IMPLEMENT_PACKAGE_PLATFORM(pkg)
-#else
-	#define IMPLEMENT_PACKAGE(pkg) \
-	extern "C" DLL_EXPORT {TCHAR GPackage[] = TEXT(#pkg);} \
-		IMPLEMENT_PACKAGE_PLATFORM(pkg)
-#endif
 
 /*-----------------------------------------------------------------------------
 	UObject.
@@ -514,7 +439,7 @@ public:
 	UObject& operator=( const UObject& );
 	void StaticConstructor();
 	static void InternalConstructor( void* X )
-		{ new( (EInternal*)X )UObject(); }
+		{ new( (EInternal*)X )UObject; }   // no parens -- see the note on DECLARE_CLASS above
 
 	// Destructors.
 	virtual ~UObject();
@@ -985,20 +910,6 @@ template< class T, class U > T* CastChecked( U* Src )
 	return (T*)Src;
 }
 
-// Construct an object of a particular class.
-template< class T > T* ConstructObject( UClass* Class, UObject* Outer=(UObject*)-1, FName Name=NAME_None, DWORD SetFlags=0 )
-{
-	check(Class->IsChildOf(T::StaticClass()));
-	if( Outer==(UObject*)-1 )
-		Outer = UObject::GetTransientPackage();
-	return (T*)UObject::StaticConstructObject( Class, Outer, Name, SetFlags );
-}
-
-// Construct an object of the template class type.
-template< class T > T* ConstructObject( UObject* Parent=(UObject*)-1, FName Name=NAME_None, DWORD SetFlags=0 )
-{
-	return ConstructObject<T>( T::StaticClass(), Parent, Name, SetFlags );
-}
 
 
 // Load an object.
@@ -1076,39 +987,6 @@ public:
 	}
 };
 
-#define AUTO_INITIALIZE_REGISTRANTS \
-	UObject::StaticClass(); \
-	UClass::StaticClass(); \
-	USubsystem::StaticClass(); \
-	USystem::StaticClass(); \
-	UProperty::StaticClass(); \
-	UStructProperty::StaticClass(); \
-	UField::StaticClass(); \
-	UMapProperty::StaticClass(); \
-	UArrayProperty::StaticClass(); \
-	UFixedArrayProperty::StaticClass(); \
-	UStrProperty::StaticClass(); \
-	UNameProperty::StaticClass(); \
-	UClassProperty::StaticClass(); \
-	UObjectProperty::StaticClass(); \
-	UFloatProperty::StaticClass(); \
-	UBoolProperty::StaticClass(); \
-	UIntProperty::StaticClass(); \
-	UByteProperty::StaticClass(); \
-	ULanguage::StaticClass(); \
-	UTextBufferFactory::StaticClass(); \
-	UFactory::StaticClass(); \
-	UPackage::StaticClass(); \
-	UCommandlet::StaticClass(); \
-	ULinkerSave::StaticClass(); \
-	ULinker::StaticClass(); \
-	ULinkerLoad::StaticClass(); \
-	UEnum::StaticClass(); \
-	UTextBuffer::StaticClass(); \
-	UPackageMap::StaticClass(); \
-	UConst::StaticClass(); \
-	UFunction::StaticClass(); \
-	UStruct::StaticClass();
 
 /*----------------------------------------------------------------------------
 	The End.

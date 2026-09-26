@@ -72,8 +72,6 @@ CORE_API const TCHAR* appTimestamp()
 //
 CORE_API FString appGetGMTRef()
 {
-	#if __PSX2_EE__
-	#else
 	guard(appGetGMTRef);
 	struct tm *newtime;
 	TCHAR* GMTRef = appStaticString1024();
@@ -86,7 +84,6 @@ CORE_API FString appGetGMTRef()
 	appSprintf( GMTRef, (diff>0)?TEXT("+%1.1f"):TEXT("%1.1f"), diff );
 	return GMTRef;
 	unguard;
-	#endif
 }
 
 /*-----------------------------------------------------------------------------
@@ -211,7 +208,6 @@ CORE_API UBOOL appMemIsZero( const void* V, int Count )
 	return 1;
 	unguardSlow;
 }
-
 CORE_API void* appMemmove( void* Dest, const void* Src, INT Count )
 {
 	return memmove( Dest, Src, Count );
@@ -221,7 +217,6 @@ CORE_API void appMemset( void* Dest, INT C, INT Count )
 {
 	memset( Dest, C, Count );
 }
-
 #ifndef DEFINED_appMemzero
 CORE_API void appMemzero( void* Dest, INT Count )
 {
@@ -235,6 +230,133 @@ CORE_API void appMemcpy( void* Dest, const void* Src, INT Count )
 	memcpy( Dest, Src, Count );
 }
 #endif
+
+//
+// Find files in a directory.
+// Example Dir = "c:\\place\\*.ext".
+// Example Result = "test.ext"
+//
+CORE_API TArray<FString> appFindFiles( const TCHAR* Spec )
+{
+	guard(appFindFiles)
+	TArray<FString> Result;
+
+#ifdef PLATFORM_WIN32
+	_finddata_t Found;
+	long hFind = _findfirst( Spec, &Found );
+	if( hFind != -1 )
+	{
+		do new(Result)FString(Found.name);
+		while( _findnext( hFind, &Found )!=-1 );
+	}
+#else
+	DIR *Dirp;
+	struct dirent* Direntp;
+	char Path[256];
+	char File[256];
+	char *Filestart;
+	char *Cur;
+	UBOOL Match;
+
+	// Initialize Path to Filename.
+	appStrcpy( Path, Spec );
+
+	// Convert MS "\" to Unix "/".
+	for( Cur = Path; *Cur != '\0'; Cur++ )
+		if( *Cur == '\\' )
+			*Cur = '/';
+
+	// Separate path and filename.
+	Filestart = Path;
+	for( Cur = Path; *Cur != '\0'; Cur++ )
+		if( *Cur == '/' )
+			Filestart = Cur + 1;
+
+	// Store filename and remove it from Path.
+	appStrcpy( File, Filestart );
+	*Filestart = '\0';
+
+	// Check for empty path.
+	if (appStrlen( Path ) == 0)
+		appSprintf( Path, "./" );
+
+	// Open directory, get first entry.
+	Dirp = opendir( Path );
+	if (Dirp == NULL)
+			return Result;
+	Direntp = readdir( Dirp );
+
+	// Check each entry.
+	while( Direntp != NULL )
+	{
+		Match = false;
+
+		if( appStrcmp( File, "*" ) == 0 )
+		{
+			// Any filename.
+			Match = true;
+		}
+		else if( appStrcmp( File, "*.*" ) == 0 )
+		{
+			// Any filename with a '.'.
+			if( appStrchr( Direntp->d_name, '.' ) != NULL )
+				Match = true;
+		}
+		else if( File[0] == '*' )
+		{
+			// "*.ext" filename.
+			if( appStrstrFs( Direntp->d_name, (File + 1) ) != NULL )
+				Match = true;
+		}
+		else if( File[appStrlen( File ) - 1] == '*' )
+		{
+			// "name.*" filename.
+			if( appStrnicmp( Direntp->d_name, File, appStrlen( File ) - 1 ) == 0 )
+				Match = true;
+		}
+		else if( appStrstr( File, "*" ) != NULL )
+		{
+			// single str.*.str match.
+			char* star = appStrstr( File, "*" );
+			INT filelen = appStrlen( File );
+			INT starlen = appStrlen( star );
+			INT starpos = filelen - (starlen - 1);
+			char prefix[256];
+			appStrncpy( prefix, File, starpos );
+			star++;
+			if( appStrnicmp( Direntp->d_name, prefix, starpos - 1 ) == 0 )
+			{
+				// part before * matches
+				char* postfix = Direntp->d_name + (appStrlen(Direntp->d_name) - starlen) + 1;
+				if ( appStricmp( postfix, star ) == 0 )
+					Match = true;
+			}
+		}
+		else
+		{
+			// Literal filename.
+			if( appStricmp( Direntp->d_name, File ) == 0 )
+				Match = true;
+		}
+
+		// Does this entry match the Filename?
+		if( Match )
+		{
+			// Yes, add the file name to Result.
+			new(Result)FString(Direntp->d_name);
+		}
+	
+		// Get next entry.
+		Direntp = readdir( Dirp );
+	}
+
+	// Close directory.
+	closedir( Dirp );
+#endif
+
+	return Result;
+	unguard;
+}
 
 /*-----------------------------------------------------------------------------
 	String functions.
@@ -286,6 +408,7 @@ CORE_API INT appSprintf( TCHAR* Dest, const TCHAR* Fmt, ... )
 #else
 	int Result;
 	GET_VARARGS_RESULT(Dest,1024,Fmt,Result);
+	return Result;
 #endif
 }
 
@@ -316,21 +439,26 @@ CORE_API INT appStrlen( const TCHAR* String )
 CORE_API TCHAR* appStrstr( const TCHAR* String, const TCHAR* Find )
 {
 #if UNICODE
-	return wcsstr( String, Find );
+	return (TCHAR*)wcsstr( String, Find );
 #else
-	return strstr( String, Find );
+	return const_cast<TCHAR*>(strstr( String, Find ));
+#endif
+}
+CORE_API char* appStrstrFs( const TCHAR* String, const TCHAR* Find )
+{
+#ifndef PLATFORM_CASE_SENSITIVE_FS
+	return appStrstr( String, Find );
+#else
+	return const_cast<char*>( strcasestr(String,Find) );
 #endif
 }
 
-CORE_API TCHAR* appStrchr( const TCHAR* String, int c )
+CORE_API TCHAR* appStrchr( const TCHAR* String, INT c )
 {
-#if __PSX2_EE__
-	FString s = FString::Printf(TEXT("%c"), c);
-	return appStrstr( String, *s );
-#elif UNICODE
-	return wcschr( String, c );
+#if UNICODE
+	return (TCHAR*)wcschr( String, c );
 #else
-	return strchr( String, c );
+	return const_cast<TCHAR*>(strchr( String, c ));
 #endif
 }
 
@@ -424,7 +552,8 @@ CORE_API INT appStrnicmp( const TCHAR* A, const TCHAR* B, INT Count )
 	Sorting.
 -----------------------------------------------------------------------------*/
 
-CORE_API void appQsort( void* Base, INT Num, INT Width, int(CDECL *Compare)(const void* A, const void* B ) )
+
+CORE_API void appQsort( void* Base, INT Num, INT Width, QSORT_COMPARE Compare )
 {
 	qsort( Base, Num, Width, Compare );
 }

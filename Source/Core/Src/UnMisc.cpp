@@ -91,7 +91,7 @@ FString FString::RightPad( INT ChCount )
 		for( i=0; i<Pad; i++ )
 			Ch[i] = ' ';
 		Ch[i] = 0;
-		return *this + Ch;
+		return *this + (const TCHAR*)Ch;
 	}
 	else return *this;
 	unguardSlow;
@@ -675,6 +675,15 @@ CORE_API void VARARGS appThrowf( const TCHAR* Fmt, ... )
 {
 	static TCHAR TempStr[4096];
 	GET_VARARGS(TempStr,ARRAY_COUNT(TempStr),Fmt);
+#ifdef __EMSCRIPTEN__
+	// ufront 2.7b/2.7c: exception CATCHING is disabled in the web build (-fexceptions overflows V8 on the
+	// deep package loader), so any throw that escapes a guard/unguard aborts the module with a bare
+	// "Exception thrown, catching not enabled". Echo the reason to stdout->console FIRST, so an otherwise
+	// anonymous Aborted() becomes a named "[appThrowf] <reason>" — that names each uncatchable throw site
+	// to patch one-by-one (resolve-to-NULL), mirroring engine-unreal1/engine-ut2004.
+	printf("[appThrowf] %s\n", TempStr);
+	fflush(stdout);
+#endif
 	throw( TempStr );
 }
 
@@ -1055,6 +1064,82 @@ CORE_API void ParseNext( const TCHAR** Stream )
 // Grab the next space-delimited string from the input stream.
 // If quoted, gets entire quoted string.
 //
+//
+// Is this command-line token a global option (Key=Value) rather than a URL? See UnFile.h.
+//
+CORE_API UBOOL appIsGlobalOptionToken( const TCHAR* Token )
+{
+	guard(appIsGlobalOptionToken);
+	if( !Token || !*Token )
+		return 0;
+	for( const TCHAR* P=Token; *P; P++ )
+	{
+		if( *P == '?' )
+			return 0;   // a URL's own options start here — the token is a URL
+		if( *P == '=' )
+			return P != Token;   // Key=Value, and Key is not empty
+	}
+	return 0;
+	unguard;
+}
+
+//
+// Apply every `-ini:<File>:[<Section>]:<Key>=<Value>` token on the command line. See UnFile.h.
+//
+// ★★ ufront 2.38 — THIS SWITCH HAD NO IMPLEMENTATION ANYWHERE, in any of the four engines, and the
+// shipped launcher has been emitting it since the config UI was written:
+//
+//     packages/frontend/src/config/controller.ts
+//         opts.push('-ini:User:[DefaultPlayer]:Name=' + net.name);
+//
+// So the "Player Name" box in the Network panel did nothing unless the SAME launch also carried a travel
+// URL with `?Name=…` in it — which is to say: it worked when you hosted or joined from the launcher form,
+// and was silently ignored when you booted to the menu and then hosted or joined from the game's OWN
+// multiplayer menus. Measured 2.38: argv contained `-ini:User:[DefaultPlayer]:Name=GuestPlayer` and the
+// engine logged `ScriptLog: Login: Player`.
+//
+// ⚠ Found by a TEST that needed two distinguishable players, not by anyone reading the code — an
+// unrecognised switch is silence. There is even a frontend unit test asserting the token is EMITTED
+// (packages/frontend/test/config-controller.test.ts); nothing asserted anything ever READ it.
+//
+// The file part uses the config cache's own generic names, so `User` and `System` resolve to whatever
+// this platform's inis actually are (FConfigCacheIni::Find translates them) — no path is hardcoded here.
+// Applied straight after GConfig->Init, i.e. before any class loads its config properties.
+//
+CORE_API void appApplyIniOverrides()
+{
+	guard(appApplyIniOverrides);
+	if( !GConfig )
+		return;
+	const TCHAR* Stream = appCmdLine();
+	TCHAR Token[1024];
+	while( ParseToken( Stream, Token, ARRAY_COUNT(Token), 0 ) )
+	{
+		if( appStrnicmp( Token, TEXT("-ini:"), 5 )!=0 )
+			continue;
+		// -ini:<File>:[<Section>]:<Key>=<Value>
+		TCHAR* File = Token + 5;
+		TCHAR* Open = appStrstr( File, TEXT(":[") );
+		if( !Open )
+			continue;
+		TCHAR* Section = Open + 2;
+		TCHAR* Close = appStrstr( Section, TEXT("]:") );
+		if( !Close )
+			continue;
+		TCHAR* Key = Close + 2;
+		TCHAR* Eq = appStrstr( Key, TEXT("=") );
+		if( !Eq || Eq==Key )
+			continue;
+		TCHAR* Value = Eq + 1;
+		*Open = 0; *Close = 0; *Eq = 0;
+		if( !*File || !*Section )
+			continue;
+		GConfig->SetString( Section, Key, Value, File );
+		debugf( NAME_Init, TEXT("Ini override: [%s] %s=%s (%s)"), Section, Key, Value, File );
+	}
+	unguard;
+}
+
 CORE_API UBOOL ParseToken( const TCHAR*& Str, TCHAR* Result, INT MaxLen, UBOOL UseEscape )
 {
 	guard(ParseToken);
@@ -1433,6 +1518,52 @@ CORE_API UBOOL appSaveStringToFile( const FString& String, const TCHAR* Filename
 -----------------------------------------------------------------------------*/
 
 //
+// Case-insensitive match for one search path: does any file in `Dir` have the name `In` (or
+// `In` + `Ext`) ignoring case? Fills `Out` with the real, correctly-cased path and returns 1.
+//
+// `Dir` is a Paths= entry with its wildcard stripped ("../Textures/"); `Ext` is what followed the
+// wildcard (".utx"), or NULL for a path that carries none.
+//
+// This is what a Windows filesystem does for free and a case-sensitive one (Linux, and the web
+// build's VFS) does not. It matches the FIRST file that compares equal, where the old code kept
+// scanning and took the last; on a case-insensitive filesystem no directory can hold two such
+// files, and on a case-sensitive one the earlier entry is the better guess than the later.
+//
+static UBOOL appFindFileNoCase( const TCHAR* Dir, const TCHAR* In, const TCHAR* Ext, TCHAR* Out )
+{
+	guard(appFindFileNoCase);
+	TCHAR Spec[256];
+	appStrcpy( Spec, Dir );
+	appStrcat( Spec, TEXT("*") );
+	if( Ext )
+		appStrcat( Spec, Ext );
+	TArray<FString> Files = GFileManager->FindFiles( Spec, 1, 0 );
+
+	TCHAR InExt[256];
+	*InExt = 0;
+	if( Ext )
+	{
+		appStrcpy( InExt, In );
+		appStrcat( InExt, Ext );
+	}
+	for( INT i=0; Files.IsValidIndex(i); i++ )
+	{
+		if( appStricmp( *(Files(i)), In )==0 || (Ext && appStricmp( *(Files(i)), InExt )==0) )
+		{
+			appStrcpy( Out, Dir );
+			appStrcat( Out, *(Files(i)) );
+			if( GFileManager->FileSize( Out ) >= 0 )
+			{
+				debugf( TEXT("Case-insensitive search: %s -> %s"), In, Out );
+				return 1;
+			}
+		}
+	}
+	return 0;
+	unguard;
+}
+
+//
 // Find a file.
 //
 UBOOL appFindPackageFile( const TCHAR* In, const FGuid* Guid, TCHAR* Out )
@@ -1454,39 +1585,54 @@ UBOOL appFindPackageFile( const TCHAR* In, const FGuid* Guid, TCHAR* Out )
 		return 1;
 
 	// Try all of the predefined paths.
+	//
+	// ★ Each path is tried EXACTLY and then CASE-INSENSITIVELY before the next one is considered.
+	// The order matters and used to be wrong: the case-insensitive search was a second full pass that
+	// ran only after the exact pass had walked every path, so a later path's exact hit beat an earlier
+	// path's case-variant hit. On Windows — the filesystem this engine was written against — the
+	// earlier path always wins, because there is no such thing as a "case-variant" hit there.
+	//
+	// Measured on the v436 mod tree: Infiltration's Entry.unr imports the group `Credits.Base` from
+	// the TEXTURE package `Credits`. `Paths=` lists `../Textures/*.utx` before `../Music/*.umx`, but
+	// the file on disk is `credits.utx`, so the exact pass missed Textures and hit `Music/Credits.umx`
+	// — and the linker, handed a music package where a texture package was meant, threw
+	// "Can't find Package in file 'Package Credits.Base'", which with exceptions off is an abort with
+	// no message at all.
 	INT DoCd;
 	for( DoCd=0; DoCd<(1+(GCdPath[0]!=0)); DoCd++ )
 	{
 		for( INT i=DoCd; i<GSys->Paths.Num()+(Guid!=NULL); i++ )
 		{
+			// Get directory only. This does not depend on the language variant below, and the
+			// case-insensitive retry at the bottom needs it, so it is computed once per path.
+			const TCHAR* Ext;
+			*Temp = 0;
+			if( DoCd )
+			{
+				appStrcat( Temp, GCdPath );
+				appStrcat( Temp, TEXT("System") PATH_SEPARATOR );
+			}
+			if( i<GSys->Paths.Num() )
+			{
+				appStrcat( Temp, *GSys->Paths(i) );
+				TCHAR* Ext2 = appStrstr(Temp,TEXT("*"));
+				if( Ext2 )
+					*Ext2++ = 0;
+				Ext = Ext2;
+			}
+			else
+			{
+				appStrcat( Temp, *GSys->CachePath );
+				appStrcat( Temp, PATH_SEPARATOR );
+				Ext = *GSys->CacheExt;
+			}
 			for( INT j=0; j<International+1; j++ )
 			{
-				// Get directory only.
-				const TCHAR* Ext;
-				*Temp = 0;
-				if( DoCd )
-				{
-					appStrcat( Temp, GCdPath );
-					appStrcat( Temp, TEXT("System") PATH_SEPARATOR );
-				}
+				appStrcpy( Out, Temp );
 				if( i<GSys->Paths.Num() )
-				{
-					appStrcat( Temp, *GSys->Paths(i) );
-					TCHAR* Ext2 = appStrstr(Temp,TEXT("*"));
-					if( Ext2 )
-						*Ext2++ = 0;
-					Ext = Ext2;
-					appStrcpy( Out, Temp );
 					appStrcat( Out, In );
-				}
 				else
-				{
-					appStrcat( Temp, *GSys->CachePath );
-					appStrcat( Temp, PATH_SEPARATOR );
-					Ext = *GSys->CacheExt;
-					appStrcpy( Out, Temp );
 					appStrcat( Out, Guid->String() );
-				}
 
 				// Check for file.
 				UBOOL Found = 0;
@@ -1509,77 +1655,12 @@ UBOOL appFindPackageFile( const TCHAR* In, const FGuid* Guid, TCHAR* Out )
 					return 1;
 				}
 			}
-		}
-	}
-
-	// Try case-insensitive search.
-	for( DoCd=0; DoCd<(1+(GCdPath[0]!=0)); DoCd++ )
-	{
-		for( INT i=0; i<GSys->Paths.Num()+(Guid!=NULL); i++ )
-		{
-			// Get directory only.
-			const TCHAR* Ext;
-			*Temp = 0;
-			if( DoCd )
-			{
-				appStrcat( Temp, GCdPath );
-				appStrcat( Temp, TEXT("System") PATH_SEPARATOR );
-			}
-			if( i<GSys->Paths.Num() )
-			{
-				appStrcat( Temp, *GSys->Paths(i) );
-				TCHAR* Ext2 = appStrstr(Temp,TEXT("*"));
-				if( Ext2 )
-					*Ext2++ = 0;
-				Ext = Ext2;
-				appStrcpy( Out, Temp );
-				appStrcat( Out, In );
-			}
-			else
-			{
-				appStrcat( Temp, *GSys->CachePath );
-				appStrcat( Temp, PATH_SEPARATOR );
-				Ext = *GSys->CacheExt;
-				appStrcpy( Out, Temp );
-				appStrcat( Out, Guid->String() );
-			}
-
-			// Find files.
-			TCHAR Spec[256];
-			*Spec = 0;
-			TArray<FString> Files;
-			appStrcpy( Spec, Temp );
-			appStrcat( Spec, TEXT("*") );
-			if( Ext )
-				appStrcat( Spec, Ext );
-			Files = GFileManager->FindFiles( Spec, 1, 0 );
-
-			// Check for match.
-			UBOOL Found = 0;
-			TCHAR InExt[256];
-			*InExt = 0;
-			if( Ext )
-			{
-				appStrcpy( InExt, In );
-				appStrcat( InExt, Ext );
-			}
-			for( INT j=0; Files.IsValidIndex(j); j++ )
-			{
-				if( (appStricmp( *(Files(j)), In )==0) ||
-					(appStricmp( *(Files(j)), InExt)==0) )
-				{
-					appStrcpy( Out, Temp );
-					appStrcat( Out, *(Files(j)));
-					Found = (GFileManager->FileSize( Out )>=0);
-				}
-			}
-			if( Found )
-			{
-				debugf( TEXT("Case-insensitive search: %s -> %s"), In, Out );
-				if( i==GSys->Paths.Num() )
-					appUpdateFileModTime( Out );
+			// Nothing matched exactly in this directory — try it ignoring case before moving on.
+			// Not done for the cache directory (i == Paths.Num()): its files are named after a GUID,
+			// and the old second pass compared them against the PACKAGE name there, so it could only
+			// ever have matched by accident. Nothing real is lost by leaving it out.
+			if( i<GSys->Paths.Num() && appFindFileNoCase( Temp, In, Ext, Out ) )
 				return 1;
-			}
 		}
 	}
 
@@ -1626,7 +1707,7 @@ void FFileStream::Destroy()
 	{
 		Destroyed = 1;
 		debugf(TEXT("Waiting for file streaming thread to finish..."));
-#if !__UNIX__
+#if _MSC_VER // only the Win32 core runs the streaming thread that ends this wait
 //!!TODO: vogel: implement
 		while (Destroyed == 1)
 			appSleep(1);
@@ -1836,7 +1917,7 @@ CORE_API const TCHAR* appSetSaveSlotDir( int iSlot )
 	// --- Set our SaveSlotPath
 	TCHAR itoa[32];
 	appSprintf( itoa, TEXT("%d"), iSlot );
-	GSys->SaveSlotPath = GSys->SavePath * TEXT("Slot") + itoa;
+	GSys->SaveSlotPath = GSys->SavePath * TEXT("Slot") + (const TCHAR*)itoa;
 	return *GSys->SaveSlotPath;
 }
 
@@ -1923,7 +2004,7 @@ CORE_API void appInit( const TCHAR* InPackage, const TCHAR* InCmdLine, FMalloc* 
 		// Create Package.ini from default.ini.
 		FString S;
 		if( !appLoadFileToString( S, TEXT("Default.ini"), GFileManager ) )
-			appErrorf( LocalizeError("MisingIni"), "Default.ini" );
+			appErrorf( LocalizeError("MissingIni Default.ini"), "Default.ini" );
 		appSaveStringToFile( S, GIni );
 		bDefaultIniChanged = true;
 	}
@@ -1943,7 +2024,7 @@ CORE_API void appInit( const TCHAR* InPackage, const TCHAR* InCmdLine, FMalloc* 
 		// Create User.ini from DefUser.ini.
 		FString S;
 		if( !appLoadFileToString( S, TEXT("DefUser.ini"), GFileManager ) )
-			appErrorf( LocalizeError("MisingIni"), "DefUser.ini" );
+			appErrorf( LocalizeError("MissingIni DefUser.ini"), "DefUser.ini" );
 		appSaveStringToFile( S, GUserIni );
 	}
 
@@ -1951,17 +2032,21 @@ CORE_API void appInit( const TCHAR* InPackage, const TCHAR* InCmdLine, FMalloc* 
 	GConfig = ConfigFactory();
 	GConfig->Init( GIni, GUserIni, RequireConfig );
 
-
 		// gk 10/15/01
+	// HP2 port: "Default.ini" in its on-disk case (a case-sensitive FS misses "default.ini" and the block then
+	// wrote an EMPTY Language, breaking every Localize()), and Language is only overwritten when Default.ini
+	// actually provides one.
 	{
-		TCHAR Temp[256];
-		TCHAR DTemp[256];
+		TCHAR DTemp[256]=TEXT("");
 		FConfigCache* DConfig=ConfigFactory();
-		DConfig->Init(TEXT("default.ini"),GUserIni,RequireConfig);
-		GConfig->GetString( TEXT("Engine.Engine"), TEXT("Language"), Temp, ARRAY_COUNT(Temp) );
-		DConfig->GetString( TEXT("Engine.Engine"), TEXT("Language"), DTemp, ARRAY_COUNT(DTemp));
-		GConfig->SetString( TEXT("Engine.Engine"), TEXT("Language"), DTemp );
+		DConfig->Init(TEXT("Default.ini"),GUserIni,RequireConfig);
+		if( DConfig->GetString( TEXT("Engine.Engine"), TEXT("Language"), DTemp, ARRAY_COUNT(DTemp)) && *DTemp )
+			GConfig->SetString( TEXT("Engine.Engine"), TEXT("Language"), DTemp );
 	}
+
+	// ufront 2.38: -ini:<File>:[<Section>]:<Key>=<Value> overrides, applied before any class loads config.
+	// HP2: after the gk block, which would otherwise clobber a Language override.
+	appApplyIniOverrides();
 
 
 
@@ -1980,7 +2065,7 @@ CORE_API void appInit( const TCHAR* InPackage, const TCHAR* InCmdLine, FMalloc* 
 	if( !Parse( appCmdLine(), TEXT("CDPATH="), GCdPath, 256 ) )
 	{
 		GConfig->GetString( TEXT("Engine.Engine"), TEXT("CdPath"), GCdPath, 256 );
-		if( GFileManager->FileSize(TEXT("..\\Textures\\Palettes.utx"))>=0 )//oldver
+		if( GFileManager->FileSize(TEXT("..") PATH_SEPARATOR TEXT("Textures") PATH_SEPARATOR TEXT("Palettes.utx"))>=0 )//oldver
 			appStrcpy( GCdPath, TEXT("") );
 	}
 	if( *GCdPath && GCdPath[appStrlen(GCdPath)-1]!=PATH_SEPARATOR[0] )
@@ -2008,7 +2093,7 @@ CORE_API void appInit( const TCHAR* InPackage, const TCHAR* InCmdLine, FMalloc* 
 	else
 	{
 		// Subdirectory of app folder.
-		GSys->SavePath = TEXT("..\\Save");
+		GSys->SavePath = TEXT("..") PATH_SEPARATOR TEXT("Save");
 	}
 	// Make our SavePath
 	GFileManager->MakeDirectory( *GSys->SavePath, 0 );
@@ -2027,7 +2112,7 @@ CORE_API void appInit( const TCHAR* InPackage, const TCHAR* InCmdLine, FMalloc* 
 	
 	if( *GSys->SaveSlotPath )
 	{
-		debugf( TEXT("Save Slot Path: %s"), GSys->SaveSlotPath );
+		debugf( TEXT("Save Slot Path: %s"), *GSys->SaveSlotPath ); // FString through varargs traps under clang
 		
 		// Make our SaveSlotPath
 		GFileManager->MakeDirectory( *GSys->SaveSlotPath, 0 );
@@ -2044,7 +2129,8 @@ CORE_API void appInit( const TCHAR* InPackage, const TCHAR* InCmdLine, FMalloc* 
 	{
 		if( GSys->Paths(i).Right( FileExt.Len() ) == FileExt )
 		{
-			for( const TCHAR* p = *GSys->Paths(i) + GSys->Paths(i).Len() - 1; p >= *GSys->Paths(i); p-- )
+			const TCHAR* p; // MSVC6 for-scope: used after the loop.
+			for( p = *GSys->Paths(i) + GSys->Paths(i).Len() - 1; p >= *GSys->Paths(i); p-- )
 			{
 				if( *p=='/' || *p=='\\' || *p==':' )
 					break;
@@ -2080,7 +2166,8 @@ CORE_API void SavePersistentActorCache( void )
 	FString			PAFileName;
 	
 	// Delete all _pa files that are in the imediate SaveSlotPath
-	for( INT j=0; Files.IsValidIndex(j); j++ )
+	INT j; // MSVC6 for-scope: reused below.
+	for( j=0; Files.IsValidIndex(j); j++ )
 	{
 		PAFileName = GSys->SaveSlotPath * Files(j);
 		if( GFileManager->FileSize( *PAFileName ) )
@@ -2116,7 +2203,8 @@ CORE_API void LoadPersistentActorCache( void )
 	TArray<FString> Files = GFileManager->FindFiles( *Spec, true, false );
 	FString			PAFileName;
 	
-	for( INT j=0; Files.IsValidIndex(j); j++ )
+	INT j; // MSVC6 for-scope: reused below.
+	for( j=0; Files.IsValidIndex(j); j++ )
 	{
 		PAFileName = GSys->SaveSlotPath * TEXT("cache") * Files(j);
 		if( GFileManager->FileSize( *PAFileName ) )
@@ -2271,7 +2359,8 @@ CORE_API const TCHAR* appFromUnicode( const UNICHAR* UCh )
 	if( !UCh )
 		return NULL;
 	TCHAR* Ch = appStaticString1024();
-	for( INT Count=0; Count<1024-1 && UCh[Count]; Count++ )
+	INT Count;
+	for( Count=0; Count<1024-1 && UCh[Count]; Count++ )
 		Ch[Count] = FromUnicode( UCh[Count] );
 	Ch[Count] = 0;
 	return Ch;
@@ -2288,15 +2377,45 @@ CORE_API const TCHAR* appFromUnicode( const UNICHAR* UCh )
 //
 CORE_API void VARARGS appUnwindf( const TCHAR* Fmt, ... )
 {
-	GIsCriticalError = 1;
+	// ★★ ufront 2.38 — this used to begin `GIsCriticalError = 1;`, unconditionally, and NOTHING in the
+	// engine ever cleared it again. (Same bug, same fix, as engine-ut2004 2.37c; UE1 inherited it from the
+	// same Epic source and it had gone unnoticed here for exactly the same reason.)
+	//
+	// unguard calls this for EVERY exception that passes through a guarded scope, and most of them are not
+	// fatal: `appThrowf` is how a failed load unwinds, and the loaders CATCH it and carry on -- that is all
+	// a recoverable "Failed to load 'X'" is. So the first missing package of a session latched the engine
+	// into permanent-critical-error mode.
+	//
+	// ⚠ What that costs is not a stray flag. UObject::~UObject reads it (UnObj.cpp):
+	//     if( Index!=INDEX_NONE && GObjInitialized && !GIsCriticalError ) { GObjObjects(Index)=NULL;
+	//                                                                      GObjAvailable.AddItem(Index); }
+	// so from the first recovered load error onward, EVERY destroyed object skips its own cleanup: it stays
+	// in the object table as a dangling pointer and its index never returns to the free list. Anything that
+	// then WALKS the object table reads freed memory, and the next index reuse trips its own check.
+	//
+	// ★★ And FOutputDeviceFile::Serialize opens `if( !GIsCriticalError || Entry )`, so the latch ALSO GAGGED
+	// THE LOG -- which is why a UT99 crash report can arrive with no explanation in it at all.
+	//
+	// A genuinely fatal error does NOT rely on this: FOutputDeviceAnsiError::Serialize sets GIsCriticalError
+	// itself, before it throws (FOutputDeviceAnsiError.h:38), so the flag is already 1 by the time the unwind
+	// starts. Setting it here only ever mislabelled the recoverable case.
+	//
+	// ⚠ NOT web-specific. The same latch happens natively; there the dangling entries usually do not fault,
+	// so the corruption is silent.
 
 	TCHAR TempStr[4096];
 	GET_VARARGS( TempStr, ARRAY_COUNT(TempStr), Fmt );
 
-	static INT Count=0;
-	if( Count++ )
-		appStrncat( GErrorHist, TEXT(" <- "), ARRAY_COUNT(GErrorHist) );
-	appStrncat( GErrorHist, TempStr, ARRAY_COUNT(GErrorHist) );
+	// Accumulate the History chain only for a REAL error -- otherwise every recovered load failure in the
+	// session appends to GErrorHist forever, and a crash report arrives carrying a kilobyte of unrelated
+	// history from packages that loaded fine.
+	if( GIsCriticalError )
+	{
+		static INT Count=0;
+		if( Count++ )
+			appStrncat( GErrorHist, TEXT(" <- "), ARRAY_COUNT(GErrorHist) );
+		appStrncat( GErrorHist, TempStr, ARRAY_COUNT(GErrorHist) );
+	}
 
 	debugf( NAME_Critical, TempStr );
 }

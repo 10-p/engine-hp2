@@ -18,9 +18,10 @@
 static void SetupTable( FLOAT* ManTbl, FLOAT* ExpTbl, FLOAT Power )
 {
 	union {FLOAT F; DWORD D;} Temp;
+	DWORD i; // MSVC6 for-scope: reused by the second loop.
 
 	Temp.F = 1.0;
-	for( DWORD i=0; i<(1<<APPROX_EXP_BITS); i++ )
+	for( i=0; i<(1<<APPROX_EXP_BITS); i++ )
 	{
 		Temp.D = (Temp.D & 0x007fffff ) + (i << (32-APPROX_EXP_BITS));
 		ExpTbl[ i ] = appPow( Abs(Temp.F), Power );

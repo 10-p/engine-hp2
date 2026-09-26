@@ -32,10 +32,6 @@ public:
 		// Debug checks.
 		guardSlow(FMemStack::PushBytes);
 
-		#if __PSX2_EE__
-		Align = Max(Align,16);
-		#endif
-
 		checkSlow(AllocSize>=0);
 		checkSlow((Align&(Align-1))==0);
 		checkSlow(Top<=End);
@@ -64,9 +60,9 @@ public:
 
 	// Friends.
 	friend class FMemMark;
-	friend void* operator new( size_t Size, FMemStack& Mem, INT Count=1, INT Align=DEFAULT_ALIGNMENT );
-	friend void* operator new( size_t Size, FMemStack& Mem, EMemZeroed Tag, INT Count=1, INT Align=DEFAULT_ALIGNMENT );
-	friend void* operator new( size_t Size, FMemStack& Mem, EMemOned Tag, INT Count=1, INT Align=DEFAULT_ALIGNMENT );
+	friend void* operator new( size_t Size, FMemStack& Mem, INT Count, INT Align);
+	friend void* operator new( size_t Size, FMemStack& Mem, EMemZeroed Tag, INT Count, INT Align );
+	friend void* operator new( size_t Size, FMemStack& Mem, EMemOned Tag, INT Count, INT Align );
 
 	// Types.
 	struct FTaggedMemory
@@ -117,7 +113,7 @@ template <class T> inline T* NewZeroed( FMemStack& Mem, INT Count=1, INT Align=D
 template <class T> inline T* NewOned( FMemStack& Mem, INT Count=1, INT Align=DEFAULT_ALIGNMENT )
 {
 	guardSlow(FMemStack::New);
-	return (T*)Mem.PushBytes( Count*sizeof(T), Align );
+	BYTE* Result = Mem.PushBytes( Count*sizeof(T), Align );
 	appMemset( Result, 0xff, Count*sizeof(T) );
 	return (T*)Result;
 	unguardSlow;
@@ -128,28 +124,28 @@ template <class T> inline T* NewOned( FMemStack& Mem, INT Count=1, INT Align=DEF
 -----------------------------------------------------------------------------*/
 
 // Operator new for typesafe memory stack allocation.
-inline void* operator new( size_t Size, FMemStack& Mem, INT Count, INT Align )
+inline void* operator new( size_t Size, FMemStack& Mem, INT Count=1, INT Align=DEFAULT_ALIGNMENT )
 {
 	// Get uninitialized memory.
 	guardSlow(FMemStack::New1);
 	return Mem.PushBytes( Size*Count, Align );
 	unguardSlow;
 }
-inline void* operator new( size_t Size, FMemStack& Mem, EMemZeroed Tag, INT Count, INT Align )
+inline void* operator new( size_t Size, FMemStack& Mem, EMemZeroed Tag, INT Count=1, INT Align=DEFAULT_ALIGNMENT )
 {
 	// Get zero-filled memory.
 	guardSlow(FMemStack::New2);
 	BYTE* Result = Mem.PushBytes( Size*Count, Align );
-	appMemzero( Result, Size*Count );
+	appMemset( Result, 0, Size*Count );
 	return Result;
 	unguardSlow;
 }
-inline void* operator new( size_t Size, FMemStack& Mem, EMemOned Tag, INT Count, INT Align )
+inline void* operator new( size_t Size, FMemStack& Mem, EMemOned Tag, INT Count=1, INT Align=DEFAULT_ALIGNMENT )
 {
 	// Get one-filled memory.
 	guardSlow(FMemStack::New3);
 	BYTE* Result = Mem.PushBytes( Size*Count, Align );
-	appMemset( Result, 0xff, Size*Count );
+	appMemset( Result, 255, Size*Count );
 	return Result;
 	unguardSlow;
 }

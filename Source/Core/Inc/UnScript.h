@@ -27,7 +27,8 @@ BYTE CORE_API GRegisterNative( INT iNative, const Native& Func );
 #else
 	#define IMPLEMENT_FUNCTION(cls,num,func) \
 		extern "C" DLL_EXPORT { Native int##cls##func = (Native)&cls::func; } \
-		static BYTE cls##func##Temp = GRegisterNative( num, int##cls##func );
+		static BYTE cls##func##Temp = GRegisterNative( num, int##cls##func ); \
+		STATIC_EXPORT( int##cls##func, int##cls##func )
 #endif
 
 /*-----------------------------------------------------------------------------
@@ -61,14 +62,12 @@ BYTE CORE_API GRegisterNative( INT iNative, const Native& Func );
 #define P_GET_OBJECT_OPTX(cls,var,def)cls*  var=def;                       Stack.Step( Stack.Object, &var    );
 #define P_GET_OBJECT_REF(cls,var)     cls*  var##T=NULL; GPropAddr=0;      Stack.Step( Stack.Object, &var##T ); cls**    var = GPropAddr ? (cls   **)GPropAddr:&var##T;
 #define P_GET_ARRAY_REF(typ,var)      typ   var##T[256]; GPropAddr=0;      Stack.Step( Stack.Object,  var##T ); typ*     var = GPropAddr ? (typ    *)GPropAddr: var##T;
-#if __PSX2_EE__
-#define P_GET_SKIP_OFFSET(var)        _WORD var; {checkSlow(*Stack.Code==EX_Skip); Stack.Code++; appMemcpy(&var, Stack.Code, sizeof(_WORD)); Stack.Code+=2; }
-#else
-#define P_GET_SKIP_OFFSET(var)        _WORD var; {checkSlow(*Stack.Code==EX_Skip); Stack.Code++; var=*(_WORD*)Stack.Code; Stack.Code+=2; }
-#endif
-// pre debugger code #define P_FINISH                      Stack.Code++;
-//DEBUGGER
+#define P_GET_SKIP_OFFSET(var)        _WORD var; {checkSlow(*Stack.Code==EX_Skip); Stack.Code++; \
+	__builtin_memcpy(&var, Stack.Code, sizeof(_WORD)); \
+	Stack.Code+=2; }
+// HP2 433 debugger: P_FINISH also steps an EX_DebugInfo token that may follow EX_EndFunctionParms.
 #define P_FINISH                      Stack.Code++; if ( *Stack.Code == EX_DebugInfo ) Stack.Step( Stack.Object, NULL );
+
 //
 // Convenience macros.
 //
@@ -124,58 +123,42 @@ inline void FFrame::Step( UObject* Context, RESULT_DECL )
 }
 inline INT FFrame::ReadInt()
 {
+	// memcpy: bytecode operands are unaligned (same codegen as a deref on x86/wasm, without the UB).
 	INT Result;
-	#if __PSX2_EE__
-	appMemcpy(&Result, Code, sizeof(INT));
-	#else
-	Result = *(INT*)Code;
-	#endif
+	__builtin_memcpy( &Result, Code, sizeof( Result ) );
 	Code += sizeof(INT);
 	return Result;
 }
 inline UObject* FFrame::ReadObject()
 {
+	// memcpy: bytecode operands are unaligned (same codegen as a deref on x86/wasm, without the UB).
 	UObject* Result;
-	#if __PSX2_EE__
-	appMemcpy(&Result, Code, sizeof(INT));
-	#else
-	Result = *(UObject**)Code;
-	#endif
+	__builtin_memcpy( &Result, Code, sizeof( Result ) );
 	Code += sizeof(INT);
 	return Result;
 }
 inline FLOAT FFrame::ReadFloat()
 {
+	// memcpy: bytecode operands are unaligned (same codegen as a deref on x86/wasm, without the UB).
 	FLOAT Result;
-	#if __PSX2_EE__
-	appMemcpy(&Result, Code, sizeof(FLOAT));
-	#else
-	Result = *(FLOAT*)Code;
-	#endif
+	__builtin_memcpy( &Result, Code, sizeof( Result ) );
 	Code += sizeof(FLOAT);
 	return Result;
 }
 inline INT FFrame::ReadWord()
 {
-	INT Result;
-	#if __PSX2_EE__
+	// memcpy: bytecode operands are unaligned (same codegen as a deref on x86/wasm, without the UB).
 	_WORD Temporary;
-	appMemcpy(&Temporary, Code, sizeof(_WORD));
-	Result = Temporary;
-	#else
-	Result = *(_WORD*)Code;
-	#endif
+	__builtin_memcpy( &Temporary, Code, sizeof( Temporary ) );
+	INT Result = Temporary;
 	Code += sizeof(_WORD);
 	return Result;
 }
 inline FName FFrame::ReadName()
 {
+	// memcpy: bytecode operands are unaligned (same codegen as a deref on x86/wasm, without the UB).
 	FName Result;
-	#if __PSX2_EE__
-	appMemcpy(&Result, Code, sizeof(FName));
-	#else
-	Result = *(FName*)Code;
-	#endif
+	__builtin_memcpy( &Result, Code, sizeof( Result ) );
 	Code += sizeof(FName);
 	return Result;
 }

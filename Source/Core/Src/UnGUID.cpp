@@ -95,12 +95,11 @@ void get_ieee_node_identifier( byte* nodeid )
 {
 	unsigned32 ip32;
 	unsigned16 random16;
-
 	ip32 = appGetLocalIP();
 	random16 = true_random();
 
-	*(unsigned32*)nodeid[0] = ip32;
-	*(unsigned16*)nodeid[4] = random16;
+	*(unsigned32*)&nodeid[0] = ip32;
+	*(unsigned16*)&nodeid[4] = random16;
 }
 
 /*----------------------------------------------------------------------------
@@ -171,8 +170,6 @@ mult32(unsigned32 u, unsigned32 v, unsigned64_t *result)
 static void
 get_system_time(unsigned64_t *uuid_time)
 {
-  #if __PSX2_EE__
-  #else
   struct timeval tp;
   unsigned64_t utc, usecs, os_basetime_diff;
   gettimeofday(&tp, (struct timezone *)0);
@@ -186,7 +183,6 @@ get_system_time(unsigned64_t *uuid_time)
   os_basetime_diff.lo = 0x13814000;
   os_basetime_diff.hi = 0x01B21DD2;
   ADD_64b_2_64b(&utc, &os_basetime_diff, uuid_time);
-  #endif
 }
 
 /*

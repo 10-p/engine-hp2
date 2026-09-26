@@ -300,7 +300,14 @@ UStruct::UStruct( ENativeConstructor, INT InSize, const TCHAR* InName, const TCH
 ,	ConfigLink	    ( NULL )
 ,	ConstructorLink	( NULL )
 ,	FriendlyName	( /*Uninitialized*/ )
-{}
+{
+	// Layout guard: record the native C++ sizeof (InSize) keyed by object pointer, so UStruct::Link can
+	// compare it against the size derived from the LOADED .u property offsets and warn on any C++/script
+	// disagreement. Plain globals (BSS) -> safe at the static-init time these native constructors run.
+	extern UStruct* GLayoutStructs[]; extern INT GLayoutSizes[]; extern INT GLayoutCount;
+	if( GLayoutCount < 4096 ) { GLayoutStructs[GLayoutCount]=this; GLayoutSizes[GLayoutCount]=InSize; GLayoutCount++; }
+}
+UStruct* GLayoutStructs[4096]; INT GLayoutSizes[4096]; INT GLayoutCount=0;
 UStruct::UStruct( EStaticConstructor, INT InSize, const TCHAR* InName, const TCHAR* InPackageName, DWORD InFlags )
 :	UField			( EC_StaticConstructor, InName, InPackageName, InFlags )
 ,	ScriptText		( NULL )
@@ -380,21 +387,55 @@ void UStruct::Link( FArchive& Ar, UBOOL Props )
 				Property->Link( Ar, Prev );
 				PropertiesSize = Property->Offset + Property->GetSize();
 				Prev = Property;
-#if __PSX2_EE__
-				UStructProperty* SP=Cast<UStructProperty>(Property);
-				if( SP && appStrcmp(SP->Struct->GetName(),TEXT("Vector"))==0 )
-					PropertiesAlign = 16;//HasVector = 1;
-				if( SP && appStrcmp(SP->Struct->GetName(),TEXT("Plane"))==0 )
-					PropertiesAlign = 16;//HasVector = 1;
-				if( SP && appStrcmp(SP->Struct->GetName(),TEXT("Coords"))==0 )
-					PropertiesAlign = 16;//HasVector = 1;
-#endif
 			}
 		}
 		PropertiesSize = Align(PropertiesSize,PropertiesAlign);
+		// Layout guard (ported from feat/v436-compat, where it was a GENERAL fix living on a
+		// target-specific branch): a native class's C++ sizeof must equal the size derived from the
+		// loaded .u property offsets. A mismatch means the class's own members — and any native
+		// subclass's — are read from the wrong offsets.
+		//
+		// ⚠ IT IS NECESSARY BUT NOT SUFFICIENT, and step 2.32 is the proof: the ABrush/AMover keyframe
+		// bug passed this check. C++ may place a derived class's members in the base's TAIL PADDING, so
+		// sizeof(base) is unchanged while the derived member moves, and AMover re-aligned before its end
+		// so its size matched too. Only a per-PROPERTY offset comparison sees that class of bug.
+		{
+			extern UStruct* GLayoutStructs[]; extern INT GLayoutSizes[]; extern INT GLayoutCount;
+			for( INT li=0; li<GLayoutCount; li++ )
+				if( GLayoutStructs[li]==this )
+				{
+					if( GLayoutSizes[li] != PropertiesSize )
+					{
+						debugf( NAME_Warning, TEXT("[layout] native %s: C++ sizeof=%i but script layout=%i -- member-offset shift risk"),
+							GetName(), GLayoutSizes[li], PropertiesSize );
+						// DIAG 2.80 (throwaway): each own property in link order, with its script offset.
+						for( UField* F=Children; F && F->GetOuter()==this; F=F->Next )
+						{
+							UProperty* P = Cast<UProperty>( F );
+							if( P )
+								debugf( NAME_Warning, TEXT("[layoutdiag] %s.%s %s offset=%i size=%i bitmask=%08x"),
+									GetName(), P->GetName(), P->GetClass()->GetName(), P->Offset, P->GetSize(),
+									Cast<UBoolProperty>(P) ? (DWORD)((UBoolProperty*)P)->BitMask : 0 );
+						}
+						if( GetSuperStruct() )
+							debugf( NAME_Warning, TEXT("[layoutdiag] super %s PropertiesSize=%i"), GetSuperStruct()->GetName(), GetSuperStruct()->GetPropertiesSize() );
+					}
+					break;
+				}
+		}
 	}
 	else
 	{
+		// ufront 2.70 — this branch links NATIVE properties (CPP_PROPERTY, registered in a StaticConstructor):
+		// their storage is a C++ member, so linking must not move it. Epic restored the OFFSET and forgot the
+		// BIT: UBoolProperty::Link merges a bool into the previous bool's word as if they were packed script
+		// bitfields, so adjacent native bools came out with BitMask 2, 4, 8... while each one is a whole UBOOL.
+		// Harmless for Epic's own drivers (a bool that only config ever writes is simply nonzero or zero), but a
+		// constructor that writes `= true` (bit 1) before config is applied can then never be switched off:
+		// NOpenALDrv's `UseReverb=False` cleared bit 4 and reverb stayed on (measured), and ExportText reads such
+		// a bool back as False. A native property can never be a real bitfield (CPP_PROPERTY takes an offset),
+		// so its bit is restored exactly like its offset. Unreal 1 never merges native bools at all (its
+		// LinkOffsets runs only for loaded/compiled structs), which is why the same driver works there.
 		UProperty* Prev = NULL;
 		for( UField* Field=Children; Field && Field->GetOuter()==this; Field=Field->Next )
 		{
@@ -402,44 +443,17 @@ void UStruct::Link( FArchive& Ar, UBOOL Props )
 			if( Property )
 			{
 				INT SavedOffset = Property->Offset;
+				UBoolProperty* Bool = Cast<UBoolProperty>( Property );
+				BITFIELD SavedBitMask = Bool ? Bool->BitMask : 0;
 				Property->Link( Ar, Prev );
 				Property->Offset = SavedOffset;
+				if( Bool )
+					Bool->BitMask = SavedBitMask;
 				Prev = Property;
-#if __PSX2_EE__
-				UStructProperty* SP=Cast<UStructProperty>(Property);
-				if( SP && appStrcmp(SP->Struct->GetName(),TEXT("Vector"))==0 )
-					PropertiesAlign = 16;//HasVector = 1;
-				if( SP && appStrcmp(SP->Struct->GetName(),TEXT("Plane"))==0 )
-					PropertiesAlign = 16;//HasVector = 1;
-				if( SP && appStrcmp(SP->Struct->GetName(),TEXT("Coords"))==0 )
-					PropertiesAlign = 16;//HasVector = 1;
-#endif
 			}
 		}
 	}
 
-#if __PSX2_EE__
-	// Because Playstation2 FVectors are 16 bytes, but the UnrealScript class definition
-	// for vector is still 12 bytes, pad the propertiessize with an extra FLOAT.
-	if(appStrcmp( GetName(), TEXT("Vector") ) == 0)
-	{
-		debugf( TEXT(" (%i) Changing UnrealScript vector size to 16 bytes."), PropertiesSize );
-		PropertiesSize += sizeof(FLOAT);
-	}
-	if(appStrcmp( GetName(), TEXT("Plane") ) == 0)
-	{
-		debugf( TEXT(" (%i) Changing UnrealScript plane size to 32 bytes."), PropertiesSize );
-		PropertiesSize += sizeof(FLOAT)*3;
-	}
-	if(appStrcmp( GetName(), TEXT("Coords") ) == 0)
-	{
-		debugf( TEXT(" (%i) Changing UnrealScript coords size to 64 bytes."), PropertiesSize );
-		PropertiesSize += sizeof(FLOAT)*12;
-	}
-	
-	//if(HasVector == 1)
-	//	PropertiesSize = Align(PropertiesSize,16);
-#endif
 
 
 	unguard;
@@ -1436,7 +1450,7 @@ EExprToken UStruct::SerializeExpr( INT& iCode, FArchive& Ar )
 			//this bit is an incredible kludge, but telportes do not play well
 			// with the debugger, and until i figure out why kludgecity gk
 			nameComp=this->GetFullName();
-			if((wcscmp(nameComp,badTeleport1)!=0)&&(wcscmp(nameComp,badTeleport2)!=0))
+			if((appStrcmp(nameComp,badTeleport1)!=0)&&(appStrcmp(nameComp,badTeleport2)!=0)) // retail was UNICODE; the port is ANSI
 			{
 				HANDLE_OPTIONAL_DEBUG_INFO(); //DEBUGGER
 

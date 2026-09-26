@@ -6,6 +6,7 @@
 		* Created by Tim Sweeney
 =============================================================================*/
 
+
 //
 // ANSI stdout output device.
 //
@@ -28,7 +29,7 @@ public:
 	{}
 	void Serialize( const TCHAR* Msg, enum EName Event )
 	{
-#ifdef _DEBUG
+#if defined(_DEBUG)
 		// Just display info and break the debugger.
   		debugf( NAME_Critical, TEXT("appError called while debugging:") );
 		debugf( NAME_Critical, Msg );

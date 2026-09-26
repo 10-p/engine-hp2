@@ -125,6 +125,9 @@ FNameEntry FName::HardcodedNames[] =
 	#include "UnNames.h"
 };
 
+// Forward declaration.
+CORE_API FNameEntry* AllocateNameEntry( const TCHAR* Name, DWORD Index, DWORD Flags, FNameEntry* HashNext );
+
 //
 // Initialize the name subsystem.
 //
@@ -202,7 +205,7 @@ void FName::DisplayHash( FOutputDevice& Ar )
 //
 // Delete an name permanently; called by garbage collector.
 //
-void FName::DeleteEntry( INT i )
+void FName::DeleteEntry( int i )
 {
 	guard(FName::DeleteEntry);
 

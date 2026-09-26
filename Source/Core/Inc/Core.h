@@ -52,7 +52,9 @@ private:
 	TIMETYP v;
 };
 
-#if _MSC_VER || __ICC || __LINUX__
+// GCC and clang implement #pragma pack(push,n) too; keyed on __GNUC__ because __LINUX__ is never defined by
+// the template UnGnuG.h (and was only defined after this line before). Used to wrap third-party codec headers.
+#if _MSC_VER || __ICC || __GNUC__
 	#define SUPPORTS_PRAGMA_PACK 1
 #else
 	#define SUPPORTS_PRAGMA_PACK 0
@@ -66,17 +68,6 @@ private:
 	#include "UnGnuG.h"
 #else
 	#error Unknown Compiler
-#endif
-
-// If no asm, redefine __asm to cause compile-time error.
-#if !ASM && !__GNUG__
-	#define __asm ERROR_ASM_NOT_ALLOWED
-#endif
-
-// OS specific include.
-#if __UNIX__
-	#include "UnUnix.h"
-	#include <signal.h>
 #endif
 
 // Global constants.
@@ -107,6 +98,12 @@ enum ENoInit {E_NoInit = 0};
 #else
 	#ifndef _TCHAR_DEFINED
 		typedef ANSICHAR  TCHAR;
+		typedef ANSICHARU TCHARU;
+	#elif defined(PLATFORM_WIN32)
+		// ufront 2.33 (Windows/MinGW): MinGW's <tchar.h>, reached through the Win32 headers, sets
+		// _TCHAR_DEFINED and supplies TCHAR (== char here, since we do not build UNICODE) — but it knows
+		// nothing about UE1's TCHARU, so the branch above skipped BOTH and the engine failed to compile
+		// wherever TCHARU is used (UnCanvas.cpp).
 		typedef ANSICHARU TCHARU;
 	#endif
 	#undef TEXT
@@ -470,7 +467,15 @@ CORE_API extern FLOAT					GAudioMaxRadiusMultiplier;	// TG ALPHA
 CORE_API extern FLOAT					GAudioDefaultRadius;		// TG ALPHA
 
 // Per module globals.
-extern "C" DLL_EXPORT TCHAR GPackage[];
+#ifdef UNREAL_STATIC
+#define THIS_PACKAGE_PASTE(A, B) A ## B
+#define THIS_PACKAGE_EVAL(A, B) THIS_PACKAGE_PASTE(A, B)
+#define THIS_PACKAGE THIS_PACKAGE_EVAL(GPackage, UPACKAGE_NAME)
+#else
+#define THIS_PACKAGE GPackage
+#endif
+extern "C" DLL_EXPORT char THIS_PACKAGE[];
+
 
 // Normal includes.
 #include "UnFile.h"			// Low level utility code.
@@ -479,6 +484,7 @@ extern "C" DLL_EXPORT TCHAR GPackage[];
 #include "UnTemplate.h"     // Dynamic arrays.
 #include "UnName.h"			// Global name subsystem.
 #include "UnStack.h"		// Script stack definition.
+#include "UnStaticExports.h" // Package exports for static builds.
 #include "UnObjBas.h"		// Object base class.
 #include "UnCoreNet.h"		// Core networking.
 #include "UnCorObj.h"		// Core object class definitions.
@@ -493,9 +499,6 @@ extern "C" DLL_EXPORT TCHAR GPackage[];
 #include "UnBits.h"         // Bitstream archiver.
 #include "UnMath.h"         // Vector math functions.
 
-#if __STATIC_LINK
-#include "UnCoreNative.h"
-#endif
 
 
 // Very basic abstract debugger class.
@@ -508,6 +511,13 @@ public:
 
 
 /*-----------------------------------------------------------------------------
+	Functions.
+-----------------------------------------------------------------------------*/
+
+CORE_API TArray<FString> appFindFiles( const TCHAR* Spec );
+
+/*-----------------------------------------------------------------------------
 	The End.
 -----------------------------------------------------------------------------*/
+
 #endif

@@ -105,7 +105,8 @@ public:
 			return 0;
 		FString Spec = FString(Path) * TEXT("*");
 		TArray<FString> List = FindFiles( *Spec, 1, 0 );
-		for( INT i=0; i<List.Num(); i++ )
+		INT i;
+		for( i=0; i<List.Num(); i++ )
 			if( !Delete(*(FString(Path) * List(i)),1,1) )
 				return 0;
 		List = FindFiles( *Spec, 0, 1 );
@@ -126,13 +127,14 @@ public:
 		return 1;
 		unguard;
 	}
-	SQWORD FFileManagerGeneric::GetGlobalTime( const TCHAR* Filename )
+	SQWORD GetGlobalTime( const TCHAR* Filename )
 	{
 		guard(FFileManagerGeneric::GetGlobalTime);
-		struct stat buffer;
-		if (stat( appToAnsi(Filename), &buffer ) != 0)
-			return 0;
-		return buffer.st_mtime;
+		// Always 0 on GCC targets (Epic's/the template's FFileManagerLinux behaviour). HP2's appInit regenerates
+		// Game.ini/User.ini whenever Default.ini is newer, and the web preloads Default.ini fresh on every page
+		// load -- a real mtime would overwrite the player's persisted inis on every boot. It also keeps the
+		// persistent-actor cache check deterministic (PLAN §2 "GetGlobalTime").
+		return 0;
 		unguard;
 	}
 	UBOOL SetGlobalTime( const TCHAR* Filename )
@@ -168,3 +170,9 @@ private:
 /*-----------------------------------------------------------------------------
 	The End.
 -----------------------------------------------------------------------------*/
+
+
+
+
+
+

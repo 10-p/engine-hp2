@@ -477,7 +477,14 @@ void UBoolProperty::Serialize( FArchive& Ar )
 	guard(UBoolProperty::Serialize);
 	Super::Serialize( Ar );
 	if( !Ar.IsLoading() && !Ar.IsSaving() )
-		Ar << BitMask;
+	{
+		// Transactional archives: serialize the bitmask as a DWORD to avoid
+		// overload ambiguity with BITFIELD on some compilers.
+		DWORD Mask = BitMask;
+		Ar << Mask;
+		if( Ar.IsLoading() )
+			BitMask = Mask;
+	}
 	unguardobj;
 }
 void UBoolProperty::ExportCppItem( FOutputDevice& Out ) const
@@ -1413,16 +1420,7 @@ void UStructProperty::Link( FArchive& Ar, UProperty* Prev )
 	Super::Link( Ar, Prev );
 	Ar.Preload( Struct );
 	ElementSize    = Struct->PropertiesSize;
-#ifdef __PSX2_EE__
-	if (appStrcmp( Struct->GetName(), TEXT("Vector") ) == 0)
-		Offset = Align( GetOuterUField()->GetPropertiesSize(), 16 );
-	else if (appStrcmp( Struct->GetName(), TEXT("Plane") ) == 0)
-		Offset = Align( GetOuterUField()->GetPropertiesSize(), 16 );
-	else if (appStrcmp( Struct->GetName(), TEXT("Coords") ) == 0)
-		Offset = Align( GetOuterUField()->GetPropertiesSize(), 16 );
-	else
-#endif
-		Offset = Align( GetOuterUField()->GetPropertiesSize(), ElementSize==2 ? 2 : ElementSize>=4 ? 4 : 1 );
+	Offset = Align( GetOuterUField()->GetPropertiesSize(), ElementSize==2 ? 2 : ElementSize>=4 ? 4 : 1 );
 	if( Struct->ConstructorLink && !(PropertyFlags & CPF_Native) )
 		PropertyFlags |= CPF_NeedCtorLink;
 	unguardobj;

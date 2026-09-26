@@ -313,7 +313,7 @@ void UObject::execArrayElement( FFrame& Stack, RESULT_DECL )
 		{
 			// Display out-of-bounds warning and continue on with index clamped to valid range.
 			Stack.Logf( TEXT("Accessed array out of bounds (%i/%i)"), Index, GProperty->ArrayDim );
-			Index = Clamp( Index, 0, GProperty->ArrayDim - 1 );
+			Index = Clamp<INT>( Index, 0, (INT)GProperty->ArrayDim - 1 );
 		}
 
 		// Update address.
@@ -424,12 +424,7 @@ void UObject::execBoolVariable( FFrame& Stack, RESULT_DECL )
 
 	// Get bool variable.
 	BYTE B = *Stack.Code++;
-	#if __PSX2_EE__
-	UBoolProperty* Property;
-	appMemcpy(&Property, Stack.Code, sizeof(INT));
-	#else
 	UBoolProperty* Property = *(UBoolProperty**)Stack.Code;
-	#endif
 	(this->*GNatives[B])( Stack, NULL );
 	GProperty = Property;
 

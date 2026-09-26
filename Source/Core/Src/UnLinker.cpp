@@ -165,7 +165,7 @@ ULinkerLoad::ULinkerLoad( UObject* InParent, const TCHAR* InFilename, DWORD InLo
 #endif
 	Loader = GFileManager->CreateFileReader( InFilename, 0, GError );
 	if( !Loader )
-		appThrowf( LocalizeError("OpenFailed") );
+		appThrowf( TEXT("%s: %s"), LocalizeError("OpenFailed"), InFilename ); // ufront 2.35: name the file
 	AltLoader = NULL;
 
 	FPushMemTag Push(TEXT("ULinkerLoad"));
@@ -397,7 +397,19 @@ ULinkerLoad::VerifyImport( INT i )
 		check(Import.PackageIndex<0);
 		VerifyImport( -Import.PackageIndex-1 );
 		Import.SourceLinker = ImportMap(-Import.PackageIndex-1).SourceLinker;
+#ifdef __EMSCRIPTEN__
+		// ufront 2.12 hardening: a nested import whose package is missing on the web build leaves SourceLinker
+		// NULL (GetPackageLinker returns NULL instead of throwing -- catching is off). Treat as broken links
+		// instead of check()-aborting the whole module.
+		if( !Import.SourceLinker )
+		{
+			if( Cast<UPackage>(LinkerRoot) )
+				Cast<UPackage>(LinkerRoot)->PackageFlags |= PKG_BrokenLinks;
+			return;
+		}
+#else
 		check(Import.SourceLinker);
+#endif
 		FObjectImport* Top;
 		for
 		(	Top = &Import
@@ -405,6 +417,17 @@ ULinkerLoad::VerifyImport( INT i )
 		;	Top = &ImportMap(-Top->PackageIndex-1),Depth++ );
 		Pkg = CreatePackage( NULL, *Top->ObjectName );
 	}
+#ifdef __EMSCRIPTEN__
+	// ufront 2.12 hardening: a missing REFERENCED package resolves SourceLinker to NULL on the web build
+	// (GetPackageLinker returns NULL instead of throwing). Bail as a broken import instead of NULL-dereferencing
+	// SourceLinker->ExportHash below, which would abort the whole module.
+	if( !Import.SourceLinker )
+	{
+		if( Cast<UPackage>(LinkerRoot) )
+			Cast<UPackage>(LinkerRoot)->PackageFlags |= PKG_BrokenLinks;
+		return;
+	}
+#endif
 	// Find this import within its existing linker.
 	UBOOL SafeReplace = 0;
 	Rehack://oldver
@@ -889,7 +912,7 @@ ULinkerSave::ULinkerSave( UObject* InParent, const TCHAR* InFilename )
 	// Create file saver.
 	Saver = GFileManager->CreateFileWriter( InFilename, 0, GThrow );
 	if( !Saver )
-		appThrowf( LocalizeError("OpenFailed") );
+		appThrowf( TEXT("%s: %s"), LocalizeError("OpenFailed"), InFilename ); // ufront 2.35: name the file
 
 	// Set main summary info.
 	Summary.Tag           = PACKAGE_FILE_TAG;

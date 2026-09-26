@@ -353,6 +353,8 @@ protected:
 template< class T > class TArray: public TRefArray<T>
 {
 public:
+	using TRefArray<T>::Data;
+	using TRefArray<T>::ArrayNum;
 
 	TArray()
 	:	ArrayMax( 0 )
@@ -784,7 +786,7 @@ public:
 	}
 	void Insert( INT Index, INT Count=1 )
 	{
-		FArray::Insert( Index, Count, sizeof(T) );
+		TArray<T>::Insert( Index, Count ); // HP2 433: TTransArray derives from TArray<T>, not FArray
 		if( GUndo )
 			GUndo->SaveArray( Owner, (FArray*)this, Index, Count, 1, sizeof(T), SerializeItem, DestructItem );
 	}
@@ -797,7 +799,7 @@ public:
 	void Empty( INT Slack=0 )
 	{
 		if( GUndo )
-			GUndo->SaveArray( Owner, (FArray*)this, 0, ArrayNum, -1, sizeof(T), SerializeItem, DestructItem );
+			GUndo->SaveArray( Owner, (FArray*)this, 0, this->ArrayNum, -1, sizeof(T), SerializeItem, DestructItem );
 		TArray<T>::Empty( Slack );
 	}
 
@@ -826,18 +828,18 @@ public:
 	}
 	INT AddUniqueItem( const T& Item )
 	{
-		for( INT Index=0; Index<ArrayNum; Index++ )
+		for( INT Index=0; Index<this->ArrayNum; Index++ )
 			if( (*this)(Index)==Item )
 				return Index;
 		return AddItem( Item );
 	}
 	INT RemoveItem( const T& Item )
 	{
-		INT OriginalNum=ArrayNum;
-		for( INT Index=0; Index<ArrayNum; Index++ )
+		INT OriginalNum=this->ArrayNum;
+		for( INT Index=0; Index<this->ArrayNum; Index++ )
 			if( (*this)(Index)==Item )
 				Remove( Index-- );
-		return OriginalNum - ArrayNum;
+		return OriginalNum - this->ArrayNum;
 	}
 
 	// TTransArray interface.
@@ -853,7 +855,7 @@ public:
 	void ModifyAllItems()
 	{
 		if( GUndo )
-			GUndo->SaveArray( Owner, (FArray*)this, 0, Num(), 0, sizeof(T), SerializeItem, DestructItem );
+			GUndo->SaveArray( Owner, (FArray*)this, 0, this->Num(), 0, sizeof(T), SerializeItem, DestructItem );
 	}
 	friend FArchive& operator<<( FArchive& Ar, TTransArray& A )
 	{
@@ -1031,7 +1033,7 @@ template <class T> void TLazyArray<T>::Unload()
 	 if( SavedPos<0 && GLazyLoad )
 	 {
 		// Unload it now.
-		Empty();
+		this->Empty();
 		SavedPos *= -1;
 	 }
 	 unguard;
@@ -1205,19 +1207,21 @@ public:
 	}
 	FString Left( INT Count ) const
 	{
-		return FString( Clamp(Count,0,Len()), **this );
+		return FString( Clamp<INT>(Count, 0, Len()), **this );
 	}
 	FString LeftChop( INT Count ) const
 	{
-		return FString( Clamp(Len()-Count,0,Len()), **this );
+		return FString( Clamp<INT>(Len() - Count, 0, Len()), **this );
 	}
 	FString Right( INT Count ) const
 	{
-		return FString( **this + Len()-Clamp(Count,0,Len()) );
+		return FString( **this + Len() - Clamp<INT>(Count, 0, Len()) );
 	}
 	FString Mid( INT Start, INT Count=MAXINT ) const
 	{
-		DWORD End = Start+Count;
+		// Unsigned: with the default Count (MAXINT) a signed Start+Count OVERFLOWS -- undefined behaviour, and clang
+		// -O2 once turned it into a 2 GB allocation. The same bits as the retail wrap-around, without the UB.
+		DWORD End = (DWORD)Start + (DWORD)Count;
 		Start    = Clamp( (DWORD)Start, (DWORD)0,     (DWORD)Len() );
 		End      = Clamp( (DWORD)End,   (DWORD)Start, (DWORD)Len() );
 		return FString( End-Start, **this + Start );
@@ -1463,7 +1467,7 @@ protected:
 		INT HashNext;
 		TK Key;
 		TI Value;
-		TPair( TTypeInfo<TK>::ConstInitType InKey, TTypeInfo<TI>::ConstInitType InValue )
+		TPair( typename TTypeInfo<TK>::ConstInitType InKey, typename TTypeInfo<TI>::ConstInitType InValue )
 		: Key( InKey ), Value( InValue )
 		{}
 		TPair()
@@ -1499,7 +1503,7 @@ protected:
 			HashCount /= 2;
 		Rehash();
 	}
-	TI& Add( TTypeInfo<TK>::ConstInitType InKey, TTypeInfo<TI>::ConstInitType InValue )
+	TI& Add( typename TTypeInfo<TK>::ConstInitType InKey, typename TTypeInfo<TI>::ConstInitType InValue )
 	{
 		TPair& Pair   = *new(Pairs)TPair( InKey, InValue );
 		INT    iHash  = (GetTypeHash(Pair.Key) & (HashCount-1));
@@ -1550,14 +1554,14 @@ public:
 		HashCount = 8;
 		Rehash();
 	}
-	TI& Set( TTypeInfo<TK>::ConstInitType InKey, TTypeInfo<TI>::ConstInitType InValue )
+	TI& Set( typename TTypeInfo<TK>::ConstInitType InKey, typename TTypeInfo<TI>::ConstInitType InValue )
 	{
 		for( INT i=Hash[(GetTypeHash(InKey) & (HashCount-1))]; i!=INDEX_NONE; i=Pairs(i).HashNext )
 			if( Pairs(i).Key==InKey )
 				{Pairs(i).Value=InValue; return Pairs(i).Value;}
 		return Add( InKey, InValue );
 	}
-	INT Remove( TTypeInfo<TK>::ConstInitType InKey )
+	INT Remove( typename TTypeInfo<TK>::ConstInitType InKey )
 	{
 		INT Count=0;
 		for( INT i=Pairs.Num()-1; i>=0; i-- )
@@ -1626,6 +1630,7 @@ public:
 template< class TK, class TI > class TMap : public TMapBase<TK,TI>
 {
 public:
+	using TMapBase<TK,TI>::Pairs;
 	TMap& operator=( const TMap& Other )
 	{
 		TMapBase<TK,TI>::operator=( Other );
@@ -1647,36 +1652,36 @@ public:
 	}
 	void MultiFind( const TK& Key, TArray<TI>& Values ) 
 	{
-		for( INT i=Hash[(GetTypeHash(Key) & (HashCount-1))]; i!=INDEX_NONE; i=Pairs(i).HashNext )
-			if( Pairs(i).Key==Key )
-				new(Values)TI(Pairs(i).Value);
+		for( INT i=this->Hash[(GetTypeHash(Key) & (this->HashCount-1))]; i!=INDEX_NONE; i=this->Pairs(i).HashNext )
+			if( this->Pairs(i).Key==Key )
+				new(Values)TI(this->Pairs(i).Value);
 	}
-	TI& Add( TTypeInfo<TK>::ConstInitType InKey, TTypeInfo<TI>::ConstInitType InValue )
+	TI& Add( typename TTypeInfo<TK>::ConstInitType InKey, typename TTypeInfo<TI>::ConstInitType InValue )
 	{
 		return TMapBase<TK,TI>::Add( InKey, InValue );
 	}
-	TI& AddUnique( TTypeInfo<TK>::ConstInitType InKey, TTypeInfo<TI>::ConstInitType InValue )
+	TI& AddUnique( typename TTypeInfo<TK>::ConstInitType InKey, typename TTypeInfo<TI>::ConstInitType InValue )
 	{
-		for( INT i=Hash[(GetTypeHash(InKey) & (HashCount-1))]; i!=INDEX_NONE; i=Pairs(i).HashNext )
-			if( Pairs(i).Key==InKey && Pairs(i).Value==InValue )
-				return Pairs(i).Value;
+		for( INT i=this->Hash[(GetTypeHash(InKey) & (this->HashCount-1))]; i!=INDEX_NONE; i=this->Pairs(i).HashNext )
+			if( this->Pairs(i).Key==InKey && this->Pairs(i).Value==InValue )
+				return this->Pairs(i).Value;
 		return Add( InKey, InValue );
 	}
-	INT RemovePair( TTypeInfo<TK>::ConstInitType InKey, TTypeInfo<TI>::ConstInitType InValue )
+	INT RemovePair( typename TTypeInfo<TK>::ConstInitType InKey, typename TTypeInfo<TI>::ConstInitType InValue )
 	{
 		INT Count=0;
-		for( INT i=Pairs.Num()-1; i>=0; i-- )
-			if( Pairs(i).Key==InKey && Pairs(i).Value==InValue )
-				{Pairs.Remove(i); Count++;}
+		for( INT i=this->Pairs.Num()-1; i>=0; i-- )
+			if( this->Pairs(i).Key==InKey && this->Pairs(i).Value==InValue )
+				{this->Pairs.Remove(i); Count++;}
 		if( Count )
-			Relax();
+			this->Relax();
 		return Count;
 	}
 	TI* FindPair( const TK& Key, const TK& Value )
 	{
-		for( INT i=Hash[(GetTypeHash(Key) & (HashCount-1))]; i!=INDEX_NONE; i=Pairs(i).HashNext )
-			if( Pairs(i).Key==Key && Pairs(i).Value==Value )
-				return &Pairs(i).Value;
+		for( INT i=this->Hash[(GetTypeHash(Key) & (this->HashCount-1))]; i!=INDEX_NONE; i=this->Pairs(i).HashNext )
+			if( this->Pairs(i).Key==Key && this->Pairs(i).Value==Value )
+				return &this->Pairs(i).Value;
 		return NULL;
 	}
 };

@@ -7,7 +7,6 @@
 =============================================================================*/
 
 #include "CorePrivate.h"
-
 /*-----------------------------------------------------------------------------
 	Globals.
 -----------------------------------------------------------------------------*/
@@ -34,8 +33,9 @@ TArray<FRegistryObjectInfo> UObject::GObjDrivers;
 TMultiMap<FName,FName>*		UObject::GObjPackageRemap;
 static INT GGarbageRefCount=0;
 
+
 /*-----------------------------------------------------------------------------
-	UObject constructors.
+   UObject constructors.
 -----------------------------------------------------------------------------*/
 
 UObject::UObject()
@@ -1329,9 +1329,6 @@ void UObject::StaticInit()
 		GObjHash[i] = NULL;
 
 	// If statically linked, initialize registrants.
-	#if __STATIC_LINK
-		AUTO_INITIALIZE_REGISTRANTS;
-	#endif
 	
 	// Note initialized.
 	GObjInitialized = 1;
@@ -1584,9 +1581,7 @@ void UObject::BindPackage( UPackage* Pkg )
 		GObjNoRegister      = 1;
 		if( Pkg->DllHandle )
 		{
-			#if !__STATIC_LINK
 			debugf( NAME_Log, TEXT("Bound to %s%s"), Pkg->GetName(), DLLEXT );
-			#endif
 			ProcessRegistrants();
 		}
 	}
@@ -2152,7 +2147,17 @@ void UObject::SafeLoadError( DWORD LoadFlags, const TCHAR* Error, const TCHAR* F
 
 	guard(UObject::SafeLoadError);
 	if( !(LoadFlags & LOAD_Quiet)  ) debugf( NAME_Warning, TempStr );
+#ifndef __EMSCRIPTEN__
 	if(   LoadFlags & LOAD_Throw   ) appThrowf( TEXT("%s"), Error   );
+#else
+	// ufront (bots parity / "2.6f", mirrors engine-unreal1 + engine-ut2004): do NOT re-throw on LOAD_Throw.
+	// The web build disables exception CATCHING and a throw cannot unwind across Asyncify-transformed frames,
+	// so a re-thrown load error escapes every caller's catch and aborts the WASM module. Callers already turn
+	// a NULL result into a graceful failure; not re-throwing lets a lazy load (e.g. a bot character skin, incl.
+	// the absent BossSkins) fail soft instead of aborting the match. The [appThrowf] diagnostic (UnMisc.cpp)
+	// names any remaining hard-throw site.
+	(void)Error;
+#endif
 	if(   LoadFlags & LOAD_NoFail  ) appErrorf( TEXT("%s"), TempStr );
 	if( !(LoadFlags & LOAD_NoWarn) ) GWarn->Logf( TEXT("%s"), TempStr );
 	unguard;
@@ -2194,20 +2199,32 @@ ULinkerLoad* UObject::GetPackageLinker
 		{
 			// Resolve filename from package name.
 			if( !InOuter )
+#ifdef __EMSCRIPTEN__
+				return NULL; // ufront (2.6f): fail soft (catching off — a throw aborts across Asyncify frames)
+#else
 				appThrowf( LocalizeError("PackageResolveFailed") );
+#endif
 			if( !appFindPackageFile( InOuter->GetName(), CompatibleGuid, NewFilename ) )
 			{
 				// See about looking in the dll.
 				if( (LoadFlags & LOAD_AllowDll) && InOuter->IsA(UPackage::StaticClass()) && ((UPackage*)InOuter)->DllHandle )
 					return NULL;
+#ifdef __EMSCRIPTEN__
+				return NULL; // ufront (2.6f): package not found -> NULL (callers handle it), not a hard abort
+#else
 				appThrowf( LocalizeError("PackageNotFound"), InOuter->GetName() );
+#endif
 			}
 		}
 		else
 		{
 			// Verify that the file exists.
 			if( !appFindPackageFile( InFilename, CompatibleGuid, NewFilename ) )
+#ifdef __EMSCRIPTEN__
+				return NULL; // ufront (2.6f): missing package/map file -> NULL (graceful), not a hard abort
+#else
 				appThrowf( LocalizeError("FileNotFound"), InFilename );
+#endif
 
 			// Resolve package name from filename.
 			TCHAR Tmp[256], *T=Tmp;
@@ -2251,7 +2268,20 @@ ULinkerLoad* UObject::GetPackageLinker
 
 		// Verify compatibility.
 		if( CompatibleGuid && Result->Summary.Guid!=*CompatibleGuid )
+#ifdef __EMSCRIPTEN__
+		{
+			// ufront (2.79o): the package exists -- or is already LOADED -- in ANOTHER VERSION than the one asked
+			// for (a server running a different version of a mod the player also has). Natively this throw is the
+			// join's "version mismatch" failure; with catching off it aborted the whole module. Say why, return
+			// NULL; UGameEngine::LoadMap turns a NULL linker into that same failed join.
+			// (One Localize call per statement: it answers in a shared static buffer.)
+			FString Why = FString::Printf( LocalizeError("PackageVersion"), InOuter->GetName() );
+			SafeLoadError( LoadFlags, *Why, LocalizeError("FailedLoad"), InOuter->GetName(), *Why );
+			return NULL;
+		}
+#else
 			appThrowf( LocalizeError("PackageVersion"), InOuter->GetName() );
+#endif
 	}
 	catch( const TCHAR* Error )
 	{
@@ -2374,7 +2404,19 @@ UObject* UObject::StaticLoadObject( UClass* ObjectClass, UObject* InOuter, const
 		if( !Result )
 			Result = StaticFindObject( ObjectClass, InOuter, InName );
 		if( !Result )
+#ifdef __EMSCRIPTEN__
+		{
+			// 2.6g (mirrors engine-unreal1): don't throw on object-not-found. Exception CATCHING is disabled
+			// on the web build (a throw can't unwind across Asyncify frames -> module abort), so the catch
+			// below can't be relied on. Return NULL — what the native catch path ultimately yields here — so
+			// callers fail soft (a missing map, an absent bot-skin/mesh texture, ...). Skips the package-remap
+			// retry on web (rare for the fixed bundled package set), same as unreal1.
+			EndLoad();
+			return NULL;
+		}
+#else
 			appThrowf( LocalizeError("ObjectNotFound"), ObjectClass->GetName(), InOuter ? InOuter->GetPathName() : TEXT("None"), InName );
+#endif
 		EndLoad();
 	}
 	catch( const TCHAR* Error )
@@ -3311,7 +3353,7 @@ UObject* UObject::StaticAllocateObject
 
 	// See if object already exists.
 	const TCHAR* ClassName = GObjRegisterCount > 0 ? InClass->GetName() 
-		: reinterpret_cast<const TCHAR* const&>(InClass->GetFName());
+		: TEXT("StaticAllocateObject"); // was a reinterpret_cast of a prvalue FName (ill-formed); only a memory tag
 	FPushMemTag Push(ClassName);
 	UObject* Obj                        = StaticFindObject( InClass, InOuter, *InName );//oldver: Should use NULL instead of InClass to prevent conflicts by name rather than name-class.
 	UClass*  Cls                        = Cast<UClass>( Obj );
@@ -3408,16 +3450,60 @@ UObject* UObject::StaticConstructObject
 	guard(UObject::StaticConstructObject);
 	check(Error);
 
-	// Allocate the object.
+	// Allocate the object, then run its C++ constructor -- as retail does, for EVERY class.
+	//
+	// ufront: the Dreamcast port this engine descends from wrapped this in a "STUPID HACK" (`maximqad: remove
+	// that when zeroing on actor construct is fixed`) that saved every property byte of an ACTOR before its
+	// constructor and copied them back afterwards, so actor constructors were silently undone on every
+	// platform. Its reason -- the value-initialising `new(X)TClass()` zeroing objects under GCC -- is fixed at
+	// the root (DECLARE_CLASS, a680288), so the hack only did harm: AInternetLink's `Socket = INVALID_SOCKET`
+	// and `ReceiveMode = RMODE_Event` were thrown away, and every UdpLink/TcpLink (the server query, the
+	// beacon, the web admin, UBrowser) failed "BindPort: already bound". Actor string members are
+	// FStringNoInit and the rest are plain data, so a constructor changes nothing it does not assign.
 	FPushMemTag Push(InClass->GetName());
 	UObject* Result = StaticAllocateObject( InClass, InOuter, InName, InFlags, InTemplate, Error );
 	if( Result )
+	{
+#ifndef __EMSCRIPTEN__
+		// ufront (2.12 Part B) — native segfault-on-quit fix. The value-init ClassConstructor
+		// (new(X)TClass()) zero-initialised the WHOLE object for classes with no user-provided default
+		// ctor, wiping the UObject header (Index/Class/Outer/Name/ObjectFlags) that StaticAllocateObject
+		// set up; for native CLASS_Config classes (render devices, audio/net drivers, client) that crashed at
+		// shutdown (PurgeGarbage -> UViewport::Destroy -> `delete RenDev` -> ~UObject: Class==NULL faults
+		// ExitProperties and the zeroed Index fails IsValid()). DECLARE_CLASS no longer value-initialises
+		// (a680288), so this is a self-detecting safety net: if the ctor ever wipes the header (Class went
+		// NULL) of a native CLASS_Config class, restore the WHOLE header and re-load its config.
+		INT      SavedIndex = Result->Index;
+		UClass*  SavedClass = Result->Class;
+		UObject* SavedOuter = Result->Outer;
+		FName    SavedName  = Result->Name;
+		DWORD    SavedFlags = Result->ObjectFlags;
 		(*InClass->ClassConstructor)( Result );
+		if( Result->Class==NULL && (InClass->GetFlags() & RF_Native) && (InClass->ClassFlags & CLASS_Config) )
+		{
+			Result->Index       = SavedIndex;
+			Result->Class       = SavedClass;
+			Result->Outer       = SavedOuter;
+			Result->Name        = SavedName;
+			Result->ObjectFlags = SavedFlags;
+			Result->LoadConfig();
+		}
+#else
+		(*InClass->ClassConstructor)( Result );
+		// ufront (2.12): the web's lighter form of the same safety net -- a native CLASS_Config object whose
+		// ctor wiped the Class pointer gets it back and re-loads config onto the live instance from its own
+		// [Pkg.Class] section (its CPF_Config feature flags -- Coronas, VolumetricLighting, DetailTextures --
+		// would otherwise be zero). Self-detecting: an object whose Class survived is untouched.
+		if( Result->Class==NULL && (InClass->GetFlags() & RF_Native) && (InClass->ClassFlags & CLASS_Config) )
+		{
+			Result->Class = InClass;
+			Result->LoadConfig();
+		}
+#endif
+	}
 	return Result;
-
 	unguard;
 }
-
 /*-----------------------------------------------------------------------------
    Garbage collection.
 -----------------------------------------------------------------------------*/
@@ -3448,6 +3534,29 @@ void UObject::SerializeRootSet( FArchive& Ar, DWORD KeepFlags, DWORD RequiredFla
 class FArchiveTagUsed : public FArchive
 {
 public:
+	// ★ ufront 2.19d — ITERATIVE, NOT RECURSIVE.
+	//
+	// The stock UE1 tagger recursed straight into `Obj->Serialize( *this )` from inside `operator<<`,
+	// so the C++ call stack mirrored the depth of the object graph. That is fine natively and fatal on
+	// the web: measured 2026-08-03 on a UT99 `-O0` build, loading DM-Codex died with
+	// `RangeError: Maximum call stack size exceeded` at **5,547 wasm frames**, of which one 1,010-frame
+	// stretch was a single class's `Next` field chain walked 202 links deep (`UField::Serialize`
+	// serializes `SuperField` and `Next`, so a linked list becomes recursion, 5 frames per link).
+	//
+	// It is NOT undefined behaviour and not a cycle — the stack holds 37 distinct functions in a
+	// realistic property-type mix, and the same walk completes once frames get cheaper. It is simply a
+	// bounded traversal deeper than V8 gives a worker. Optimisation only moved the threshold: at -O2 the
+	// one-line `operator<<(FArchive&, UField*&)` forwarder is inlined away, costing 4 frames per link
+	// instead of 5, which was enough to survive — so the engine worked by luck of the inliner rather
+	// than by design.
+	//
+	// This is the same fix engine-ut2004 already carries. Reachability is order-independent, so LIFO
+	// draining marks exactly the same object set; the only thing lost is the precision of `Context` in
+	// the debugSlow "%s is referenced by %s" line, which is diagnostic output, not behaviour. Nothing
+	// here touches package serialisation: FArchiveTagUsed is file-local and used only by
+	// CollectGarbage/IsReferenced, so no on-disk format is involved.
+	TArray<UObject*> Worklist;
+
 	FArchiveTagUsed( UObject* InRefObj = NULL )
 	: Context( NULL ), RefObj( InRefObj )
 	{
@@ -3469,6 +3578,35 @@ public:
 	{
 		return RefObj;
 	}
+
+	// Process all deferred objects iteratively instead of recursively. Callers must invoke this after
+	// seeding the roots with SerializeRootSet — without it nothing past the root set is ever marked
+	// reachable, and the next PurgeGarbage would delete the live world.
+	void DrainWorklist()
+	{
+		guard(FArchiveTagUsed::DrainWorklist);
+		while( Worklist.Num() )
+		{
+			UObject* Obj = Worklist( Worklist.Num()-1 );
+			Worklist.Remove( Worklist.Num()-1 );
+
+			if( Obj->GetFlags() & RF_TagGarbage )
+			{
+				UObject* OriginalContext = Context;
+				Context = Obj;
+				Obj->Serialize( *this );
+				if( !(Obj->GetFlags() & RF_DebugSerialize) )
+					appErrorf( TEXT("%s failed to route Serialize"), Obj->GetFullName() );
+				Context = OriginalContext;
+			}
+			else
+			{
+				// For debugging.
+				debugfSlow( NAME_Log, TEXT("%s is referenced by %s"), Obj->GetFullName(), Context ? Context->GetFullName() : NULL );
+			}
+		}
+		unguard;
+	}
 private:
 	FArchive& operator<<( UObject*& Object )
 	{
@@ -3478,7 +3616,7 @@ private:
 		// Object could be a misaligned pointer.
 		// Copy the contents of the pointer into a temporary and work on that.
 		UObject* Obj;
-		appMemcpy(&Obj, &Object, sizeof(INT));
+		appMemcpy(&Obj, &Object, sizeof(UObject*));
 		
 #if DO_GUARD_SLOW
 		guard(CheckValid);
@@ -3493,25 +3631,19 @@ private:
 		}
 		else if( Obj && (Obj->GetFlags() & RF_Unreachable) )
 		{
-			// Only recurse the first time object is claimed.
+			// Only claim the object the first time; the traversal itself is deferred.
 			guard(TestReach);
 			Obj->ClearFlags( RF_Unreachable | RF_DebugSerialize );
 
-			// Recurse.
+			// ufront 2.19d: defer to the worklist instead of recursing down the object graph.
 			if( Obj->GetFlags() & RF_TagGarbage )
-			{
-				// Recurse down the object graph.
-				UObject* OriginalContext = Context;
-				Context = Obj;
-				Obj->Serialize( *this );
-				if( !(Obj->GetFlags() & RF_DebugSerialize) )
-					appErrorf( TEXT("%s failed to route Serialize"), Obj->GetFullName() );
-				Context = OriginalContext;
-			}
+				Worklist.AddItem( Obj );
 			else
 			{
 				// For debugging.
 				debugfSlow( NAME_Log, TEXT("%s is referenced by %s"), Obj->GetFullName(), Context ? Context->GetFullName() : NULL );
+				// HP2 433: IsReferenced() reports the referencer. Recorded at claim time, while Context is still
+				// the object whose Serialize is running, so LIFO draining does not change it.
 				if( RefObj == Obj )
 					RefObj = Context;
 			}
@@ -3520,7 +3652,7 @@ private:
 
 		// Contents of pointer might have been modified.
 		// Copy the results back into the misaligned pointer.
-		appMemcpy(&Object, &Obj, sizeof(INT));
+		appMemcpy(&Object, &Obj, sizeof(UObject*));
 		return *this;
 		unguardSlow;
 	}
@@ -3528,16 +3660,7 @@ private:
 	{
 		guardSlow(FArchiveTagUsed::Name);
 
-		#if __PSX2_EE__
-		// Name is probably not aligned correctly.
-		// Memcpy workaround copies into aligned temporary then back.
-		FName LocalName;
-		appMemcpy(&LocalName, &Name, sizeof(FName));
-		LocalName.ClearFlags( RF_Unreachable );
-		appMemcpy(&Name, &LocalName, sizeof(FName));
-		#else
 		Name.ClearFlags( RF_Unreachable );
-		#endif
 
 		return *this;
 		unguardSlow;
@@ -3630,6 +3753,7 @@ void UObject::CollectGarbage( DWORD KeepFlags )
 	// Tag and purge garbage.
 	FArchiveTagUsed TagUsedAr;
 	SerializeRootSet( TagUsedAr, KeepFlags, RF_TagGarbage );
+	TagUsedAr.DrainWorklist();
 
 	// Purge it.
 	PurgeGarbage();
@@ -3654,6 +3778,7 @@ UBOOL UObject::IsReferenced( UObject*& Obj, DWORD KeepFlags, UBOOL IgnoreReferen
 	FArchiveTagUsed TagUsedAr(OriginalObj);
 	OriginalObj->ClearFlags( RF_TagGarbage );
 	SerializeRootSet( TagUsedAr, KeepFlags, RF_TagGarbage );
+	TagUsedAr.DrainWorklist();
 
 	// Stick the reference back.
 	Obj = OriginalObj;
@@ -3999,9 +4124,7 @@ void UPackage::Destroy()
 	guard(UPackage::Destroy);
 	if( DllHandle )
 	{
-		#if !__STATIC_LINK
 		debugf( NAME_Log, TEXT("Unbound to %s%s"), GetName(), DLLEXT );
-		#endif
 		//Danger: If package is garbage collected before its autoregistered classes,
 		//the autoregistered classes will be unmapped from memory.
 		//appFreeDllHandle( DllHandle );
@@ -4013,7 +4136,6 @@ void* UPackage::GetDllExport( const TCHAR* ExportName, UBOOL Checked )
 {
 	guard(UPackage::GetDllExport);
 	void* Result;
-	#if !__STATIC_LINK
 	if( !DllHandle )
 	{
 		if( Checked && !ParseParam(appCmdLine(),TEXT("nobind")) )
@@ -4021,13 +4143,8 @@ void* UPackage::GetDllExport( const TCHAR* ExportName, UBOOL Checked )
 		Result = NULL;
 	}
 	else
-	#endif
 	{
-		#if __STATIC_LINK
-		Result = FindNative( (char*) ExportName );
-		#else
 		Result = appGetDllExport( DllHandle, ExportName );
-		#endif
 		if( !Result && Checked && !ParseParam(appCmdLine(),TEXT("nobind")) )
 			appErrorf( LocalizeError("NotInDll"), ExportName, GetName() );
 		if( Result )
