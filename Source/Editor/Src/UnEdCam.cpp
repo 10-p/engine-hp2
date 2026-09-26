@@ -10,8 +10,6 @@
 #include "UnRender.h"
 #include "UnSkeletalMesh.h"
 #include "UnStat.h"
-//milestone 4
-#include <wchar.h>
 
 #if 1 //U2Ed
 extern void brushclipDeleteMarkers();
@@ -46,7 +44,9 @@ void MoveActors( ULevel* Level, FVector Delta, FRotator DeltaRot, UBOOL Constrai
 
 // Global variables.
 #if 1 //U2Ed
-__declspec(dllexport) INT GLastScroll=0;
+// HP2 wrote __declspec(dllexport) for the Win32 UnrealEd/EdHook importers; DLL_EXPORT is that on MSVC and
+// empty on GCC/clang (UnGnuG.h), where __declspec is undefined.
+DLL_EXPORT INT GLastScroll=0;
 #else
 INT GLastScroll=0;
 #endif
@@ -61,12 +61,12 @@ FString GTexNameFilter;
 UBOOL GPivotShown=0, GSnapping=0;
 FVector GPivotLocation, GSnappedLocation, GGridBase;
 FRotator GPivotRotation, GSnappedRotation;
-//milestone 4 addition
-__declspec(dllexport) bool GPawnsLabel =0;
-__declspec(dllexport) bool GTriggersLabel;
-__declspec(dllexport) bool GLightsLabel;
-__declspec(dllexport) bool GMoversLabel;
-__declspec(dllexport) bool GSlabelLabel;
+//milestone 4 addition (DLL_EXPORT: see GLastScroll above)
+DLL_EXPORT bool GPawnsLabel =0;
+DLL_EXPORT bool GTriggersLabel;
+DLL_EXPORT bool GLightsLabel;
+DLL_EXPORT bool GMoversLabel;
+DLL_EXPORT bool GSlabelLabel;
 
 // Temporary.
 static TArray<INT> OriginalUVectors;
@@ -1142,7 +1142,7 @@ void UEditorEngine::MouseDelta
 				}
 
 				// Move the vertices on the selected faces.
-				for( x = 0 ; x < GFaceHits.Num() ; x++ )
+				for( int x = 0 ; x < GFaceHits.Num() ; x++ )
 					for( int vertex = 0 ; vertex < GFaceHits(x).Poly->NumVertices ; vertex++ )
 					{
 						// Move the original vertex first;
@@ -2312,7 +2312,8 @@ void UEditorEngine::Draw( UViewport* Viewport, UBOOL Blit, BYTE* HitData, INT* H
 								iY=(int)Y;
 								tagName=Actor->Tag;
 								tName=tagName.GetEntry(tagName.GetIndex())->Name;
-								if(wcscmp(tName,TEXT(""))!=0)
+								// Retail was a UNICODE build (wcscmp); the port is ANSI TCHAR on every target, so appStrcmp.
+								if(appStrcmp(tName,TEXT(""))!=0)
 									Viewport->DrawString(0, Frame->Viewport->Canvas->SmallFont, iX, iY,tName, ControlPointColor);
 								else
 									Viewport->DrawString(0, Frame->Viewport->Canvas->SmallFont, iX, iY,Actor->GetName(), ControlPointColor);
@@ -2344,7 +2345,7 @@ void UEditorEngine::Draw( UViewport* Viewport, UBOOL Blit, BYTE* HitData, INT* H
 								iY=(int)Y;
 								tagName=Actor->Tag;
 								tName=tagName.GetEntry(tagName.GetIndex())->Name;
-								if(wcscmp(tName,TEXT(""))!=0)
+								if(appStrcmp(tName,TEXT(""))!=0)
 									Viewport->DrawString(0, Frame->Viewport->Canvas->SmallFont, iX, iY,tName, ControlPointColor);
 								else
 									Viewport->DrawString(0, Frame->Viewport->Canvas->SmallFont, iX, iY,Actor->GetName(), ControlPointColor);
@@ -2376,7 +2377,7 @@ void UEditorEngine::Draw( UViewport* Viewport, UBOOL Blit, BYTE* HitData, INT* H
 								iY=(int)Y;
 								tagName=Actor->Tag;
 								tName=tagName.GetEntry(tagName.GetIndex())->Name;
-								if(wcscmp(tName,TEXT(""))!=0)
+								if(appStrcmp(tName,TEXT(""))!=0)
 									Viewport->DrawString(0, Frame->Viewport->Canvas->SmallFont, iX, iY,tName, ControlPointColor);
 								else
 									Viewport->DrawString(0, Frame->Viewport->Canvas->SmallFont, iX, iY,Actor->GetName(), ControlPointColor);
@@ -2409,7 +2410,7 @@ void UEditorEngine::Draw( UViewport* Viewport, UBOOL Blit, BYTE* HitData, INT* H
 								iY=(int)Y;
 								tagName=Actor->Tag;
 								tName=tagName.GetEntry(tagName.GetIndex())->Name;
-							//	if(wcscmp(tName,TEXT(""))!=0)
+							//	if(appStrcmp(tName,TEXT(""))!=0)
 							//		Viewport->DrawString(0, Frame->Viewport->Canvas->SmallFont, iX, iY,tName, ControlPointColor);
 							//	else
 									Viewport->DrawString(0, Frame->Viewport->Canvas->SmallFont, iX, iY,Actor->GetName(), ControlPointColor);
@@ -2441,7 +2442,7 @@ void UEditorEngine::Draw( UViewport* Viewport, UBOOL Blit, BYTE* HitData, INT* H
 								iY=(int)Y;
 								tagName=Actor->Tag;
 								tName=tagName.GetEntry(tagName.GetIndex())->Name;
-								if(wcscmp(tName,TEXT(""))!=0)
+								if(appStrcmp(tName,TEXT(""))!=0)
 									Viewport->DrawString(0, Frame->Viewport->Canvas->SmallFont, iX, iY,tName, ControlPointColor);
 								else
 									Viewport->DrawString(0, Frame->Viewport->Canvas->SmallFont, iX, iY,Actor->GetName(), ControlPointColor);
