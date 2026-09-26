@@ -319,7 +319,7 @@ static void ForceValid( ULevel* Level, UStruct* Struct, BYTE* Data )
 				UObject*& Obj = *(UObject**)Value;
 				if( Cast<AActor>(Obj) )
 				{
-					for( INT j=0; j<Level->Actors.Num(); j++ )
+					for( j=0; j<Level->Actors.Num(); j++ ) // not "INT j": the hoisted j is read after the loop
 						if( Level->Actors(j)==Obj )
 							break;
 					if( j==Level->Actors.Num() )

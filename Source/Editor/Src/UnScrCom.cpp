@@ -1878,7 +1878,7 @@ int FScriptCompiler::ConversionCost
 			// The fewer classes traversed in this conversion, the better the quality.
 			check(Dest.Type==CPT_ObjectReference);
 			check(Dest.PropertyClass!=NULL);
-			for( UClass* Test=Source.PropertyClass; Test && Test!=Dest.PropertyClass; Test=Test->GetSuperClass() )
+			for( Test=Source.PropertyClass; Test && Test!=Dest.PropertyClass; Test=Test->GetSuperClass() )
 				Result++;
 			check(Test!=NULL);
 		}

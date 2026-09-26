@@ -396,7 +396,7 @@ void UEditorEngine::NoteActorMovement( ULevel* Level )
 		GEditor->ClickFlags |= CF_MOVE_ACTOR;
 		GEditor->Trans->Begin( TEXT("Actor movement") );
 		GSnapping=0;
-		for( INT i=0; i<Level->Actors.Num(); i++ )
+		for( i=0; i<Level->Actors.Num(); i++ ) // not "INT i": the hoisted i is read after the loop
 		{
 			AActor* Actor = Level->Actors(i);
 			if( Actor && Actor->bSelected )

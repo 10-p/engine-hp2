@@ -615,7 +615,8 @@ UBOOL UEditorEngine::SafeExec( const TCHAR* InStr, FOutputDevice& Ar )
 					TrackTime = 1.0f;
 				
 				// Detect which anim sequence to change, or make a new one.
-				for( INT i=0; i<Anim->MovesInfo.Num(); i++ )
+				INT i;
+				for( i=0; i<Anim->MovesInfo.Num(); i++ )
 					if( Anim->MovesInfo(i).Name==MoveInfo.Name )
 						break;
 
@@ -1013,7 +1014,8 @@ UBOOL UEditorEngine::SafeExec( const TCHAR* InStr, FOutputDevice& Ar )
 			{
 				Parse( Str, TEXT("RATE="), Seq.Rate );
 				Parse( Str, TEXT("GROUP="), Seq.Group );
-				for( INT i=0; i<Mesh->AnimSeqs.Num(); i++ )
+				INT i;
+				for( i=0; i<Mesh->AnimSeqs.Num(); i++ )
 					if( Mesh->AnimSeqs(i).Name==Seq.Name )
 						break;
 				if( i<Mesh->AnimSeqs.Num() )
@@ -1924,7 +1926,8 @@ UBOOL UEditorEngine::Exec( const TCHAR* Stream, FOutputDevice& Ar )
 				if( Level->Model->Polys ) Level->Model->Polys->SetFlags( RF_Transactional );
 				for( TObjectIterator<AActor> It; It; ++It )
 				{
-					for( INT i=0; i<Level->Actors.Num(); i++ )
+					INT i;
+					for( i=0; i<Level->Actors.Num(); i++ )
 						if( *It==Level->Actors(i) )
 							break;
 					if( i==Level->Actors.Num() )
@@ -2400,7 +2403,8 @@ UBOOL UEditorEngine::Exec( const TCHAR* Stream, FOutputDevice& Ar )
 		}
 		else if( ParseCommand(&Str,TEXT("SETASDEFAULT")) )
 		{
-			for( INT i=0; i<Level->Actors.Num(); i++ )
+			INT i;
+			for( i=0; i<Level->Actors.Num(); i++ )
 			{
 				AActor* Actor = Level->Actors(i);
 				if (Actor && Actor->bSelected)
@@ -3605,7 +3609,8 @@ UBOOL UEditorEngine::Exec( const TCHAR* Stream, FOutputDevice& Ar )
 			}
 
 			// Find playerstart.
-			for( INT i=0; i<Level->Actors.Num(); i++ )
+			INT i;
+			for( i=0; i<Level->Actors.Num(); i++ )
 				if( Cast<APlayerStart>(Level->Actors(i)) )
 					break;
 			if( i == Level->Actors.Num() )

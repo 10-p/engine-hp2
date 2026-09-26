@@ -1840,7 +1840,7 @@ void UpdateConvolutionWithPolys( UModel *Model, INT iNode, FPoly **PolyList, int
 	{
 		if( PolyList[i]->iBrushPoly != INDEX_NONE )
 		{
-			for( int j=0; j<i; j++ )
+			for( j=0; j<i; j++ ) // not "int j": the hoisted j is read after the loop
 				if( PolyList[j]->iBrushPoly == PolyList[i]->iBrushPoly )
 					break;
 			if( j >= i )

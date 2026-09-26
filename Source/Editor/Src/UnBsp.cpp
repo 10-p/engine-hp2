@@ -2343,7 +2343,7 @@ int DistributePoint
 			FVert* VertPool = &Model->Verts(Model->Nodes(iNode).iVertPool);
 
 			// Skip this node if it already contains the point in question.
-			for( INT i=0; i<Model->Nodes(iNode).NumVertices; i++ )
+			for( i=0; i<Model->Nodes(iNode).NumVertices; i++ ) // not "INT i": the hoisted i is read after the loop
 				if( VertPool[i].pVertex == pVertex )
 					break;
 			if( i != Model->Nodes(iNode).NumVertices )
