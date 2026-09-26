@@ -252,13 +252,14 @@ if(EMSCRIPTEN)
     string(REGEX MATCH "[0-9]+\\.[0-9]+\\.[0-9]+" META_EMCC "${_emcc_ver}")
   endif()
   # ufront 2.70: every fetched library as repo@branch|tag, from the cache variables the fetch itself read
-  # (the web build always has NOpenALDrv, hence openal-soft and libxmp).
+  # (the web build always has NOpenALDrv, hence openal-soft and xiph ogg/vorbis; HP2 has no .umx, no libxmp).
   include(${CMAKE_SOURCE_DIR}/cmake/ArtifactDeps.cmake)
   set(META_DEPS)
-  if(BUILD_NOPENALDRV)   # HP2: off until Phase E -- no openal-soft in the artifact until then
+  if(BUILD_NOPENALDRV)
     ufront_artifact_dep(META_DEPS openal-soft OpenALSoft "${OPENALSOFT_GIT_REPOSITORY}" "${OPENALSOFT_GIT_TAG}")
+    ufront_artifact_dep(META_DEPS ogg ogg "${HP2_OGG_GIT_REPOSITORY}" "${HP2_OGG_GIT_TAG}")
+    ufront_artifact_dep(META_DEPS vorbis vorbis "${HP2_VORBIS_GIT_REPOSITORY}" "${HP2_VORBIS_GIT_TAG}")
   endif()
-  # HP2 plays Ogg Vorbis music by path; there is no .umx and no libxmp. Phase E adds ogg/vorbis dep lines here.
   if(BUILD_XOPENGLDRV)
     ufront_artifact_dep(META_DEPS xopengl XOpenGLDrv "${XOPENGL_GIT_REPOSITORY}" "${XOPENGL_GIT_TAG}")
   endif()

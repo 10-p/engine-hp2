@@ -14,8 +14,9 @@ Rules for `Default.ini` (each one is load-bearing — docs/porting/analysis/web-
   of `Game.ini` with the save-slot path on every boot, and indexes `Paths[5]` when `appUserDir()` is set.
   Never append a seventh line (music is opened by path, not through `Paths=`).
 - On-disk file case (`LocalMap=startup.unr`); no `CdPath`.
-- `AudioDevice=SoundDrv.NullAudioSubsystem` until the Phase-E `NOpenALDrv` links (keep it equal to the
-  launcher's override); `ServerActors` absent (IpServer/UWeb do not exist in HP2); `DownloadManagers` is
+- `AudioDevice=NOpenALDrv.NOpenALAudioSubsystem` (keep it equal to the launcher's override) and its
+  `[NOpenALDrv.NOpenALAudioSubsystem]` section with ALAudio's key names and FLOAT volumes (the HGame options
+  page scales them by 100); `ServerActors` absent (IpServer/UWeb do not exist in HP2); `DownloadManagers` is
   `Engine.ChannelDownload` only.
 - `[NSDLDrv.NSDLClient]` carries HP2's two extra `UClient` keys (`NoFractalAnim`, `ParticleDensity`) and matches
   `UNSDLClient::StaticConstructor`'s compiled defaults.
