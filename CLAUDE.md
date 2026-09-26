@@ -94,3 +94,15 @@ docs/          SOURCE-LAYOUT.md (raw-drop → repo mapping), porting notes as th
 - Do NOT change the ABI (`vendor/glue/ue_abi.h`, `ABI_VERSION 1`).
 - Do NOT commit game assets or build trees — gitignored.
 - Do NOT build the other engines from here, or this one from the other repos: this game is standalone.
+- Do NOT write, build or run anything outside `/home/ion/hp2-ufrontend` (run trees, wine prefix, publish output and
+  screenshots included) — the owner's rule.
+- Do NOT use `git commit -a` / `git add -A` while an agent works in this tree: commit by explicit path.
+- Do NOT confuse the platform keys: `#if _MSC_VER` = the MSVC compiler, `#ifdef PLATFORM_WIN32` = Windows the OS,
+  `#if __GNUG__` = the GNU family (MinGW included). Never add `#ifdef WIN32`/`_WIN32`/`_WINDOWS` in engine code.
+- Do NOT put POSIX-only calls (`fork`, `waitpid`, `sigaction`, `mkdir` modes, …) outside `Core/Src/UnUnix.cpp`
+  (behind `#ifndef PLATFORM_WIN32`, Win32 spelling in the `#else` or `UnMinGW.cpp`). New file I/O is binary
+  (`"rb"`/`"wb"`); path literals use `PATH_SEPARATOR` or `/`.
+- Do NOT hand-edit `EngineClasses.h` beyond the two layout pads (`bColoredPad`, `bTwoWayPad`); regenerate
+  `EngineLayoutAsserts.cpp` with `tools/dev/layout/emit_asserts.py` after any change.
+- Do NOT subtract pointers that may point into different buffers (GCC compiles it as an exact division — the
+  `MeshRn` segfault); use a byte difference and check it.
