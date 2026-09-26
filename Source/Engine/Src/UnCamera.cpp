@@ -749,7 +749,13 @@ UBOOL UViewport::Exec( const TCHAR* Cmd, FOutputDevice& Ar )
 		if( ThumbSizeX == 0 ) ThumbSizeX = 160;
 		if( ThumbSizeY == 0 ) ThumbSizeY = 120;
 		
-		int shrinkage    = SizeX / ThumbSizeX;
+		// HP2 port: the retail thumbnail assumed 4:3. With shrinkage = SizeX/ThumbSizeX alone, a 16:9 viewport
+		// (1280x720: shrinkage 8) reads ThumbSizeY*8 = 960 source rows from a 720-row frame -- past the end of
+		// SrcBuff (a page fault under wine, silent garbage elsewhere). Shrink by the factor that fits BOTH axes and
+		// sample the centred block.
+		int shrinkage    = Max( 1, Min( SizeX / ThumbSizeX, SizeY / ThumbSizeY ) );
+		const int SnapOffX = Max( 0, (SizeX - ThumbSizeX*shrinkage) / 2 );
+		const int SnapOffY = Max( 0, (SizeY - ThumbSizeY*shrinkage) / 2 );
 		
 		snapU = ThumbSizeX;
 		snapV = ThumbSizeY;
@@ -767,7 +773,7 @@ UBOOL UViewport::Exec( const TCHAR* Cmd, FOutputDevice& Ar )
 		for (unsigned int y = 0; y<snapV; ++y)
 		{
 			FColor * pDstLine = DstBuff + y*snapU;
-			FColor * pSrcTopLine = SrcBuff + y*SizeX* shrinkage;
+			FColor * pSrcTopLine = SrcBuff + (SnapOffY + y*shrinkage)*SizeX + SnapOffX;
 			
 			for (unsigned int x = 0; x<snapU; ++x)
 			{
