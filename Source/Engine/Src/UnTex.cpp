@@ -933,7 +933,8 @@ UBOOL UTexture::Decompress( ETextureFormat InFormat )
 				Palette = new(GetOuter())UPalette;
 			Palette->Colors.Empty( NUM_PAL_COLORS );
 			Palette->Colors.Add  ( NUM_PAL_COLORS );
-			for( INT i=0; i<PalCount; i++ )
+			INT i; // read after the loop (MSVC6 for-scope); MSVC-only block, hoisted for conforming compilers
+			for( i=0; i<PalCount; i++ )
 				Palette->Colors(i) = FColor
 				(
 					(PaletteData[i] & EHiColor565_R) >> 8,
