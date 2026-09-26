@@ -1,7 +1,7 @@
 project(Render CXX)
 
-# HP2 build 433 Render: Render.dsp's list. UnParticleRn.cpp is the 433 particle renderer; UnTest.cpp is the
-# stock test harness the dsp always compiled.
+# HP2 build 433 Render: Render.dsp's list minus UnTest.cpp (the stock test harness; MSVC-only, the template
+# does not build it either). UnParticleRn.cpp is the 433 particle renderer.
 set(SRC_FILES
   "Src/Render.cpp"
   "Src/UnLight.cpp"
@@ -12,7 +12,6 @@ set(SRC_FILES
   "Src/UnSoftLn.cpp"
   "Src/UnSpan.cpp"
   "Src/UnSprite.cpp"
-  "Src/UnTest.cpp"
 )
 
 add_library(${PROJECT_NAME} ${LIB_TYPE} ${SRC_FILES})

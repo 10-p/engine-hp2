@@ -1,0 +1,13 @@
+{ "manifestExclude": [
+    "System/Default.ini", "System/DefUser.ini", "System/Game.ini", "System/User.ini",
+    "*.so", "*.so.*", "*.dll", "*.exe", "*.pdb", "*.dylib",
+    "*.bin", "*-bin", "*-Linux", "*.bat", "*.com", "*.msi", "*.isu", "*.icd",
+    "*bak", "*.tmp", "*.orig", "*.duplicate1", "*.log", "*.zip",
+    "cdkey", "*.key",
+    "Icon_", "Icon?", ".DS_Store", "Thumbs.db", "desktop.ini",
+    "Logs/**", "Manual/**", "*.usa",
+    "*.exec", "*.inf", "*.ico", "*.ttf", "*.bmp", "*.md", "*.mdb", "*.dsp", "*.dsw", "*.t3d", "*.2ds", "*_utx",
+    "System/EditorRes/**",
+    "Maps/Oldfiles/**", "Maps/Studies/**", "Maps/templates/**",
+    "PackageSources/**", "DialogSources/**", "Fonts/**", "Help/**", "SystemLocalized/**", "Save/**"
+] }

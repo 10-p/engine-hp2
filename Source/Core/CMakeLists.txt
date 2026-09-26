@@ -1,8 +1,9 @@
 project(Core CXX)
 
-# HP2 build 433 Core. The list follows Core.dsp minus the PS2 layer (UnPSX2.cpp) and the Windows core
-# (UnVcWin32.cpp, MSVC only). UnCoreNative.cpp is the 433 native-function lookup table (not in v400);
-# UnLinker.cpp is the 433 split of the package linker out of UnObj.cpp.
+# HP2 build 433 Core. The list follows Core.dsp minus the PS2 layer (UnPSX2.cpp), the Windows core
+# (UnVcWin32.cpp, MSVC only) and UnCoreNative.cpp (the Loki/PS2 __STATIC_LINK native lookup table — its
+# whole body is `#if __STATIC_LINK`, which this port never defines: the template's UnStaticExports registry
+# is the static-link mechanism). UnLinker.cpp is the 433 split of the package linker out of UnObj.cpp.
 set(SRC_FILES
   "Src/UnProp.cpp"
   "Src/UnObj.cpp"
@@ -13,7 +14,6 @@ set(SRC_FILES
   "Src/UnMisc.cpp"
   "Src/UnMath.cpp"
   "Src/UnCoreNet.cpp"
-  "Src/UnCoreNative.cpp"
   "Src/UnClass.cpp"
   "Src/UnCache.cpp"
   "Src/UnBits.cpp"

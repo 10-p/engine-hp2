@@ -19,7 +19,12 @@ Sections (filled incrementally; a section that still reads "pending" was not fin
 
 ## 0. TL;DR
 
-pending
+1. **The 433 render-device face is small but breaks every driver that is not HP2's own.** Versus v400, `URenderDevice` (`Engine/Inc/UnRenDev.h`) changes exactly four things: 5-arg `DrawComplexSurface(…, DWORD PolyFlags, BYTE cAlpha)`, new pure `MaxVertices()` and `DrawTriangles(Frame, Info, Pts, NumPts, _WORD* Indices, NumIndices, PolyFlags, Span)`, `DrawGouraudPolygon` demoted to a non-pure forwarder, and a default-NULL `GetOsSurface` (§2.1). `FSceneNode`, `FSurfaceInfo/Facet`, `FTextureInfo`, `ETextureFormat` (P8, RGBA7, RGB16, DXT1, RGB8, RGBA8) and every `EPolyFlags` bit value are unchanged; 433 only appends the aliases `PF_LumosAffected/Disappear/Appear/AlwaysOn` (§2.2). Engine-type breaks that also hit the drivers: `FTime` instead of `DOUBLE` time, 4-arg `DECLARE_CLASS`, and `Render.h` instead of `RenderPrivate.h` (§2.4).
+2. **Semantics matter more than signatures (§3).** All meshes (skeletal included, skinned on the CPU), particles and decals go through `DrawTriangles` only. Nothing in HP2 calls `DrawGouraudPolygon` any more. `DrawTriangles` has three input shapes (indexed list / `Indices==NULL && NumIndices==NumPts` fan / plain list). `cAlpha` is **transparency** (255 = gone) and is used only for Lumos BSP surfaces. `Light.W` carries per-vertex opacity, and `PF_Highlighted|PF_Translucent` means straight alpha blending. The retail `Direct3D7.cpp` is the behavioural spec (§5.2).
+3. **XOpenGLDrv (`hp2-v433-compat`, today identical to `ut99-v400-compat`)** has 31 `ENGINE_VERSION==400`/`!=400` preprocessor lines (`grep -rn` over `Src` and `Inc`), grouped as sites X1-X28 in §4.1. About 25 must also fire on 433: add a derived `XOGL_UE1_V4XX`. Two need their own 433 branch: the `Render.h` include and the 4-arg `DECLARE_CLASS` (§4). New face code goes under `XOGL_HP2`: C1 Lumos `DrawComplexSurface`, C2 `MaxVertices=256` + `DrawTriangles`, C3 `HP2AdjustPolyFlags` (straight alpha through a synthetic `PF_AlphaBlend=0x20000000`, the one free bit), C4 `LINE_PreTransformed`, C5 alpha-palette tiles, and optional C7 two-sided depth bias (§5.3).
+4. **UTGLR (`hp2`, today identical to `main`)**: HP2 is closer to *upstream* UTGLR (v436: 4-arg `DECLARE_CLASS`, `FTime`) than to the v400 port. As-is it fails to compile, because `UTGLR_ENGINE_UT99DC` (defined by the HP2 CMake) forces the v400 types at three sites. Split that macro: platform stays `UT99DC`, and a derived `UTGLR_ENGINE_V400` covers the types. Then implement H1-H7 under `UTGLR_ENGINE_HP2`, reusing upstream's Rune/227 `PF_AlphaBlend` plumbing through a `UTGLR_HAS_ALPHABLEND` feature macro (§6).
+5. **gl4es needs no change** (§7). **NSDLDrv's GL/GLES/software choice keys on the device-name substrings `OPENGL`/`XOPENGL` and needs no logic change.** It still has four 433 compile breaks (4-arg `DECLARE_CLASS` ×2, two `FTime` sites), and the web inis must name the GL device in *both* `GameRenderDevice` and `WindowedRenderDevice` (§8). NullDrv needs the new face (§9). Every device must return `MaxVertices()=256` (§9 note).
+6. **Workspace blocker:** the three fork clones sit inside `/home/ion/hp2-ufrontend/ufrontend/` as untracked directories. The CMake presets expect them at `/home/ion/hp2-ufrontend/{XOpenGLDrv,utglr-copy,gl4es}`, so move them before the first configure (§1).
 
 ## 1. Workspace facts
 
@@ -452,3 +457,360 @@ Mesh `PF_HighShadowDetail` is not a Lumos marker on `DrawTriangles` (Render only
 * Range gates (`>=400 && <436`) are rejected: 430/432 builds (Unreal 224/225, DeusEx 1100 has its own gates) have different faces, and the fork already uses `==430` for Unreal 226 with a 4-arg `DECLARE_CLASS`.
 * Verification that the v400 build is untouched: build the template's native preset against the new branch (outside `/home/ion/engines`, e.g. a scratch copy) and diff `XOpenGLDrv.so` symbols (`nm -C | grep UXOpenGLRenderDevice`) — the v400 symbol set must not gain `DrawTriangles`/`MaxVertices`.
 
+
+## 6. UTGLR fork (`OpenGLDrv`): gates inventory, engine API surface, exact 433 change list, gating scheme
+
+Tree: `/home/ion/hp2-ufrontend/ufrontend/utglr-copy` (to be moved to `/home/ion/hp2-ufrontend/utglr-copy`, §1.1), branch `hp2` @ `e60807b` (= `main`): `ac9e37b` Dohnal drop → `18de00e` "UT99 v400 + web adaptations (squashed)" → `8bca5fc` (gl4es proc resolver on a worker) → `e60807b` (MinGW). Flat layout: `OpenGL.cpp` (8170 lines), `OpenGL.h` (1590), `OpenGLDrv.{h,cpp}`, `OpenGL1Funcs.h`, `OpenGLExtFuncs.h`, `c_gclip.*`, `c_rbtree.h`. The HP2 glue `Source/OpenGLDrv/CMakeLists.txt` compiles `OpenGL.cpp OpenGLDrv.cpp c_gclip.cpp` with `UPACKAGE_NAME=OpenGLDrv UTGLR_UT_BUILD UTGLR_ENGINE_UT99DC UTGLR_ENGINE_HP2 __UNIX__` (+ `UTGLR_USE_GL4ES` when `USE_GL4ES`), i.e. **both** the v400 macro and the new HP2 macro are defined today.
+
+### 6.1 The existing multi-build switch — and why HP2 is closer to *upstream* than to the v400 port
+
+UTGLR upstream already supports several UE1 builds through a mandatory build-config macro (`OpenGL.h:10-29`, `#error Valid build config not selected`): `UTGLR_UT_BUILD` (UT **v436**), `UTGLR_DX_BUILD` (Deus Ex 1112f), `UTGLR_RUNE_BUILD` (Rune 107), `UTGLR_UNREAL_227_BUILD` (Unreal 227). There is **no v400 build and no 433 build** upstream; the ufront port added `UTGLR_ENGINE_UT99DC` on top of `UTGLR_UT_BUILD` to *undo* two v436 assumptions (4-arg `DECLARE_CLASS`, `FTime`) and to carry the SDL2/NSDLDrv platform work.
+
+HP2 433 has **both** v436 features the v400 port had to undo (§2.4: 4-arg `DECLARE_CLASS`, `FTime` with `operator-(FTime)→float`). So for the *engine-type* sites HP2 wants the **upstream `UTGLR_UT_BUILD` branch**, while for the *platform* sites it wants everything `UTGLR_ENGINE_UT99DC` gives. `UTGLR_ENGINE_UT99DC` currently conflates the two meanings, and because the HP2 CMake defines it, **the fork as-is fails to compile on 433** at exactly the engine-type sites (U1-U3 below).
+
+Reusable upstream machinery that 433 needs (no invention required):
+
+| Upstream feature | Where | Reuse for HP2 |
+|---|---|---|
+| `PF_AlphaBlend` blend mode (`GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA`, fog suppressed, tile checks) | Rune/227 branches: `SetBlend` `OpenGL.h:1280-1305`, `SetBlendNoCheck` `OpenGL.cpp:6304-6372`, gouraud fog masks `:4200-4204, 4355-4359`, tile `:4537-4545, 4619-4658, 4688-4715` | the vehicle for the 433 `PF_Highlighted|PF_Translucent` straight-alpha mode (§3.4) and for Lumos (§3.3), with a synthetic `PF_AlphaBlend = 0x20000000` (the free `EPolyFlags` bit, §2.2) |
+| per-poly alpha into the colour array (`m_gpAlpha`, `FPlaneTo_RGB_Aub`) | Rune: `OpenGL.h:760`, `OpenGL.cpp:1085, 1574, 4394-4400` | pattern for per-vertex alpha; HP2 needs `FPlaneTo_RGBA(&P->Light)` (Light.W, §3.4) instead of `Texture->Alpha` |
+| v436 `FTime m_prevFrameTimestamp` / `FTime curFrameTimestamp` | `OpenGL.h:640-646`, `OpenGL.cpp:3703-3707` | compiles against HP2 `FTime` unchanged (`appSeconds()` returns `FTime`, `FTime-FTime→float`, `appSleep(FLOAT)` exists, `Core/Inc/UnFile.h:264`) |
+| v436 4-arg `DECLARE_CLASS(UOpenGLRenderDevice, URenderDevice, CLASS_Config, OpenGLDrv)` | `OpenGL.h:362-368` `#else` | exactly HP2's macro (`Core/Inc/UnObjBas.h:326`) |
+
+### 6.2 Every gate in the fork and what it means on 433
+
+| # | Site | Gate | What it does | 433 verdict / ACTION |
+|---|---|---|---|---|
+| U1 | `OpenGL.h:362-368` | `UTGLR_DX_BUILD \|\| UTGLR_ENGINE_UT99DC` | 3-arg `DECLARE_CLASS` | **Wrong on 433** → must take the upstream 4-arg `#else`. |
+| U2 | `OpenGL.h:640-646` | `DX \|\| RUNE \|\| UT99DC` | `FLOAT m_prevFrameTimestamp` | **Wrong on 433** → upstream `FTime`. |
+| U3 | `OpenGL.cpp:3703-3707` | `DX \|\| RUNE \|\| UT99DC` | `FLOAT curFrameTimestamp = appSeconds();` | **Compile error on 433** (`FTime` has no conversion to `float`) → upstream `FTime`. Only reached when `FrameRateLimit>=20`, but it must compile. |
+| U4 | `OpenGLDrv.h:24-26` | `!WIN32 \|\| UT99DC` | `#include "SDL2/SDL.h"` | keep (platform) |
+| U5 | `OpenGLDrv.h:39-47` | `WIN32 && !UT99DC` | `UTGLR_USE_WGL` vs `UTGLR_USE_SDL` | keep (platform) — SDL on all HP2 targets |
+| U6 | `OpenGLDrv.h:47-65` | `UT99DC` | SDL 1.2 → SDL2 shims (`SDL_GL_SwapBuffers`, `SDL_SetGammaRamp`, `SDL_ListModes`, `SDL_FULLSCREEN`) | keep (platform). Note: gamma ramp is a no-op → `Brightness` has no effect with UTGLR on HP2 (same as UT99 web). |
+| U7 | `OpenGL.h:36` | `!__UNIX__` | `<tchar.h>` | keep |
+| U8 | `OpenGL.h:57` | `_WIN32 && _MSC_VER` | x86 asm / SSE intrinsics | keep (not MSVC → C fallbacks) |
+| U9 | `OpenGL.cpp:2239-2247` | `UT99DC` | `UseS3TC` read straight from ini, default on | keep — HP2 retail content: verify how many `TEXF_DXT1` textures load (§11). |
+| U10 | `OpenGL.cpp:2921-2928` | `__EMSCRIPTEN__` | `SupportsFogMaps = 1` on the zero-init web instance | keep — HP2 zone fog uses the same `VolumetricLighting && SupportsFogMaps` gate (verify: `grep -n SupportsFogMaps Source/Render/Src/*.cpp`). |
+| U11 | `OpenGL.cpp:2940-2962` | `UT99DC` / `UTGLR_USE_GL4ES` / `__EMSCRIPTEN_PTHREADS__` | skip `SDL_GL_LoadLibrary`; gl4es `setenv(LIBGL_ES=2, NOBANNER, USEVBO=0)`, `set_getprocaddress(emscripten_webgl_get_proc_address \| SDL_GL_GetProcAddress)`, `initialize_gl4es()` | keep (platform; NSDLViewport owns the context on HP2 too, §8) |
+| U12 | `OpenGL.cpp:1746-1756, 1802-1808` | `UTGLR_USE_GL4ES` / `UTGLR_USE_SDL` | GL proc resolution through `gl4es_GetProcAddress` | keep |
+| U13 | `OpenGL.cpp:66-74` | `UTGLR_USE_GL4ES`, `__EMSCRIPTEN__ && __EMSCRIPTEN_PTHREADS__` | includes `gl4esinit.h`, `emscripten/html5_webgl.h` | keep |
+| U14 | `OpenGL.cpp:3632-3640` | `UT99DC` | 60-frame `Unlock` heartbeat log | keep (debug aid; harmless) |
+| U15 | `OpenGL.cpp:4415-4421, 4445-4450, 4750-4754` | `__EMSCRIPTEN__` | tiles with `Z==1` drawn with depth test off | keep. HP2's `UCanvas` draws HUD/menu tiles at `Z=1` like v400 (verify `grep -n 'DrawTile' Source/Engine/Src/UnCanvas.cpp`). |
+| U16 | many | `UTGLR_RUNE_BUILD`, `UTGLR_UNREAL_227_BUILD`, `UTGLR_DX_BUILD` | other games | not defined → UT branch. **Note the idiom `#elif UTGLR_UNREAL_227_BUILD`** (`:4202, 4357, 4539, 4623, 4652, 4690, 4711, 6306, 6333`): it is a value test, so any HP2 addition must be written `#elif defined(UTGLR_UNREAL_227_BUILD) \|\| defined(UTGLR_ENGINE_HP2)` (or better, a new feature macro — §6.4). |
+| U17 | `OpenGL.cpp:5708`, `6068-6080` | `UTGLR_UNREAL_227_BUILD` | `Info.UClampMode`, `TEXF_DXT3/5` | stay off (HP2 `FTextureInfo` has no clamp modes; `ETextureFormat` has no DXT3/5, §2.2) |
+| U18 | `OpenGL.cpp:4148, 4322` | (none) `GUglyHackFlags & 0x1` | near-Z range hack for the first-person overlay | works on 433: `Render/Src/UnRender.cpp:3902-3904` sets/clears bit 1 around `eventRenderOverlays` exactly as v400 (`UnRender.cpp:3407-3409`). The new `DrawTriangles` must preserve it (the wand/overlay meshes go through `DrawTriangles` on 433). |
+
+### 6.3 Engine API surface UTGLR touches (extracted with `grep -oh` over `OpenGL.cpp`)
+
+| Symbol | Members used | 433 status |
+|---|---|---|
+| `URenderDevice` overrides (`OpenGL.h:1060-1141`) | `StaticConstructor, Exit, ShutdownAfterError, SetRes, Init, Exec, Lock, SetSceneNode, Unlock, Flush, DrawComplexSurface(3-arg), DrawGouraudPolygon, DrawTile, Draw3DLine, Draw2DLine, Draw2DPoint, ClearZ, PushHit, PopHit, GetStats, ReadPixels, EndFlash, PrecacheTexture` (+ own `DrawGouraudPolygonOld`) | identical signatures to HP2 `UnRenDev.h` **except `DrawComplexSurface`**; **`MaxVertices` and `DrawTriangles` missing → class abstract on 433**. No `DrawStats` override (base no-op — fine). `GetOsSurface`: do not override. |
+| `URenderDevice` fields | `SpanBased, FullscreenOnly, SupportsFogMaps, SupportsDistanceFog, SupportsTC, Coronas, ShinySurfaces, HighDetailActors, VolumetricLighting, DetailTextures, PrefersDeferredLoad, SupportsLazyTextures, Viewport` | identical (`UnRenDev.h:41-60`) |
+| `UViewport` | `SizeX, SizeY, ColorBytes, HitX/HitY/HitXL/HitYL, IsOrtho(), GetWindow(), ResizeViewport(), GetOuterUClient()->Brightness, Actor->{FovAngle,OrthoZoom}` | identical (§2.3); UTGLR never reads `CurrentTime` |
+| `FSceneNode` | `Viewport, X, Y, XB, YB, FX, FY, FX2, FY2, Zoom, Coords, RProj.Z` | identical |
+| `FSurfaceInfo` | `PolyFlags` (**one read, `OpenGL.cpp:3906`**), `Texture, LightMap, MacroTexture, DetailTexture, FogMap, FlatColor` | identical; the one `Surface.PolyFlags` read must become the 5-arg `PolyFlags` argument |
+| `FSurfaceFacet` / `FSavedPoly` / `FTransform` | `MapCoords.{Origin,XAxis,YAxis}`, `Polys`, `Poly->{Next,NumPts,Pts[]->Point}` | identical |
+| `FTransTexture` | `Point, Normal (only with CF_NORMAL_ARRAY, i.e. never on the UT path), U, V, Light (X/Y/Z only; W never), Fog (X/Y/Z/W)` | identical layout. **Fog is read whenever `(PolyFlags & (PF_RenderFog\|PF_Translucent\|PF_Modulated)) == PF_RenderFog`** — particles never set `PF_RenderFog` (§3.2), decals zero `Fog` → safe. 433 needs `Light.W` read for the alpha mode (§6.4 H4). |
+| `FTextureInfo` | `Texture, CacheID, Format, Palette (incl. [0].A, [128].A), NumMips, Mips[]->{DataPtr,USize,VSize,UBits,VBits}, USize/VSize, UClamp/VClamp, UScale/VScale, bRealtimeChanged, Load(), Unload()` (`UClampMode/VClampMode` 227-only) | identical |
+| `ETextureFormat` | `TEXF_DXT1` explicitly; `Palette!=NULL` → P8; **everything else is treated as `TEXF_RGBA7` (BGRA7777 ×2)** (`OpenGL.cpp:6052-6118`) | HP2 values unchanged (§2.2). `TEXF_RGB8/RGBA8` would be mis-read (×2 overflow) — **the retail D3D7 driver does exactly the same** (`Direct3D7.cpp:2006-2008`, "weird format textures" fallback to the RGBA7 filler). The only runtime `TEXF_RGBA8` producers in 433 are `UTexture::LoadFromSnap/LoadFromBMP` (`Engine/Src/UnTex.cpp:1042,1075`) reached from natives 321/322 `CreateTextureFromBMP/CreateTextureFromScreenShot` (`Engine/Src/UnScript.cpp:2688-2725`); **no UnrealScript in `Source/*/Classes` calls either** (`grep -rln CreateTextureFrom Source --include=*.uc` → only the declaration in `Engine/Classes/Actor.uc:1652-1653`). → no change; if a later phase finds a caller in a shipped `.u` not in `Source/`, add a `TEXF_RGBA8` case (`GL_BGRA` 8888, no ×2) under `UTGLR_ENGINE_HP2`. |
+| `UTexture` | `Alpha` (Rune only), `Info.Texture` as cache owner | fine |
+| Globals | `GIsEditor, GConfig, GUglyHackFlags, GUnicodeOS, GSecondsPerCycle, GMem, appSeconds, appSleep, appRound, appFromAnsi, appSprintf, debugf, LocalizeError` | all present in HP2 Core (`Core.h:437,445,460`, `UnFile.h:264`, `UnGnuG.h:263`) |
+| Property registration | `UBoolProperty/UIntProperty/UFloatProperty(CPP_PROPERTY(x), TEXT("Options"), CPF_Config)` via `SC_Add*ConfigParam` (`OpenGL.cpp:802-850`) | HP2 `UnType.h:42-205` ctors `(ECppProperty, INT, const TCHAR*, DWORD)` = v400 |
+| `LINE_*` | `LINE_None` only; `Draw3DLine` always `TransformPointBy(Frame->Coords)` (`OpenGL.cpp:4770-4771`) | add the `LINE_PreTransformed` skip (§6.4 H7) |
+
+### 6.4 What the retail D3D7 delta (§5.2) means for UTGLR specifically
+
+| D# (§5.2) | UTGLR today | 433 action |
+|---|---|---|
+| D1 `DrawComplexSurface(…,PolyFlags,cAlpha)` | 3-arg, reads `Surface.PolyFlags` (`:3906`) | H1 |
+| D2 `MaxVertices` / `DrawTriangles` | absent | H2 |
+| D3 modulated polys/tiles use white | already: `glColor3f(1,1,1)` for `PF_Modulated` (`:4163-4166, 4368-4370, 4702-4703`); tiles skip the colour array (`:4603`) | none |
+| D6 `PF_Highlighted` gets no `PF_Occlude` | `SetBlend` (`OpenGL.h:1290-1292`) already excludes `PF_Highlighted`, **but `DrawTile` forces `PF_Highlighted \| PF_Occlude` for alpha-palette tiles** (`OpenGL.cpp:4544, 4695`) | H5: under `UTGLR_ENGINE_HP2` add only `PF_Highlighted` (D3D7 433 `Direct3D7.cpp:1245-1246` + `AdjustPolyFlags :1815-1826` → no depth write). Matters for alpha-palette sprites in the 3D world (drawn through `DrawTile` by `UnSprite.cpp`): with `PF_Occlude` their transparent texels write depth and cut holes in whatever is drawn later. |
+| D7 Lumos blend | absent | H1 |
+| D8 `Highlighted\|Translucent` → straight alpha | `SetBlendNoCheck` tests `PF_Translucent` first (`:6320-6328`) → fading actors would render **additive** | H3/H4 |
+| D9 lightmap ×2 | `SetTexEnvNoCheck` `GL_RGB_SCALE_EXT 2.0` on units ≠0 unless `OneXBlending` (`:6461-6477`); UT default `OneXBlending=0` (`:784-788`) | none (keep `OneXBlending=False` in the web ini) |
+| D10 detail textures `DetailMax=3` | UTGLR draws one detail layer | none (cosmetic) |
+| D11 alpha-palette tiles | already present (`:4538-4545, 4689-4696`) | only the `PF_Occlude` part (H5) |
+| D15 unknown formats → RGBA7 | same fallback (`:6100-6118`) | none |
+| §3.5 `PF_RenderFog` on modulated decals | fog pass only when `(PolyFlags & (RenderFog\|Translucent\|Modulated)) == RenderFog` (`:4200-4205, 4355-4361`) → modulated never fogged | none |
+| §3.5 two-sided depth bias | depth from `Point.Z` | H6 (optional) |
+
+### 6.5 Exact change list for branch `hp2` (file by file)
+
+Macro scheme (see 6.6): keep `UTGLR_ENGINE_UT99DC` = "ufront platform port (SDL2/NSDLDrv/gl4es/web)"; add, at the top of `OpenGL.h` (after the build-config check, line 29):
+
+```cpp
+// ufront: engine-face selection. UT99DC = the ufront platform layer (SDL2/NSDLDrv/gl4es/web), shared by v400 and HP2.
+// V400 = the ut99dc engine types (3-arg DECLARE_CLASS, no FTime). HP2 = UE1 build 433 (v436-style types + the HP2 render face).
+#if defined(UTGLR_ENGINE_UT99DC) && !defined(UTGLR_ENGINE_HP2)
+#define UTGLR_ENGINE_V400 1
+#endif
+#if defined(UTGLR_RUNE_BUILD) || defined(UTGLR_UNREAL_227_BUILD) || defined(UTGLR_ENGINE_HP2)
+#define UTGLR_HAS_ALPHABLEND 1
+#endif
+#if defined(UTGLR_ENGINE_HP2)
+#define PF_AlphaBlend 0x20000000   // synthetic: free EPolyFlags bit in 433 (Engine/Inc/UnObj.h:221-281); never set by content
+#endif
+```
+
+**`OpenGL.h`**
+
+| Line | Change |
+|---|---|
+| 362 | `#if defined UTGLR_DX_BUILD \|\| defined UTGLR_ENGINE_UT99DC` → `#if defined UTGLR_DX_BUILD \|\| defined UTGLR_ENGINE_V400` (U1 → 4-arg on HP2) |
+| 640 | `… \|\| defined UTGLR_ENGINE_UT99DC` → `… \|\| defined UTGLR_ENGINE_V400` (U2) |
+| 760 | make `BYTE m_gpAlpha;` unconditional-safe (it already is unconditional) — add `FLOAT m_hp2SurfOpacity;` and `bool m_hp2VertexAlpha;` under `UTGLR_ENGINE_HP2` |
+| 1120 | `#ifdef UTGLR_ENGINE_HP2`: `void DrawComplexSurface(FSceneNode*, FSurfaceInfo&, FSurfaceFacet&, DWORD PolyFlags, BYTE cAlpha); INT MaxVertices(); void DrawTriangles(FSceneNode*, FTextureInfo&, FTransTexture**, INT, _WORD*, INT, DWORD, FSpanBuffer*); DWORD HP2AdjustPolyFlags(DWORD);` `#else` the 3-arg declaration `#endif` |
+| 1280-1305 (`SetBlend`) | Rune's `PF_AlphaBlend` pre-block stays Rune-only (it *adds* `PF_Occlude`; D3D7 433 does not). Add `#elif defined(UTGLR_ENGINE_HP2)`: `if (PolyFlags & PF_AlphaBlend) PolyFlags &= ~PF_Masked; else` before the common test, and change the common test's mask to `(PF_Translucent\|PF_Modulated\|PF_Highlighted\|PF_AlphaBlend)` under HP2 so alpha-blended polys do **not** write depth; `blendFlags` mask: use the 227 line (`… \| PF_AlphaBlend`) when `UTGLR_HAS_ALPHABLEND`. |
+
+**`OpenGL.cpp`**
+
+H0 (U3) — `:3703` `… \|\| defined UTGLR_ENGINE_UT99DC` → `… \|\| defined UTGLR_ENGINE_V400`.
+
+H1 — `DrawComplexSurface` (`:3807`, and `RenderPassesNoCheckSetup :7205-7211`, `RenderPassesNoCheckSetup_FP :7300-7305`):
+
+```cpp
+#ifdef UTGLR_ENGINE_HP2
+void UOpenGLRenderDevice::DrawComplexSurface(FSceneNode* Frame, FSurfaceInfo& Surface, FSurfaceFacet& Facet, DWORD InPolyFlags, BYTE cAlpha) {
+#else
+void UOpenGLRenderDevice::DrawComplexSurface(FSceneNode* Frame, FSurfaceInfo& Surface, FSurfaceFacet& Facet) {
+#endif
+...
+#ifdef UTGLR_ENGINE_HP2
+	DWORD PolyFlags = InPolyFlags & ~PF_AlphaBlend;
+	m_hp2SurfOpacity = 1.f;
+	if (!GIsEditor && (PolyFlags & PF_HighShadowDetail) && (PolyFlags & (PF_Modulated | PF_Translucent))) {   // §3.3 Lumos
+		m_hp2SurfOpacity = (255 - cAlpha) / 255.f;                    // cAlpha = transparency, 255 = gone
+		PolyFlags = (PolyFlags & ~(PF_Modulated | PF_Translucent | PF_HighShadowDetail | PF_Gouraud | PF_DirtyShadows)) | PF_AlphaBlend;
+		drawDetailTexture = drawDetailTexture && (cAlpha == 0);     // a separate modulated detail pass would darken what shows through
+	}
+#else
+	DWORD PolyFlags = Surface.PolyFlags;                            // line 3906
+#endif
+```
+
+and in both `RenderPassesNoCheckSetup*`: after `glColor3fv/glColor4fv(m_complexSurfaceColor3f_1f)`, under HP2 `if (MultiPass.TMU[0].PolyFlags & PF_AlphaBlend) glColor4f(m_complexSurfaceColor3f_1f[0], [1], [2], m_hp2SurfOpacity);`. Alpha then reaches the blender as `tex0.a × opacity × (lightmap.a if the lightmap is on TMU1)` because the modulate-2× combine on units ≠0 also modulates alpha (`SetTexEnvNoCheck :6464-6474`, `GL_COMBINE_ALPHA_EXT = GL_MODULATE`). **Lightmap alpha is not guaranteed to be 255** (UTGLR uploads RGBA7 lightmaps ×2 including A, `:6217-6238`). Two acceptable fixes — pick one after a test (§11 Q6): (a) under HP2 set `GL_COMBINE_ALPHA_EXT = GL_REPLACE, GL_SOURCE0_ALPHA_EXT = GL_PREVIOUS_EXT` for units ≠0 in the modulate branch (alpha on the units after the base is unused by every other UT blend mode, so this is safe globally), or (b) use constant-alpha blending for Lumos (`glBlendColor(0,0,0,opacity)` + `glBlendFunc(GL_CONSTANT_ALPHA, GL_ONE_MINUS_CONSTANT_ALPHA)`; needs `GL1_PROC(void,glBlendColor,(GLfloat,GLfloat,GLfloat,GLfloat))` added to `OpenGL1Funcs.h` under `UTGLR_ENGINE_HP2`; ES2/WebGL1 and gl4es (`src/gl/blend.c`) have it). **Recommendation: (a)** — no new GL entry point, exact for texA=1 content. Depth writes follow the passed `PF_Occlude` (Render already decided it); `SetBlend` must not re-add it for `PF_AlphaBlend` (see OpenGL.h 1280-1305 row).
+
+H2 — `MaxVertices` / `DrawTriangles` (new, next to `DrawGouraudPolygon :4233`):
+
+```cpp
+#ifdef UTGLR_ENGINE_HP2
+INT UOpenGLRenderDevice::MaxVertices() { return 256; }   // = retail D3D7 / SoftDrv. VERTEX_ARRAY_SIZE (4000) is per flush, not per call.
+
+void UOpenGLRenderDevice::DrawTriangles(FSceneNode* Frame, FTextureInfo& Info, FTransTexture** Pts, INT NumPts,
+                                        _WORD* Indices, INT NumIndices, DWORD PolyFlags, FSpanBuffer* Span) {
+	guard(UOpenGLRenderDevice::DrawTriangles);
+	if (NumPts < 3) return;
+	PolyFlags = HP2AdjustPolyFlags(PolyFlags);
+	if (!Indices && NumIndices == NumPts) {                     // one convex polygon (decals, base DrawGouraudPolygon)
+		DrawGouraudPolygon(Frame, Info, Pts, NumPts, PolyFlags, Span);
+		return;
+	}
+	const INT NumTris = (Indices ? NumIndices : NumPts) / 3;
+	FTransTexture* Tri[3];
+	for (INT t = 0; t < NumTris; t++) {
+		for (INT k = 0; k < 3; k++) Tri[k] = Pts[Indices ? Indices[t*3+k] : t*3+k];
+		DrawGouraudPolygon(Frame, Info, Tri, 3, PolyFlags, Span);   // 3 <= m_bufferActorTrisCutoff → buffered path, batched by (PolyFlags, CacheID)
+	}
+	unguard;
+}
+#endif
+```
+
+This reuses the buffered triangle path unchanged (hit-select, near-Z range hack via `GUglyHackFlags`, masked-texture cache ids, fog). Per-triangle state checks are what UT v436 meshes already cost (UT's mesh renderer calls `DrawGouraudPolygon` per triangle). If profiling on the web shows it hot, a later optimisation can buffer the whole index list in one `m_pBuffer3VertsProc` loop.
+
+H3 — `HP2AdjustPolyFlags` (new; same semantics as XOpenGL C3, §5.3):
+
+```cpp
+DWORD UOpenGLRenderDevice::HP2AdjustPolyFlags(DWORD PolyFlags) {
+	PolyFlags &= ~PF_AlphaBlend;
+	if ((PolyFlags & (PF_Highlighted | PF_Translucent)) == (PF_Highlighted | PF_Translucent))
+		PolyFlags = (PolyFlags & PF_Masked) ? (PolyFlags & ~(PF_Highlighted | PF_Translucent))
+		                                    : ((PolyFlags & ~(PF_Highlighted | PF_Translucent)) | PF_AlphaBlend);
+	return PolyFlags;
+}
+```
+
+H4 — per-vertex alpha. In the buffered `DrawGouraudPolygon` state block (`:4380-4400`), under HP2: `m_hp2VertexAlpha = (PolyFlags & PF_AlphaBlend) != 0; if (m_hp2VertexAlpha) m_pBuffer3VertsProc = Buffer3Verts;` and in `Buffer3Verts` (`:1083-1088`) and `BufferAdditionalClippedVerts` (`:1572-1577`) add `#elif defined(UTGLR_ENGINE_HP2)`: `color = pRD->m_hp2VertexAlpha ? FPlaneTo_RGBA(&P->Light) : FPlaneTo_RGB_A255(&P->Light);` (and the same in `DrawGouraudPolygonOld :4178-4183` for >10-vertex polys). The fog masks at `:4200-4204` and `:4355-4359` take the 227 form (`… \| PF_AlphaBlend`) under `UTGLR_HAS_ALPHABLEND`, so alpha-blended polys never get the additive fog pass. `SetBlendNoCheck` (`:6304-6340`): the 227 `GL_BLEND_FLAG_BITS` and the `else if (blendFlags & PF_AlphaBlend) glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)` branch must be compiled for HP2 (rewrite the three `#elif UTGLR_UNREAL_227_BUILD` there as `#elif defined(UTGLR_HAS_ALPHABLEND)` — Rune keeps its own first branch). Leave the 227 alpha-test block at `:6343-6357` 227-only (HP2 has no masked-alpha-blend content).
+
+H5 — `DrawTile` (`:4537-4545`, `:4688-4696`): under HP2 `PolyFlags |= PF_Highlighted;` (no `PF_Occlude`).
+
+H6 — optional two-sided bias (§3.5): in `DrawTriangles`, if `PolyFlags & PF_TwoSided`, `EndGouraudPolygonBuffering(); glEnable(GL_POLYGON_OFFSET_FILL);` around the batch and disable after (`glPolygonOffset(-1,-1)` is already the default state, `:2389`, and the ZTrick path re-sets it per frame, `:3208-3224`). Same decision rule as XOpenGL C7.
+
+H7 — `Draw3DLine` (`:4770-4771`): under HP2 `if (!(LineFlags & LINE_PreTransformed)) { P1 = …; P2 = …; }`.
+
+**`OpenGLDrv.h`** — no change (includes `Engine.h` + `UnRender.h` only; UTGLR never needed `RenderPrivate.h`, so the §1.6 include problem does not exist here). The comment block at `OpenGLDrv.h:55-60` should mention that the shims are platform (shared with HP2).
+
+**HP2 repo glue** — `Source/OpenGLDrv/CMakeLists.txt:34-44` already defines `UTGLR_ENGINE_HP2` next to `UTGLR_ENGINE_UT99DC` (§1.5). Keep both (UT99DC = platform layer). Its private include `${CMAKE_CURRENT_SOURCE_DIR}/../Render/Src` (line 31) is unused by UTGLR — harmless. `Source/OpenGLDrv/{PORTING,WEB-INTEGRATION}.md` are byte copies of the template's; append an "HP2 / 433" section listing U1-U3 and H1-H7 when the branch lands.
+
+### 6.6 Gating scheme for UTGLR
+
+* `UTGLR_ENGINE_UT99DC` — **platform** (SDL2 shims, no WGL, NSDLDrv-owned context, gl4es, web tweaks, S3TC ini read, heartbeat). Defined by both the v400 template and HP2.
+* `UTGLR_ENGINE_V400` — derived: ut99dc engine *types* (3-arg `DECLARE_CLASS`, no `FTime`). Replaces `UTGLR_ENGINE_UT99DC` at exactly three sites (U1-U3). Not defined for HP2 → HP2 takes the upstream v436 branches.
+* `UTGLR_ENGINE_HP2` — the 433 render face and blend semantics (H1-H7).
+* `UTGLR_HAS_ALPHABLEND` — derived feature macro (Rune ∪ 227 ∪ HP2) replacing the value-tested `#elif UTGLR_UNREAL_227_BUILD` at the blend/fog-mask sites, so HP2 reuses upstream's alpha-blend plumbing instead of duplicating it.
+* This keeps the v400 template's build bit-identical (it defines `UT99DC` only → `V400` on, `HP2`/`HAS_ALPHABLEND` off). Verify the same way as XOpenGL (§5.4): build the template's native preset against the new branch in a scratch copy and compare `nm -C OpenGLDrv.so | grep UOpenGLRenderDevice`.
+
+## 7. gl4es: is any change needed for HP2? — No
+
+Tree: `/home/ion/hp2-ufrontend/ufrontend/gl4es` (to be moved, §1.1), `hp2` @ `98441ed5` == `fix/cubemap-bind-active-unit` (origin `github.com/10-p/gl4es`). The fork = upstream `ptitSeb/gl4es` up to `e6bb082b`/`17f0894e` + 5 ufront commits: `627a77e4` cube map bound to the wrong unit, `8ab08207`/`414db130`/`94fa3eff` per-fragment reflection-map texgen (UT2004's GL4ESDrv needs), `bb07c829` depth24→16 renderbuffer downgrade, `98441ed5` MinGW build.
+
+Why nothing changes:
+
+| Question | Answer (evidence) |
+|---|---|
+| Does gl4es see engine types? | No. gl4es is a GL→GLES2 translator; it only sees the GL calls UTGLR makes. The 433 face is absorbed entirely inside UTGLR (§6). XOpenGLDrv does not use gl4es at all (WebGL2 native). |
+| Do the HP2 additions to UTGLR use GL features the UT99 path did not? | H1-H7 use: `GL_SRC_ALPHA/GL_ONE_MINUS_SRC_ALPHA` blending (already used by UTGLR for `PF_Masked` + smooth-masked, `OpenGL.cpp:6338-6340`), a 4-component colour array with real alpha (`glColorPointer(4, GL_UNSIGNED_BYTE…)` already, `:2437, 6639`), `glColor4f` (already, `:4007-4019`), `GL_COMBINE_ALPHA_EXT = GL_REPLACE / GL_SOURCE0_ALPHA_EXT = GL_PREVIOUS_EXT` (gl4es emulates `GL_COMBINE` including the alpha combiner in its fixed-function shader generator, `src/gl/texenv.c:117,675,756`; UTGLR already sets `GL_COMBINE_ALPHA_EXT = GL_REPLACE` for `PF_Memorized`/`PF_Highlighted` units, `:6486, 6504`), optional `GL_POLYGON_OFFSET_FILL` (already used for detail textures, `:7679, 7858`), optional `glBlendColor` (only in the non-recommended Lumos variant (b); gl4es implements it, `src/gl/blend.c:50-82`). |
+| Different texture formats? | No: HP2 has the same `ETextureFormat` as v400 (§2.2); P8→RGBA8, RGBA7→BGRA8888 and DXT1 paths are the ones UT99 already exercises through gl4es (`LIBGL` S3TC passthrough when the browser has `WEBGL_compressed_texture_s3tc`). |
+| Different context setup? | No: same NSDLViewport, same ES2 context request (§8), same `LIBGL_ES=2 LIBGL_USEVBO=0` env (`OpenGL.cpp:2946-2961`). |
+
+**ACTION:** none in the fork. Resolve the branch-name mismatch of §1 fact 1.3 (either delete the local `hp2` branch and keep `GL4ES_GIT_TAG=fix/cubemap-bind-active-unit`, or push `hp2` and point `Source/CMakeLists.txt:313` at it). Only revisit gl4es if the first UTGLR web run shows a translation bug specific to HP2 content (symptom → check with `LIBGL_LOGSHADERERROR=1` and the gl4es debug log).
+
+## 8. NSDLDrv: GL / GLES / software selection, web context creation, and the 433 `UViewport` delta
+
+HP2's `Source/NSDLDrv/{Inc/NSDLDrv.h, Src/NSDLClient.cpp, Src/NSDLViewport.cpp, Src/NSDLDrv.cpp, CMakeLists.txt}` are byte-identical to the template's (§1 fact 1.4). Line numbers below are valid for both trees.
+
+### 8.1 How the viewport decides what surface to create (`UNSDLViewport::OpenWindow`, `NSDLViewport.cpp:309-660`)
+
+| Step | Code | Effect |
+|---|---|---|
+| 1. Resolve the device name *before* any device exists | `:360-385`: `Parse(appCmdLine(),"GAMERENDERDEVICE=")`, else `GConfig->GetString("Engine.Engine","GameRenderDevice")`; `appStrupr`; if it lacks `"OPENGL"`, the same for `WindowedRenderDevice` | the only input is the **class-path string**; the device class is not loaded yet |
+| 2. GL or not | `DoOpenGL = 1` iff the upper-cased name contains `"OPENGL"` (`:366-378`); skipped for `Temporary`, `GIsEditor`, `-nohard` | `XOpenGLDrv.XOpenGLRenderDevice` ✔, `OpenGLDrv.OpenGLRenderDevice` ✔, `SoftDrv.SoftwareRenderDevice` ✘, **`D3DDrv.D3DRenderDevice` ✘** (HP2 `Default.ini:22`) |
+| 3. Native profile | `GLProfile` starts `COMPATIBILITY` (`:317`); the `"GLES"` test (`:379-380`) also sets COMPATIBILITY (a no-op left from ut99dc's NOpenGLESDrv) | native always gets a desktop compat context — UTGLR/gl4es and XOpenGL (which then asks for 3.3 through its own `SelectGLVersion` short-circuit, XOpenGL X10) both run on it |
+| 4. Web GLES major | `WebGLESMajor = 2`, `= 3` iff the name contains `"XOPENGL"` (`:322, 383-384`) | XOpenGL → WebGL 2 (GLES3); UTGLR via gl4es → WebGL 1 (GLES2) |
+| 5. Window flags | `SDL_WINDOW_HIDDEN \| SDL_WINDOW_RESIZABLE`; `\| SDL_WINDOW_OPENGL` only when `DoOpenGL` and **not** a pthreads web build (`:420-429`) | on the threaded web build SDL owns window + input only |
+| 6. Context | native / non-threaded web: `SDL_GL_CreateContext` + `SDL_GL_MakeCurrent` (`:543-555`). **Threaded web (`__EMSCRIPTEN_PTHREADS__`)**: `emscripten_webgl_create_context("#canvas", Attrs)` on the worker with `majorVersion = WebGLESMajor-1`, `alpha=0, depth=1, stencil=1, antialias=0, explicitSwapControl=1, renderViaOffscreenBackBuffer=1`, made current, handle stashed in `GLCtx` (`:500-542`) | the device **adopts** the current context: XOpenGL via `SDL_GL_GetCurrentContext()`/`emscripten_webgl_get_current_context()` (X11), UTGLR by resolving procs through gl4es → `emscripten_webgl_get_proc_address` (U11). Neither creates or destroys a context (X17). |
+| 7. Software surface | no GL: threaded web → own ARGB8888 framebuffer, blitted to the transferred OffscreenCanvas through a 2D context (`:557-575`); native → `SDL_CreateRenderer` + streaming texture (`:577-600`) | SoftDrv path; also what a null device gets |
+| 8. Present | `Repaint`/`Unlock`: `emscripten_webgl_commit_frame()` (threaded web) or `SDL_GL_SwapWindow` (`:880-900`) | drivers must not swap (XOpenGL X13; UTGLR's `SDL_GL_SwapBuffers` is a no-op shim, U6) |
+| 9. Device creation | `Client->TryRenderDevice(this, "ini:Engine.Engine.GameRenderDevice", StartupFullscreen)`, then `WindowedRenderDevice`, (`SoftDrv` for temporary viewports) (`:651-657`) → `UNSDLClient::TryRenderDevice` (`NSDLClient.cpp:425-468`): `StaticLoadClass(URenderDevice, …, LOAD_NoWarn)`, `ConstructObject`, `RenDev->Init(Viewport, SizeX, SizeY, ColorBytes, Fullscreen)`, `Level->DetailChange(HighDetailActors)` | a missing class (e.g. `D3DDrv`) fails silently and falls through to `WindowedRenderDevice` |
+
+**Consequences for HP2 (ACTION):**
+
+1. The shipped `Config/System/Default.ini:22,31` (`GameRenderDevice=D3DDrv.D3DRenderDevice`, `WindowedRenderDevice=SoftDrv.SoftwareRenderDevice`, `ViewportManager=WinDrv.WindowsClient` `:35`) would give **SoftDrv with no GL window** under NSDLDrv. The web/native boot inis (`Config/System/web/` currently holds only the template's `README-ut99.md` — no inis yet) must set `ViewportManager=NSDLDrv.NSDLClient` and **both** `GameRenderDevice` and `WindowedRenderDevice` to the chosen GL device, because step 1 reads `WindowedRenderDevice` only when `GameRenderDevice` lacks "OPENGL", and step 9 falls through to `WindowedRenderDevice` when the game device fails to `Init` — a GL window with SoftDrv in it breaks on the threaded web build (a canvas can have only one context type, `:896-900`).
+2. Keep the device names: `XOpenGLDrv.XOpenGLRenderDevice` (contains `XOPENGL` → WebGL2) and `OpenGLDrv.OpenGLRenderDevice` (contains `OPENGL`, not `XOPENGL`, not `GLES` → WebGL1 / native compat). Do not rename either package.
+3. HP2's retail `[OpenGLDrv.OpenGLRenderDevice]` section (`Default.ini:244-250`) carries only the 6 generic flags; the web ini must add the UTGLR settings the template's web ini carries (`UseFragmentProgram=False`, `UsePalette=False`, `OneXBlending=False`, `UseS3TC=True`, `SinglePassFog`/`SinglePassDetail` per gl4es capability) — copy from the template's web `Default.ini` and keep HP2's `DetailTextures=True`.
+4. No change to the name-sniffing logic is needed for HP2.
+
+### 8.2 NSDLDrv compile breaks against the 433 headers (not renderer logic, but the renderer cannot start without them)
+
+| # | Site | v400 code | 433 problem | ACTION |
+|---|---|---|---|---|
+| N1 | `Inc/NSDLDrv.h:26` | `DECLARE_CLASS( UNSDLViewport, UViewport, CLASS_Transient )` | 433 `DECLARE_CLASS` takes 4 args (`Core/Inc/UnObjBas.h:326`) | `DECLARE_CLASS( UNSDLViewport, UViewport, CLASS_Transient, NSDLDrv )` (gate on `ENGINE_VERSION==433` if the file must stay shared with the template; in the HP2 repo it can simply be edited) |
+| N2 | `Inc/NSDLDrv.h:109` | `DECLARE_CLASS( UNSDLClient, UClient, CLASS_Transient\|CLASS_Config )` | same | add `, NSDLDrv` |
+| N3 | `Src/NSDLClient.cpp:248` | `Viewport->LastUpdateTime<BestViewport->LastUpdateTime` | `LastUpdateTime` is `FTime` (`UnCamera.h:222`), which has no `operator<` (§2.4) | `BestViewport->LastUpdateTime>Viewport->LastUpdateTime` — the exact form HP2's own `WinDrv/Src/WinClient.cpp:365` uses |
+| N4 | `Src/NSDLViewport.cpp:1154-1155`, `Inc/NSDLDrv.h:87`, `:1313` | `const FLOAT CurTime = appSeconds(); const FLOAT DeltaTime = CurTime - InputUpdateTime;` with `FLOAT InputUpdateTime` | `appSeconds()` returns `FTime` (`UnGnuG.h:263`), no conversion to `FLOAT` | `FTime InputUpdateTime;` in the header; `const FTime CurTime = appSeconds(); const FLOAT DeltaTime = CurTime - InputUpdateTime;` (`FTime-FTime→float`); `:1313` unchanged |
+| N5 | `Inc/NSDLDrv.h:9`, `Src/NSDLDrv.cpp:7` | `#define NSDLDRV_API DLL_EXPORT`, `DLL_EXPORT UBOOL GTickDue;` | 433 gcc `DLL_EXPORT` is `extern "C"` (`UnGnuG.h:97`) | owned by the Core report's `DLL_EXPORT` decision; if `DLL_EXPORT` stays `extern "C"`, `class NSDLDRV_API UNSDLViewport` is ill-formed → define `NSDLDRV_API` as the visibility attribute only |
+| N6 | `Src/NSDLClient.cpp:449-456` | `Engine->Audio->SetViewport(…)` | HP2 `UAudioSubsystem::SetViewport(UViewport*)` exists (`Engine/Inc/UnAudio.h:59`) | none |
+| N7 | `Src/NSDLClient.cpp:445-448` comment | relies on the template's `UObject::StaticConstructObject` fix that re-loads `CPF_Config` device flags on the web | HP2 `Core/Src/UnObj.cpp` must carry the same fix, otherwise XOpenGL/UTGLR start with `Coronas/VolumetricLighting/ShinySurfaces/DetailTextures/HighDetailActors = 0` on the web | cross-check with the Core report; verify on the first web boot by logging those five flags after `Init` |
+
+### 8.3 What the 433 `UViewport` delta (the 33-line `UnCamera.h` diff) changes for NSDLDrv
+
+Full diff table in §2.3. NSDLDrv-relevant conclusions:
+
+| 433 change | Effect on `UNSDLViewport` | ACTION |
+|---|---|---|
+| `FTime CurrentTime`, `FTime LastUpdateTime` | N3 (and any future arithmetic on them) | N3 |
+| new virtual `TryRenderDevice(const TCHAR*, INT, INT, INT, UBOOL) {}` on `UViewport` (`UnCamera.h:286`) | `UNSDLViewport` does not override it; NSDLDrv keeps its own `UNSDLClient::TryRenderDevice(UViewport*, const char*, UBOOL)` (`NSDLDrv.h:146`) — different class, different signature, no hiding or overload clash. Engine-side callers of the viewport virtual are only `WinDrv` (`WinViewport.cpp:335-341, 2394-2525`) and `UnrealEd/Src/Main.cpp:842-844` (`grep -rn TryRenderDevice Source`) — nothing on the NSDLDrv path calls it. | none. Optional nicety: override it in `UNSDLViewport` to forward to `Client->TryRenderDevice(this, appToAnsi(ClassName), Fullscreen)` so any future engine call (e.g. a renderer-switch exec) works. |
+| new virtuals `DrawString`, `CreateNativeFont` (no-op / `NULL`) | Windows GDI native fonts. Callers (`grep -rn 'CreateNativeFont\|->DrawString(' Source --include=*.cpp`, excluding WinDrv/D3DDrv): **only `Editor/Src/UnEdCam.cpp:2314-2445`** (editor control-point labels); `CreateNativeFont` has no caller outside WinDrv. The game never reaches either through NSDLDrv. | none |
+| new virtuals `LoadSmackerMovie/BlitNextSmackerFrame/ShutdownSmacker` (defaults `false/true/true`) | Smacker cut-scene movies are a silent no-op on SDL | out of renderer scope (movie playback report); note that `BlitNextSmackerFrame` on WinDrv blits through `GetOsSurface` — a GL port would need its own path (upload the frame as a texture and `DrawTile` it) |
+| `snapBuff`, `snapU/V`, `ScreenShot()` + the `SNAP` exec (`Engine/Src/UnCamera.cpp:674-830`) | save-game thumbnails come from `RenDev->ReadPixels` | both forks implement `ReadPixels` with a vertical flip + R/B exchange (`XOpenGL.cpp:2244-2273`, `OpenGL.cpp:5034-5049`), the v400 convention `ScreenShot` expects. XOpenGL binds `RenderFBO` first (correct on WebGL2). **Verify the thumbnail colours/orientation once in the save menu** (§11 Q9); on the threaded web build `ReadPixels` after `commit_frame` reads the offscreen back buffer (`renderViaOffscreenBackBuffer=1`), which is preserved → should be fine. |
+| `REN_MatineeIP`, `SHOW_Bounds/SHOW_Bones`, `UClient::{NoFractalAnim, ParticleDensity}` | none | none |
+
+## 9. In-tree devices on the same face (NullDrv, SoftDrv) — brief
+
+| Device | State in HP2 | ACTION |
+|---|---|---|
+| `NullDrv` (`Source/NullDrv/Src/{NullDrvPrivate.h,NullDrv.cpp}`, template copy) | v400 face: 3-arg `DECLARE_CLASS(UNullRenderDevice,URenderDevice,CLASS_Config)` (`NullDrvPrivate.h:23`), 3-arg `DrawComplexSurface` (`:35`, `NullDrv.cpp:54`), no `MaxVertices`/`DrawTriangles` → **abstract on 433, does not compile/instantiate** | `DECLARE_CLASS(…, CLASS_Config, NullDrv)`; `void DrawComplexSurface(FSceneNode*, FSurfaceInfo&, FSurfaceFacet&, DWORD, BYTE) {}`; `INT MaxVertices() { return 256; }` (callers allocate `MaxVertices()` verts and `6*MaxVertices()` indices even for a null device — 0 would make `UnMeshRn.cpp:113-122` allocate nothing and then write into it); `void DrawTriangles(…) {}`. Keep the `DrawGouraudPolygon` no-op (harmless). Name must keep lacking "OPENGL" (its header comment `:15-19` explains why). `class DLL_EXPORT` → see §8.2 N5. |
+| `SoftDrv` (`Source/SoftDrv/Src/*`, HP2's own 433 source) | already implements the 433 face: `DECLARE_CLASS(USoftwareRenderDevice,URenderDevice,CLASS_Config,SoftDrv)` (`SoftDrvPrivate.h:117`), 5-arg `DrawComplexSurface`, `MaxVertices`, `DrawTriangles` (`:156-158`; body `DrawPoly.cpp:4366-4600`) | no face work. It is the **reference for the software semantics** of Lumos (`SpanBased` branch of `UnRender.cpp:3452-3551`) and of `PF_Highlighted\|PF_Translucent` (`DrawPoly.cpp:4380-4385`). Its portability (MSVC `__asm` under `#if ASM`, `SoftDrvPrivate.h:205-215`; framebuffer via `Viewport->ScreenPointer`, NSDLViewport's software surface §8.1 step 7) belongs to the SoftDrv report. |
+| `D3DDrv` (`Source/D3DDrv/Src/Direct3D7.cpp`) | Windows-only, not built | reference only (§5.2) |
+
+**`MaxVertices()` must be the same value on every device (use 256 everywhere).** The mesh batcher's buffers are sized **once**, from whichever device renders the first mesh (`Render/Src/UnMeshRn.cpp:113-122`: `if( !VertBuffer.GetData() ) { VBSize = RenDev->MaxVertices(); VertBuffer.Set(VBSize); IndexBuffer.Set(VBSize*6); }`), and the flush test uses `VertBuffer.Num()` (`:191`), not the current device's value. A renderer switch at runtime (e.g. SoftDrv fallback → GL, or `TryRenderDevice` after a failed `Init`) keeps the first size. A device reporting a *smaller* value than the first one would receive batches larger than it promised. Particles re-read `MaxVertices()` every call (`UnParticleRn.cpp:466-476`, `GMem` allocation), so they are not affected. → XOpenGL, UTGLR, NullDrv: **256**, identical to SoftDrv (`DrawPoly.cpp:4366-4370`) and retail D3D7.
+
+Resolved while writing §8-§9 (answers to "verify" notes left in §2-§6):
+
+| Earlier note | Result |
+|---|---|
+| §2.3 `UPlayer::bSoftwareRendering` — does anything read it? | `grep -rn bSoftwareRendering Source --include=*.{cpp,h,uc}` → only the declaration `Engine/Inc/UnPlayer.h:27`. Dead field; drivers ignore it. |
+| §5.1 `FSceneNode::NearClip` exists? | yes, `Engine/Inc/UnRender.h:65` (`FPlane NearClip`). |
+| §6.2 U10 fog-map gate | `Render/Src/UnRender.cpp:2430`: `IsVolumetric = RenDev->VolumetricLighting && RenDev->SupportsFogMaps && Zone->bFogZone` — same gate as v400, so UTGLR's web `SupportsFogMaps = 1` is still required. |
+| §6.2 U15 HUD tiles at `Z==1` | `UCanvas::DrawTile` forwards the caller's `Z` (`Engine/Src/UnCanvas.cpp:66`); the canvas-level helpers pass their `Z` through (`:93,116`) — same as v400. |
+
+## 10. Checklists (ordered work plan)
+
+### 10.0 Workspace (before anything else)
+
+- [ ] Move the three clones out of the frontend clone: `mv /home/ion/hp2-ufrontend/ufrontend/{XOpenGLDrv,utglr-copy,gl4es} /home/ion/hp2-ufrontend/` (§1 fact 1.1). Confirm `Source/CMakePresets.json` `FETCHCONTENT_SOURCE_DIR_*` / `GL4ES_SOURCE_DIR` then resolve.
+- [ ] Decide the gl4es ref (§1 fact 1.3 / §7) — no code change in gl4es.
+- [ ] Push `hp2-v433-compat` (XOpenGL) and `hp2` (utglr) once they carry commits, before any preset without local source dirs is used (§1 fact 1.2).
+
+### 10.1 Engine-side prerequisites owned by other reports (renderer cannot compile/start without them)
+
+- [ ] Core: `DLL_EXPORT`/`*_API` under gcc (§2.4, §8.2 N5).
+- [ ] Core: web `CPF_Config` repair in `UObject::StaticConstructObject` (§8.2 N7).
+- [ ] Config: web boot inis in `Config/System/web/` with `ViewportManager=NSDLDrv.NSDLClient`, `GameRenderDevice` = `WindowedRenderDevice` = the chosen GL device, and full `[XOpenGLDrv.XOpenGLRenderDevice]` / `[OpenGLDrv.OpenGLRenderDevice]` sections copied from the template's web ini (§8.1 actions 1-3).
+
+### 10.2 NSDLDrv (HP2 repo, `Source/NSDLDrv`)
+
+- [ ] N1/N2 4-arg `DECLARE_CLASS` (`Inc/NSDLDrv.h:26,109`).
+- [ ] N3 `FTime` comparison (`Src/NSDLClient.cpp:248`).
+- [ ] N4 `FTime InputUpdateTime` + `CurTime` (`Inc/NSDLDrv.h:87`, `Src/NSDLViewport.cpp:1154-1155`).
+- [ ] (optional) override `UViewport::TryRenderDevice` to forward to the client (§8.3).
+
+### 10.3 NullDrv (HP2 repo, `Source/NullDrv`)
+
+- [ ] 4-arg `DECLARE_CLASS`, 5-arg `DrawComplexSurface`, `MaxVertices()=256`, empty `DrawTriangles` (§9).
+
+### 10.4 XOpenGLDrv fork, branch `hp2-v433-compat` (§4-§5)
+
+- [ ] Add `XOGL_UE1_V4XX` / `XOGL_HP2` in `Inc/XOpenGLDrv.h` (§5.3).
+- [ ] X1 `#include "Render.h"` on 433; X8 4-arg `DECLARE_CLASS` (`Inc/XOpenGL.h:523`).
+- [ ] Mechanical `ENGINE_VERSION==400` → `XOGL_UE1_V4XX` at X3-X7, X9-X17, X19-X21, X23-X27 (≈25 sites, list in §4.1).
+- [ ] X5 split: alpha-blend flags become `PF_XOGL_AlphaBlend = 0x20000000` on 433 (§5.3).
+- [ ] C1 5-arg `DrawComplexSurface` with Lumos opacity (`Src/DrawComplex.cpp`).
+- [ ] C2 `MaxVertices()=256` + `DrawTriangles` (indexed list / fan / list) (`Src/DrawGouraud.cpp`); zero normals for particles.
+- [ ] C3 `HP2AdjustPolyFlags` (`Src/SetTexture.cpp`), called from `DrawTriangles`, `DrawGouraudPolygon`, `DrawTile`.
+- [ ] C4 `LINE_PreTransformed` in `Draw3DLine` (`Src/DrawSimple.cpp`).
+- [ ] C5 alpha-palette tiles → `PF_Highlighted` (`Src/DrawTile.cpp`).
+- [ ] C7 (decide after first look) two-sided polygon offset.
+- [ ] Update `Source/XOpenGLDrv/{ENGINE_CHANGES,WEB_INTEGRATION}.md` + CMake comment in the HP2 repo (§5.3 "Docs").
+- [ ] Regression: template v400 build symbol set unchanged (§5.4).
+
+### 10.5 UTGLR fork, branch `hp2` (§6)
+
+- [ ] `UTGLR_ENGINE_V400`, `UTGLR_HAS_ALPHABLEND`, synthetic `PF_AlphaBlend` in `OpenGL.h` (§6.5).
+- [ ] U1-U3: `UTGLR_ENGINE_UT99DC` → `UTGLR_ENGINE_V400` at `OpenGL.h:362,640`, `OpenGL.cpp:3703`.
+- [ ] H1 5-arg `DrawComplexSurface` + Lumos opacity via `glColor4f` + lightmap-unit alpha `REPLACE(PREVIOUS)` (variant a).
+- [ ] H2 `MaxVertices()=256` + `DrawTriangles` over the buffered `DrawGouraudPolygon`.
+- [ ] H3 `HP2AdjustPolyFlags`; H4 per-vertex alpha (`Buffer3Verts`, `BufferAdditionalClippedVerts`, `DrawGouraudPolygonOld`), 227-style blend/fog masks under `UTGLR_HAS_ALPHABLEND`, `SetBlend` no-occlude for alpha-blend.
+- [ ] H5 alpha-palette tiles without `PF_Occlude`.
+- [ ] H6 (decide after first look) two-sided polygon offset; H7 `LINE_PreTransformed`.
+- [ ] Update `Source/OpenGLDrv/{PORTING,WEB-INTEGRATION}.md` in the HP2 repo.
+- [ ] Regression: template v400 build symbol set unchanged (§6.6).
+
+### 10.6 First-light verification (both GL devices, native then web)
+
+- [ ] Boot to the main menu: HUD/menu tiles, alpha-palette icons (C5/H5), mouse cursor on top (U15).
+- [ ] First level: Harry + NPC meshes (DrawTriangles indexed lists), particles (index list with unused verts), actor blob shadows (modulated fan decals), fog zones (fog maps).
+- [ ] A Lumos surface (any level with invisible walkways; cast Lumos): appear/disappear fade with distance, depth behaviour (§3.3).
+- [ ] A fading actor (`Opacity<1`: e.g. ghosts / fade-out on death/teleport): straight alpha, not additive (§3.4).
+- [ ] First-person/overlay meshes: near-Z range hack (UTGLR U18).
+- [ ] Save-game thumbnail colours/orientation (§8.3).
+- [ ] Log scan: no `Unknown texture format`, no GL errors, `SupportsTC` / DXT1 upload count.
+
+## 11. Open questions / how to verify
+
+| # | Question | Why it matters | How to verify |
+|---|---|---|---|
+| Q1 | Does retail D3D7 really draw Harry's blob shadow invisible (the `PF_LumosAffected` `&`-test quirk, §3.3 quirk 1)? | decides whether the GL ports' "Lumos only when `PF_HighShadowDetail` + blend bit" rule is parity or a fix | run retail `Assets/System/Game.exe` under Wine (wined3d, D3DDrv), stand in any lit room, screenshot Harry's feet; record in `docs/porting/`. The GL rule stays either way (SoftDrv draws the shadow). |
+| Q2 | Which HP2 surfaces actually carry `PF_HighShadowDetail` without a blend bit? | the GL Lumos test requires `PF_Modulated\|PF_Translucent` too; a Lumos surface authored with only `PF_HighShadowDetail` would be missed | once the port loads maps, log (one line per surface, first frame only) every `DrawComplexSurface` whose flags `& PF_LumosAffected` with the flags value; or scan `Assets/Maps/*.unr` with a package reader for `FBspSurf.PolyFlags & 0x00800000`. |
+| Q3 | Two-sided depth bias needed (C7/H6)? | HP2-only `bTwoSidedBias` default true (`Actor.uc:312,1741`) | close-up of Harry's robe/hair in the first level on both GL devices; z-fighting ⇒ enable the polygon offset. |
+| Q4 | Any HP2 texture with `UTexture::Alpha > 0`? | XOpenGL fades those (227 convention, §3.5) | temporary log in XOpenGL `SetTexture` when `Info.Texture->Alpha > 0` over the first levels; if hits, force opacity 1 under `XOGL_HP2`. |
+| Q5 | How much DXT1 content does HP2 ship? | S3TC path exercise; WebGL2 non-4-aligned DXT1 decode (X21) | count `TEXF_DXT1` (format 3) uploads per level via the driver log (`DebugLevel`), or a package scan of `Assets/Textures/*.utx`. |
+| Q6 | UTGLR Lumos alpha: is lightmap alpha 255? | if not, H1 variant (a) (`REPLACE(PREVIOUS)` on units ≠0) is required, not just nice | first Lumos surface on UTGLR: if the fade is patchy along lightmap texels, (a) is needed; implement (a) up front anyway — it is cheap and safe. |
+| Q7 | XOpenGL gamma defaults on 433 (X14-X16) | zero-init web device | log `GammaCorrection/GammaMultiplier` after `Init` on the first web boot. |
+| Q8 | Premultiplied alpha-palette tiles: edges glow? (C5) | D3D7 does not premultiply; parity says leave it | compare one HUD icon against a retail screenshot. |
+| Q9 | Save thumbnails (`SNAP` → `ReadPixels`) colour order and orientation | both forks flip + swap R/B (v400 convention); HP2's `ScreenShot`/snap consumer is v400 code | save once, look at the thumbnail in the load menu and at the BMP in the save folder. |
+| Q10 | Is `DrawTriangles` hot enough on the web to need a whole-list fast path in UTGLR (H2 loops per triangle)? | perf only | `stat fps` / browser profiler in a crowded scene (Great Hall); optimise only if the UTGLR build is chosen as a shipping renderer. |
+| Q11 | Any shipped UnrealScript (not in `Source/*/Classes`) calling `CreateTextureFromScreenShot/BMP` (TEXF_RGBA8 at runtime)? | UTGLR/D3D7 would mis-read RGBA8 (§6.3) | search the shipped `.u` name tables (`Assets/System/*.u`) with a package reader for those function names; `grep -a -o 'CreateTextureFrom[A-Za-z]*' Assets/System/*.u` finds the names only in `Engine.u` (the declarations) — **not conclusive**, because calls to `native(321/322) final` functions compile to the extended native opcode (`0x61 0x41` / `0x61 0x42`) with no name import. Conclusive check: disassemble `HGame.u`/`HPMenu`-side packages with a UE1 bytecode reader, or break on `AActor::execCreateTextureFromScreenShot` in a native build during a save. |
+
+## Status: complete

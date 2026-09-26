@@ -1,0 +1,90 @@
+Core/Inc/FConfigCacheIni.h:358: Value
+Core/Inc/FConfigCacheIni.h:372: Value
+Core/Inc/FFileManagerAnsi.h:219: Filename
+Core/Inc/FFileManagerAnsi.h:238: Filename
+Core/Inc/FFileManagerLinux.h:223: Filename
+Core/Inc/FFileManagerLinux.h:242: Filename
+Core/Inc/FFileManagerWindows.h:301: Filename
+Core/Inc/FFileManagerWindows.h:320: Filename
+Core/Inc/FFileManagerWindows.h:367: Result
+Core/Inc/FFileManagerWindows.h:371: Result
+Core/Inc/FMallocDebug.h:141: Temp
+Core/Inc/FOutputDeviceAnsiError.h:62: Msg
+Core/Inc/FOutputDeviceFile.h:70: Data
+Core/Inc/FOutputDeviceWindowsError.h:38: Msg
+Core/Inc/FOutputDeviceWindowsError.h:41: Error
+Core/Inc/FOutputDeviceWindowsError.h:55: Msg
+Core/Src/Core.cpp:24: Str
+Core/Src/UExporter.cpp:77: Object
+Core/Src/UExporter.cpp:147: Filename
+Core/Src/UExporter.cpp:153: Filename
+Core/Src/UExporter.cpp:162: Filename
+Core/Src/UExporter.cpp:179: Filename
+Core/Src/UExporter.cpp:185: Filename
+Core/Src/UExporter.cpp:194: Filename
+Core/Src/UFactory.cpp:93: Filename
+Core/Src/UFactory.cpp:102: Filename
+Core/Src/UFactory.cpp:113: Filename
+Core/Src/UFactory.cpp:140: Filename
+Core/Src/UnCache.cpp:661: Item->LinearNext->Data - Item->Data
+Core/Src/UnClass.cpp:1072: EXPR GetPathName()
+Core/Src/UnMisc.cpp:1244: Section
+Core/Src/UnMisc.cpp:1244: Key
+Core/Src/UnMisc.cpp:1245: Section
+Core/Src/UnMisc.cpp:1245: Key
+Core/Src/UnMisc.cpp:1599: Path
+Core/Src/UnMisc.cpp:2030: GSys->SaveSlotPath
+Core/Src/UnName.cpp:154: Hash->Name
+Core/Src/UnName.cpp:217: NameEntry->Name
+Core/Src/UnObj.cpp:613: Value
+Core/Src/UnObj.cpp:615: Value
+Core/Src/UnObj.cpp:1428: EXPR List(i)->GetPathName()
+Core/Src/UnObj.cpp:1450: EXPR List(i)->GetPathName()
+Core/Src/UnObj.cpp:1861: ClassName
+Core/Src/UnObj.cpp:1884: ClassName
+Core/Src/UnObj.cpp:1977: EXPR Pkg->GetPathName()
+Core/Src/UnObj.cpp:2155: Error
+Core/Src/UnObj.cpp:2377: EXPR InOuter ? InOuter->GetPathName() : TEXT("None")
+Core/Src/UnObj.cpp:2769: Filename
+Core/Src/UnObj.cpp:2837: Filename
+Core/Src/UnObj.cpp:3069: Msg
+Core/Src/UnObj.cpp:3080: Filename
+Core/Src/UnObj.cpp:3084: Filename
+Core/Src/UnObj.cpp:3612: Name->Name
+Core/Src/UnObj.cpp:3936: I.Value
+Core/Src/UnProp.cpp:496: Temp
+Core/Src/UnProp.cpp:691: EXPR Temp->GetPathName()
+Core/Src/UnProp.cpp:822: Str
+Core/Src/UnProp.cpp:1544: Value
+Core/Src/UnProp.cpp:1623: Name
+Core/Src/UnUnix.cpp:102: Cmd
+Core/Src/UnUnix.cpp:240: Error
+Core/Src/UnUnix.cpp:293: Error
+Core/Src/UnUnix.cpp:322: URL
+Engine/Src/AStatLog.cpp:410: FileName
+Engine/Src/AStatLog.cpp:429: FileName
+Engine/Src/UnCamera.cpp:580: Cmd
+Engine/Src/UnCamera.cpp:628: Cmd
+Engine/Src/UnCamera.cpp:1055: Filename
+Engine/Src/UnCamera.cpp:1063: Filename
+Engine/Src/UnConn.cpp:162: EXPR It->Guid.String()
+Engine/Src/UnConn.cpp:182: EXPR DownloadClass->GetPathName()
+Engine/Src/UnDemoPenLev.cpp:47: Text
+Engine/Src/UnDownload.cpp:118: EXPR Info->Guid.String()
+Engine/Src/UnGame.cpp:452: Filename
+Engine/Src/UnGame.cpp:474: Filename
+Engine/Src/UnGame.cpp:1080: EXPR PackageMap->List(i).Guid.String()
+Engine/Src/UnGame.cpp:1628: EXPR Actor->GetClass()->GetPathName()
+Engine/Src/UnGame.cpp:1632: EXPR Actor->GetClass()->GetPathName()
+Engine/Src/UnGame.cpp:1652: Value
+Engine/Src/UnGame.cpp:1773: Filename
+Engine/Src/UnGame.cpp:1976: Filename
+Engine/Src/UnLevAct.cpp:596: ClassName
+Engine/Src/UnLevAct.cpp:602: ClassName
+Engine/Src/UnLevAct.cpp:610: ClassName
+Engine/Src/UnLevel.cpp:987: Str
+Engine/Src/UnLevel.cpp:1159: Text
+Engine/Src/UnLevel.cpp:1170: Text
+Engine/Src/UnLevel.cpp:1192: Stats
+Engine/Src/UnPenLev.cpp:88: Text
+Engine/Src/UnPenLev.cpp:194: Text

@@ -256,7 +256,7 @@ if(EMSCRIPTEN)
   include(${CMAKE_SOURCE_DIR}/cmake/ArtifactDeps.cmake)
   set(META_DEPS)
   ufront_artifact_dep(META_DEPS openal-soft OpenALSoft "${OPENALSOFT_GIT_REPOSITORY}" "${OPENALSOFT_GIT_TAG}")
-  ufront_artifact_dep(META_DEPS libxmp libxmp "${LIBXMP_GIT_REPOSITORY}" "${LIBXMP_GIT_TAG}" "${LIBXMP_SOURCE_DIR}")
+  # HP2 plays Ogg Vorbis music by path; there is no .umx and no libxmp. Phase E adds ogg/vorbis dep lines here.
   if(BUILD_XOPENGLDRV)
     ufront_artifact_dep(META_DEPS xopengl XOpenGLDrv "${XOPENGL_GIT_REPOSITORY}" "${XOPENGL_GIT_TAG}")
   endif()

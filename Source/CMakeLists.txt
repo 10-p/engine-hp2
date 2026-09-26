@@ -67,7 +67,10 @@ if(EMSCRIPTEN)
   set(USE_GL4ES ON)               # tree keeps its cached value (the template's 2.19 trap)
   set(BUILD_NOPENGLDRV ON)
   set(BUILD_NULLSOUNDDRV ON)
-  set(BUILD_NOPENALDRV ON)
+  # Phase E flips this ON. Until then the copied NOpenALDrv is the template's v400 driver (libxmp/.umx, the
+  # v400 UAudioSubsystem face) and cannot compile against HP2's UnAudio.h; the launcher's web AudioDevice
+  # override is guarded on HP2_HAS_NOPENALDRV and falls back to SoundDrv.NullAudioSubsystem.
+  set(BUILD_NOPENALDRV OFF)
   add_definitions(-DASM=0)        # Core/Render/SoftDrv use their portable (non-x86) code paths
   # -pthread must be a COMPILE option, not just a link option: it defines __EMSCRIPTEN_PTHREADS__, which the
   # threaded code paths (NSDLViewport's direct WebGL context creation, XOpenGL's entry-point resolver,

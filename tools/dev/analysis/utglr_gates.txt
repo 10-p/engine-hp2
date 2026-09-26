@@ -1,0 +1,154 @@
+OpenGL.cpp:2997: #elif defined(NO_ANSI_OS_SUPPORT)
+OpenGL.cpp:1750: #elif defined UTGLR_USE_SDL
+OpenGL.cpp:1804: #elif defined UTGLR_USE_SDL
+OpenGL.cpp:4202: #elif UTGLR_UNREAL_227_BUILD
+OpenGL.cpp:4357: #elif UTGLR_UNREAL_227_BUILD
+OpenGL.cpp:4539: #elif UTGLR_UNREAL_227_BUILD
+OpenGL.cpp:4623: #elif UTGLR_UNREAL_227_BUILD
+OpenGL.cpp:4652: #elif UTGLR_UNREAL_227_BUILD
+OpenGL.cpp:4690: #elif UTGLR_UNREAL_227_BUILD
+OpenGL.cpp:4711: #elif UTGLR_UNREAL_227_BUILD
+OpenGL.cpp:6306: #elif UTGLR_UNREAL_227_BUILD
+OpenGL.cpp:6333: #elif UTGLR_UNREAL_227_BUILD
+OpenGL.h:1301: #elif  UTGLR_UNREAL_227_BUILD
+OpenGL.cpp:3064: #if 0
+OpenGL.cpp:3730: #if 0
+OpenGL.cpp:5238: #if 0
+OpenGL.cpp:5363: #if 0
+OpenGL.cpp:5825: #if 0
+OpenGL.cpp:5847: #if 0
+OpenGL.cpp:5874: #if 0
+OpenGL.cpp:5895: #if 0
+OpenGL.cpp:5937: #if 0
+OpenGL.cpp:7140: #if 0
+OpenGL.cpp:7193: #if 0
+OpenGL.cpp:1880: #if 0 // Broken on some drivers
+OpenGL.cpp:2921: #ifdef __EMSCRIPTEN__
+OpenGL.cpp:4445: #ifdef __EMSCRIPTEN__
+OpenGL.cpp:4750: #ifdef __EMSCRIPTEN__
+OpenGL.cpp:2953: #if defined(__EMSCRIPTEN__) && defined(__EMSCRIPTEN_PTHREADS__)
+OpenGL.cpp:70: #if defined(__EMSCRIPTEN__) && defined(__EMSCRIPTEN_PTHREADS__)
+OpenGL.cpp:2995: #if defined(NO_UNICODE_OS_SUPPORT) || !defined(UNICODE)
+OpenGL.cpp:3004: #if defined(NO_UNICODE_OS_SUPPORT) || !defined(UNICODE) || !defined(NO_ANSI_OS_SUPPORT)
+OpenGL.cpp:3015: #if !defined(NO_UNICODE_OS_SUPPORT) && defined(UNICODE)
+OpenGL.h:362: #if defined UTGLR_DX_BUILD || defined UTGLR_ENGINE_UT99DC
+OpenGL.cpp:790: #if defined UTGLR_DX_BUILD || defined UTGLR_RUNE_BUILD
+OpenGL.cpp:796: #if defined UTGLR_DX_BUILD || defined UTGLR_RUNE_BUILD
+OpenGL.cpp:3703: #if defined UTGLR_DX_BUILD || defined UTGLR_RUNE_BUILD || defined UTGLR_ENGINE_UT99DC
+OpenGL.h:640: #if defined UTGLR_DX_BUILD || defined UTGLR_RUNE_BUILD || defined UTGLR_ENGINE_UT99DC
+OpenGLDrv.h:47: #if defined(UTGLR_ENGINE_UT99DC)
+OpenGLDrv.h:24: #if !defined(WIN32) || defined(UTGLR_ENGINE_UT99DC)
+OpenGL.h:57: #if defined(_WIN32) && defined(_MSC_VER)
+OpenGLDrv.h:39: #if defined(WIN32) && !defined(UTGLR_ENGINE_UT99DC)
+OpenGL.h:824: #if defined _WIN32 && defined UTGLR_USE_ASM_CODE
+OpenGL.h:852: #if defined _WIN32 && defined UTGLR_USE_ASM_CODE
+OpenGL.h:880: #if defined _WIN32 && defined UTGLR_USE_ASM_CODE
+OpenGL.h:908: #if defined _WIN32 && defined UTGLR_USE_ASM_CODE
+OpenGL.h:936: #if defined _WIN32 && defined UTGLR_USE_ASM_CODE
+OpenGL.h:967: #if defined _WIN32 && defined UTGLR_USE_ASM_CODE
+OpenGL.h:998: #if defined _WIN32 && defined UTGLR_USE_ASM_CODE
+OpenGL.h:811: #ifdef RGBA_MAKE
+OpenGL.cpp:4194: #ifdef UTGLR_DEBUG_ACTOR_WIREFRAME
+OpenGL.cpp:4225: #ifdef UTGLR_DEBUG_ACTOR_WIREFRAME
+OpenGL.cpp:8091: #ifdef UTGLR_DEBUG_ACTOR_WIREFRAME
+OpenGL.cpp:8098: #ifdef UTGLR_DEBUG_ACTOR_WIREFRAME
+OpenGL.h:103: #ifdef UTGLR_DEBUG_SHOW_CALL_COUNTS
+OpenGL.h:114: #ifdef UTGLR_DEBUG_SHOW_TEX_CONVERT_COUNTS
+OpenGL.cpp:7119: #ifdef UTGLR_DEBUG_WORLD_WIREFRAME
+OpenGL.cpp:7174: #ifdef UTGLR_DEBUG_WORLD_WIREFRAME
+OpenGL.cpp:7050: #ifdef UTGLR_DEBUG_Z_RANGE_HACK_WIREFRAME
+OpenGL.cpp:7058: #ifdef UTGLR_DEBUG_Z_RANGE_HACK_WIREFRAME
+OpenGL.cpp:784: #ifdef UTGLR_DX_BUILD
+OpenGL.h:16: #ifdef UTGLR_DX_BUILD
+OpenGL.cpp:2239: #ifdef UTGLR_ENGINE_UT99DC
+OpenGL.cpp:2940: #ifdef UTGLR_ENGINE_UT99DC
+OpenGL.cpp:3632: #ifdef UTGLR_ENGINE_UT99DC
+OpenGL.h:76: #ifdef UTGLR_INCLUDE_OPCODE_PATCH_CODE
+OpenGL.cpp:1136: #ifdef UTGLR_INCLUDE_SSE_CODE
+OpenGL.cpp:1328: #ifdef UTGLR_INCLUDE_SSE_CODE
+OpenGL.cpp:2213: #ifdef UTGLR_INCLUDE_SSE_CODE
+OpenGL.cpp:3383: #ifdef UTGLR_INCLUDE_SSE_CODE
+OpenGL.cpp:3395: #ifdef UTGLR_INCLUDE_SSE_CODE
+OpenGL.cpp:3426: #ifdef UTGLR_INCLUDE_SSE_CODE
+OpenGL.cpp:3453: #ifdef UTGLR_INCLUDE_SSE_CODE
+OpenGL.cpp:4605: #ifdef UTGLR_INCLUDE_SSE_CODE
+OpenGL.cpp:7246: #ifdef UTGLR_INCLUDE_SSE_CODE
+OpenGL.cpp:7482: #ifdef UTGLR_INCLUDE_SSE_CODE
+OpenGL.cpp:8022: #ifdef UTGLR_INCLUDE_SSE_CODE
+OpenGL.cpp:911: #ifdef UTGLR_INCLUDE_SSE_CODE
+OpenGL.h:1038: #ifdef UTGLR_INCLUDE_SSE_CODE
+OpenGL.h:1545: #ifdef UTGLR_INCLUDE_SSE_CODE
+OpenGL.h:67: #ifdef UTGLR_INCLUDE_SSE_CODE
+OpenGL.cpp:1084: #ifdef UTGLR_RUNE_BUILD
+OpenGL.cpp:1573: #ifdef UTGLR_RUNE_BUILD
+OpenGL.cpp:2394: #ifdef UTGLR_RUNE_BUILD
+OpenGL.cpp:4042: #ifdef UTGLR_RUNE_BUILD
+OpenGL.cpp:4157: #ifdef UTGLR_RUNE_BUILD
+OpenGL.cpp:4181: #ifdef UTGLR_RUNE_BUILD
+OpenGL.cpp:4200: #ifdef UTGLR_RUNE_BUILD
+OpenGL.cpp:4288: #ifdef UTGLR_RUNE_BUILD
+OpenGL.cpp:4355: #ifdef UTGLR_RUNE_BUILD
+OpenGL.cpp:4366: #ifdef UTGLR_RUNE_BUILD
+OpenGL.cpp:4395: #ifdef UTGLR_RUNE_BUILD
+OpenGL.cpp:4537: #ifdef UTGLR_RUNE_BUILD
+OpenGL.cpp:4619: #ifdef UTGLR_RUNE_BUILD
+OpenGL.cpp:4644: #ifdef UTGLR_RUNE_BUILD
+OpenGL.cpp:4688: #ifdef UTGLR_RUNE_BUILD
+OpenGL.cpp:4705: #ifdef UTGLR_RUNE_BUILD
+OpenGL.cpp:6304: #ifdef UTGLR_RUNE_BUILD
+OpenGL.cpp:6329: #ifdef UTGLR_RUNE_BUILD
+OpenGL.cpp:860: #ifdef UTGLR_RUNE_BUILD
+OpenGL.h:1121: #ifdef UTGLR_RUNE_BUILD
+OpenGL.h:1280: #ifdef UTGLR_RUNE_BUILD
+OpenGL.h:1299: #ifdef UTGLR_RUNE_BUILD
+OpenGL.h:19: #ifdef UTGLR_RUNE_BUILD
+OpenGL.cpp:5708: #ifdef UTGLR_UNREAL_227_BUILD
+OpenGL.cpp:6068: #ifdef UTGLR_UNREAL_227_BUILD
+OpenGL.cpp:6343: #ifdef UTGLR_UNREAL_227_BUILD
+OpenGL.cpp:6349: #ifdef UTGLR_UNREAL_227_BUILD
+OpenGL.cpp:7068: #ifdef UTGLR_UNREAL_227_BUILD
+OpenGL.h:1576: #ifdef UTGLR_UNREAL_227_BUILD
+OpenGL.h:22: #ifdef UTGLR_UNREAL_227_BUILD
+OpenGLDrv.h:73: #ifdef UTGLR_UNREAL_227_BUILD
+OpenGL.h:84: #ifdef UTGLR_USE_FASTCALL
+OpenGL.cpp:1746: #ifdef UTGLR_USE_GL4ES
+OpenGL.cpp:1802: #ifdef UTGLR_USE_GL4ES
+OpenGL.cpp:2946: #ifdef UTGLR_USE_GL4ES
+OpenGL.cpp:66: #ifdef UTGLR_USE_GL4ES
+OpenGL.cpp:1676: #ifdef UTGLR_USE_SDL
+OpenGL.cpp:1699: #ifdef UTGLR_USE_SDL
+OpenGL.cpp:1842: #ifdef UTGLR_USE_SDL
+OpenGL.cpp:1937: #ifdef UTGLR_USE_SDL
+OpenGL.cpp:2098: #ifdef UTGLR_USE_SDL
+OpenGL.cpp:2935: #ifdef UTGLR_USE_SDL
+OpenGL.cpp:3097: #ifdef UTGLR_USE_SDL
+OpenGL.cpp:3115: #ifdef UTGLR_USE_SDL
+OpenGL.cpp:3659: #ifdef UTGLR_USE_SDL
+OpenGL.cpp:2188: #ifdef UTGLR_USE_WGL
+OpenGL.cpp:2511: #ifdef UTGLR_USE_WGL
+OpenGL.cpp:2531: #ifdef UTGLR_USE_WGL
+OpenGL.cpp:2549: #ifdef UTGLR_USE_WGL
+OpenGL.cpp:2639: #ifdef UTGLR_USE_WGL
+OpenGL.cpp:3057: #ifdef UTGLR_USE_WGL
+OpenGL.cpp:8136: #ifdef UTGLR_USE_WGL
+OpenGL.cpp:8146: #ifdef UTGLR_USE_WGL
+OpenGL.h:1073: #ifdef UTGLR_USE_WGL
+OpenGL.h:1082: #ifdef UTGLR_USE_WGL
+OpenGL.h:344: #ifdef UTGLR_USE_WGL
+OpenGL.h:522: #ifdef UTGLR_USE_WGL
+OpenGL.h:784: #ifdef UTGLR_USE_WGL
+OpenGL.h:794: #ifdef UTGLR_USE_WGL
+OpenGL.h:13: #ifdef UTGLR_UT_BUILD
+OpenGL.cpp:1027: #ifdef _WIN32
+OpenGL.cpp:1042: #ifdef _WIN32
+OpenGL.cpp:765: #ifdef _WIN32
+OpenGL.cpp:76: #ifdef _WIN32
+OpenGL.h:139: #ifdef _WIN32
+OpenGL.h:85:  #ifdef _WIN32
+OpenGL1Funcs.h:127: #ifdef WIN32
+OpenGLDrv.h:17: #ifdef WIN32
+OpenGLDrv.h:28: #ifdef WIN32
+OpenGL.h:814: #if __INTEL_BYTE_ORDER__
+OpenGL.h:36: #ifndef __UNIX__
+OpenGL.h:1578: #if __STATIC_LINK
+OpenGL.h:26: #if !UTGLR_VALID_BUILD_CONFIG

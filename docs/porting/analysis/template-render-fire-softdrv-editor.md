@@ -21,7 +21,48 @@ exists · **SKIP** = Dreamcast / LOW_MEMORY / PSX2, not wanted (PLAN §1 rule 2)
 
 ## 0. Executive summary
 
-_pending (run 2 in progress)_
+Run 2 finished §1-§6 below. It re-verified run 1 and supersedes it; Appendix Z (run 1's text) is kept
+only as history.
+
+1. **Render: HP2's text is the base; re-apply the template's hunks by hand (§1).** The template's Render work
+   is GCC portability (for-scope hoists: 29 sites in HP2, §1.5; `Min<INT>`-style casts needed only on Dreamcast; the deleted
+   MSVC/AT&T asm in `Pipe()`) plus two web fixes. The most important one is
+   **`HackRaster[2880]` → `MAX_RASTER_Y` 8192 with a clamp in `SetupRaster`** (HP2 `UnRender.cpp:1977`):
+   without it a tall canvas corrupts the heap on every renderer. The second, the AutoFOV swap, is needed
+   only if Engine AutoFOV is ported. Every ASM/PSX2 gate in HP2 Render has a plain-C path, but only once
+   the template's `UnGnuG.h` sets `ASM`, `ASMLINUX` and `ASM3DNOW` to 0 (§1.3 table). Drop `UnTest.cpp`
+   from the CMake list and delete the duplicate `Src/UnSpan.h` and `Src/Amd3d.h`.
+2. **New functional bug: HP2's GCC-only `FLightManager::Merge` has no dark-light branch** (`UnLight.cpp:847-1044`,
+   the Loki copy behind `#else` of `#if _MSC_VER`). A GCC or clang build would make every `Darklight`
+   brighten instead of darken, on all renderers. `Adv1Willow` alone has 199 Darklights. Fix: delete the
+   `#if _MSC_VER` line and the whole GCC copy, and keep the MSVC copy, whose `#else` is the C loop (§1.3).
+3. **Fire (§2):** all five ASM families have complete C fallbacks at `ASM=0`, and dropping the `.asm` files
+   is correct. Port three things:
+   - the for-scope fixes (`t`, `Y`, `Flash`);
+   - the MinGW `__int64` typedef guard;
+   - **mandatory:** `GCC_ALIGN(4)` on `SparkType`, `FX_Heat` and `DropType`. HP2 content loads
+     `FireTexture`, `WetTexture`, `IceTexture` and `WaveTexture` at map load, and
+     `VERIFY_CLASS_OFFSET`/`VERIFY_CLASS_SIZE` makes any layout mismatch fatal.
+4. **SoftDrv (§3): start from the template's nine files and re-apply HP2's 433 interface** (125 changed
+   lines: the 5-arg `DrawComplexSurface`, which reads the passed `PolyFlags` so Lumos surfaces work,
+   `MaxVertices()` = 256, `DrawTriangles` with indexed, list and fan branches, the 4-arg `DECLARE_CLASS`,
+   and the `Render.h` include). §3.4 gives exact per-file edits. Two adaptations:
+   - `VolumetricLightingMeshes` becomes a SoftDrv-local config bool;
+   - mesh fog is gated on `PF_RenderFog`, because HP2 particles leave `Fog` uninitialised.
+
+   SoftDrv needs no `GetOsSurface` override (only WinDrv calls it).
+5. **Editor (§4): must be linked into the game on every target.** `Entry.unr` (loaded at boot) imports
+   `Editor.B_PlyrOn`. `Editor.u` then needs the native class `Editor.TransBuffer`. The Quidditch maps import
+   `Editor.Bad`. I scanned all 194 packages. For the CMake list, take HP2's current list and **remove
+   `UMasterCommandlet.cpp`**. `EdHook.cpp`, `TTFontImport.cpp`, `UPS2ConvertCommandlet.cpp` and the
+   0-byte `UPSX2MusicCommandlet.cpp` stay out. Compile fixes:
+   - the template's ED1-ED16 (§4.2);
+   - two new ones: `__declspec(dllexport)` globals at `UnEdCam.cpp:49,65-69`, and a fourth `wcscmp` at
+     `UnEdCam.cpp:2442`;
+   - 72 scanner-listed for-scope sites (§4.6).
+6. Cross-report prerequisites are in §5 (D1-D16). The critical path is: template `UnGnuG.h` (D1), then
+   `appProcessSeconds` (D2), then `PUSH_HIT` (D3), then `UNREAL_STATIC` (D5). Found here but owned elsewhere:
+   HP2's `NullDrv` still uses the UT99 render-device interface (D8, already in `template-drivers.md`).
 
 ## 1. Render
 
@@ -529,19 +570,283 @@ the web present; Render's `Inc/Render.h` (this report §1).
 
 ## 4. Editor
 
-_pending (run 2 in progress)_
+(Re-verified this run. Where it differs from Appendix Z's §4 — the run-1 text — it says "correction"/"new".)
+
+### 4.0 Bottom line
+
+**The Editor package must be linked into the HP2 game binary, on every target.** HP2 content needs it at
+**boot**, not only in some maps: `Entry.unr` (loaded unconditionally by `UGameEngine::Init`,
+H `Engine/Src/UnGame.cpp:169`) imports the texture `Editor.B_PlyrOn` → the engine loads `System/Editor.u` →
+the linker's `Verify()` (H `Core/Src/UnLinker.cpp:293-296`, `for( INT i=0; i<Summary.ImportCount; i++ )
+VerifyImport( i );`) must resolve `Editor.u`'s own import `Class Editor.TransBuffer`, which is **not an
+export of `Editor.u`** but the native C++ class `UTransBuffer` (H `Editor/Src/UnEdTran.cpp:375-377`,
+`IMPLEMENT_CLASS(UTransBuffer)` at `:598`). It is referenced from script by `EditorEngine.uc:31`
+`var const transbuffer Trans;`. Without the native Editor the result is exactly the template's documented
+failure (T `Source/CMakeLists.txt:24-39`, ufront 2.39): `Failed to load 'Editor': Can't find Class
+Editor.TransBuffer in file '../System/Editor.u'` — for HP2 that happens on the Entry map, i.e. before the menu.
+HP2's `Source/CMakeLists.txt:35` already has `option(BUILD_EDITOR … ON)`, `:65` forces it ON, `:377-379`
+`add_subdirectory(Editor)` + `list(APPEND INSTALL_TARGETS Editor)` — **keep all three**.
+
+### 4.1 What the template builds (facts, T `Editor/CMakeLists.txt`)
+
+- 27 sources: `CoolBsp UnBsp UnEdAct UnEdCam UnEdClick UnEdCnst UnEdCsg UnEdFact UnEdRend UnEdSrv UnEdTran
+  UnEditor UnMeshEd UnScrCom UnShadow UnSyntax UnTopics UnVisi Editor UBatchExportCommandlet UBrushBuilder
+  UConformCommandlet UMakeCommandlet UMergeDXTCommandlet UnEdExp UnMeshLP UnParams` (+ `NullEdHook.cpp` when
+  `NOT TARGET_IS_WINDOWS OR NOT BUILD_WINDRV`; `Win32EdHook.cpp` otherwise — **that file does not exist in
+  T's tree** (`ls T/Editor/Src/Win32EdHook.cpp` → no such file), so T's GUI branch is dead/unfinished; HP2 must
+  not copy the `else()` branch; `LOW_MEMORY` → `UnEdTran.cpp Editor.cpp` only, SKIP).
+- Excluded from epic's set: `EdHook.cpp` (Win32 GUI glue), `TTFontImport.cpp` (GDI TrueType rasteriser),
+  `UMasterCommandlet.cpp` (`../../Setup/Inc/Setup.h`). **TTFontImport: excluded, not ported** — the task's
+  "TTFontImport?" is answered: T's copy is byte-identical to epic (Δ 0) and is not in the CMake list.
+- Links `Engine Core` (+ `Window` only on the dead GUI branch); `EDITOR_EXPORTS UPACKAGE_NAME=Editor`;
+  `PUBLIC Inc`, `PRIVATE Src`.
+- `NullEdHook.cpp` (T, 99 lines): **HP2 already has a byte-identical copy** (`cmp` → identical,
+  `H/Editor/Src/NullEdHook.cpp`). It supplies `NotifyDestroy/NotifyPreChange/NotifyPostChange/NotifyExec`,
+  `UpdatePropertiesWindows`, `HookExec`, `EdCallback`, `GTopic/GItem/GValue`, `UEngine* Engine`.
+
+### 4.2 Template vs epic — every Editor hunk and its HP2 counterpart
+
+T's own Editor hunks are small (per-file Δ vs E: `UnMeshLP` 52, `UnScrCom` 20, `UnVisi` 18, `UnEditor` 17,
+`UnParams` 11, `UnBsp` 8, `UnEdAct`/`UnEdCsg` 6, `UnEdCam` 5, `UConform`/`UnEdExp`/`UnEdFact` 4,
+`UMake`/`UnEdSrv` 2, `UnEdTran`/`UnShadow` 1, `EditorClasses.h` 2; all others 0). One more fix lives in
+**Engine**: `PUSH_HIT`.
+
+| # | T site | Change | Why | H site (verified this run) | H action |
+|---|--------|--------|-----|-----------------------------|----------|
+| ED1 | `Engine/Inc/UnCamera.h:306-310` | `PushHit(expr,sizeof(expr))` → `sizeof(decltype(expr))` | T's comment: "sizeof(expr) where expr is a temporary hit-proxy (e.g. `HMenuToggleButton()`) parses under clang (Emscripten) as sizeof of a FUNCTION TYPE" | H `Engine/Inc/UnCamera.h:323` (old form). Users: Editor `UnEdCam.cpp:1863,1942,2017,2022,2086,2156,2233,2456,2503,2537`, `UnEdRend.cpp:85,223,231,246,310,339,439,725,732`, `UnMatinee.cpp:174`; **also Render** `UnRender.cpp:3448`, `UnSprite.cpp:878` | **PORT** (one-line macro change in Engine; owned by `template-engine.md`, but Editor *and* Render depend on it — `UnEdCam.cpp:2017 PUSH_HIT(Frame,HMenuToggleButton())` is exactly the clang failure) |
+| ED2 | `UnScrCom.cpp:1351` | `Min(1024, Input+InputPos-Start+1)` → `Min<INT>(…)` | `INT` vs `ptrdiff_t` (pointer difference is `long` on LP64 / `int` on i386+wasm32; deduction fails where they differ) | `UnScrCom.cpp:1425` | **PORT** (cheap; needed if anyone ever builds 64-bit) |
+| ED3 | `UnScrCom.cpp:1618-1661` | `TFieldIterator<UProperty> It(Function);` hoisted, `for( ; It && …` ×2 | `It` used by later loops | `UnScrCom.cpp:1697` (decl in `for`), reused at **`:1732` and `:1770`** (HP2 has one more reuse than epic, inside the 433 optional-parm code) — careful: `:1686` declares a *different* `It` in an inner block (iterator-cast check); do not merge them | **PORT**: `TFieldIterator<UProperty> It(Function);` right before `:1697`; `for( ; It && …` at 1697, 1732, 1770 |
+| ED4 | `UnScrCom.cpp:1741` | `UClass* Test;` hoisted in `ConversionCost` | `check(Test!=NULL)` after the loop | `UnScrCom.cpp:1879` loop, use `:1881` | **PORT** |
+| ED5 | `UnScrCom.cpp:2918` | `FLabelRecord* LabelRecord;` hoisted | used after the loop | `UnScrCom.cpp:2893` and **`:3058`** (use `:3066`; HP2 has a second copy) | **PORT** at both |
+| ED6 | `UnScrCom.cpp:4544`, `4775`, `4846` | `INT i;` / `INT iNest;` hoisted | used after the loop | `UnScrCom.cpp:4703` (use `:4710`), `:5042`, `:5112` | **PORT** |
+| ED7 | `UnEdCam.cpp:547` | `FPolyVertex::FPolyVertex(…)` → `FPolyVertex(…)` inside the struct | extra qualification is an error in GCC/clang | `UnEdCam.cpp:622` | **PORT** |
+| ED8 | `UnVisi.cpp:599, 634, 1230` | `AddPortal` → `&FEditorVisibility::AddPortal` (also `BlockPortal`, `TagZonePortalFragment`) | pointer-to-member needs `&Class::` | `UnVisi.cpp:599`, `:634`, `:1236` | **PORT** |
+| ED9 | `UnVisi.cpp:726, 960, 1084, 1202, 1308, 1345, 1506, 1824` | `FActorLink* Link;`, `FPortal* ClipPortal;`, `INT i;`, `INT iActor, i;`, `INT j;` hoists | for-scope | `UnVisi.cpp:727`(use 730), `962`(972), `1114`(1131), `1173`(1187), `1244`(1248), `1316`(1321), `1358`(1363), `1515`(1523), `1835`(1838) | **PORT** (§4.5 list) |
+| ED10 | `UMakeCommandlet.cpp:98` | `for( It=TObjectIterator<UClass>(); …)` → `for( TObjectIterator<UClass> It; …)` | `It` was for-scoped; also `TObjectIterator` has no usable copy-assignment | `UMakeCommandlet.cpp:204` | **PORT** |
+| ED11 | `EditorClasses.h:78` | `#endif NAMES_ONLY` → `#endif` | "extra tokens at end of #endif" | `Editor/Inc/EditorClasses.h:80` (and Engine `EngineClasses.h`, other report) | **PORT** |
+| ED12 | `UnParams.cpp:22-31, 171` | `#ifndef UNREAL_STATIC … #endif` around `GetFVECTOR`×2, `GetSUBSTRING`, `GetFROTATOR`×2 | Engine's `UnParams.cpp` defines the same five; whole-archive static link → duplicate symbols | H `Editor/Src/UnParams.cpp:25,55,86,105,145` (`EDITOR_API`) vs H `Engine/Src/UnParams.cpp:25,55,86,105,145` (`ENGINE_API`) — same five, same signatures; H has **no guard** | **PORT** (copy T's guard + comment). `GetBEGIN/GetEND/SetFVECTOR/GetFSCALE` (H `:166,183,198,209`) stay: Editor-only |
+| ED13 | `UnEditor.cpp:44-46` | removed `: EditPackages( E_NoInit )` | under GCC the `E_NoInit` ctor left the config array as garbage before `LoadConfig` | `UnEditor.cpp:46` | **PORT** (the ctor change only) |
+| ED14 | `UnEditor.cpp:99-116` | "maximqad: bruh fix" 4-package fallback if `EditPackages.Num()` is absurd, and a `printf` per package | ut99dc workaround | `UnEditor.cpp` `Init` | **SKIP** — HP2 has 11 `EditPackages` (`Default.ini:327-337`); the fallback would silently drop `HGame` etc. ED13 removes the cause |
+| ED15 | `UnEdExp.cpp:173, 195` | `for( INT i…` / `ItE->Names.Num()` instead of out-of-scope `i` | for-scope | `UnEdExp.cpp:190`, `:211` | **PORT** |
+| ED16 | `UConformCommandlet.cpp:173, 195` | `for( INT i=0;i<NumFlags;…)` | for-scope | `UConformCommandlet.cpp:191`, `:213` (the `for( INT i` at `:182`) — plus HP2-only `:109/113` (`Pages[i]` after the loop) | **PORT** |
+| ED17 | `UnBsp.cpp` (7), `UnEdAct.cpp` (6), `UnEdCam.cpp` (3), `UnEdCsg.cpp` (6 incl. `FStaticBrushIterator It(Level);` in `csgRebuild`), `UnEdFact.cpp` (4), `UnEdSrv.cpp` (2), `UnEdTran.cpp` (1), `UnShadow.cpp` (1), `UnMeshLP.cpp` (26 loops given their own `INT`) | function-top `INT i;` etc. | for-scope | see §4.5 (HP2 lines) | **PORT** |
+
+### 4.3 HP2 Editor inventory (H vs E; Δ = changed lines, `diff -w`)
+
+| H file | E / T / H lines | Δ H vs E | Portability verdict |
+|--------|-----------------|---------:|---------------------|
+| `EdHook.cpp` | 563 / 563 / 438 | 257 | **Windows-only**: `:13 <windows.h>`, `:14 <shlobj.h>`, `:16 "Window.h"`, `:18 "..\..\Core\Inc\UnMsg.h"`, `:41-68` `FMallocWindows.h … UnEngineWin.h`. Exclude (NullEdHook replaces it) |
+| `TTFontImport.cpp` | 302 / 302 / 367 | 71 | **Windows-only** (`:13 <windows.h>`, GDI `CreateFont`). Exclude. `UTrueTypeFontFactory` stays declared in `EditorPrivate.h` without `IMPLEMENT_CLASS` — same as T, links because nothing references `StaticClass()` |
+| `UMasterCommandlet.cpp` | 458 / 458 / 640 | 186 | UMOD/installer builder: `:10 "FFileManagerArc.h"`, `:11 "../../Setup/Inc/Setup.h"`, `FArchiveHeader GArc` (`:24`). HP2 does ship `Source/Setup/Inc/Setup.h` (no `#include`s, declares `USetup*`), so it *might* compile header-only — **unverified and not wanted** (Setup is "Windows-only … reference", `docs/SOURCE-LAYOUT.md:15`). **Exclude — correction: HP2's current `Editor/CMakeLists.txt` lists it (line `"Src/UMasterCommandlet.cpp"`); remove it.** Its three classes (`MasterCommandlet`, `UpdateUModCommandlet`, `ChecksumPackageCommandlet`) are named only in `Assets/System/Editor.int:2,10,11` (a `ucc` listing), never by content |
+| `UPS2ConvertCommandlet.cpp` | — / — / 70 | HP2-only | PS2 sound conversion; portable but PSX2-purpose → exclude (already excluded) |
+| `UPSX2MusicCommandlet.cpp` | — / — / 0 | HP2-only | **0-byte file**, not in `Editor.dsp` → ignore (already excluded) |
+| `UPkgCommandlet.cpp` | — / — / 254 | HP2-only | includes only `EditorPrivate.h`; portable → build |
+| `UnMatinee.cpp` (+ `Inc/UnMatinee.h`, `#pragma once`) | — / — / 296 | HP2-only | includes `EditorPrivate.h`, `UnRender.h` (Engine), `UnMatinee.h`; needs ED1; for-scope `iActor` 194/210 → build |
+| `Inc/UnSkeletalImport.h` | — / — / 105 | HP2-only | `.psk/.psa` structs for `UnMeshEd.cpp`/`UnMeshLP.cpp` |
+| `UnEdCam.cpp` | 1984 / 1987 / 2893 | 1135 | vertex editing, bezier, labels. **New findings (not in run 1):** (a) `:49 __declspec(dllexport) INT GLastScroll=0;` and `:65-69 __declspec(dllexport) bool GPawnsLabel / GTriggersLabel / GLightsLabel / GMoversLabel / GSlabelLabel;` — `__declspec` is **not defined** by the template's `UnGnuG.h` (only `UnVcWin32.h:45-47` maps `DLL_EXPORT` to it) → hard error on Linux GCC and wasm clang. The importers are the Windows-only `UnrealEd` (`UnrealEd/Src/Main.cpp:80-84`, `UnrealEd/Inc/BrowserTexture.h:15`) and `EdHook.cpp:31`. ACTION: replace `__declspec(dllexport)` with `DLL_EXPORT` (empty on GCC, `__declspec(dllexport)` on MSVC) at 49, 65-69. (b) `wcscmp(tName,TEXT(""))` at **2313, 2345, 2377, 2442** (run 1 listed three; 2442 is the fourth; 2410 is commented out). `TCHAR` is `char` here (T `Core/Inc/Core.h:61` `typedef ANSICHAR TCHAR;`, no `_UNICODE`), so `wcscmp(const char*, const char*)` does not compile → `appStrcmp(tName,TEXT(""))!=0` (or `*tName`); drop `#include <wchar.h>` (`:14`). (c) ED1, ED7 |
+| `UnEdSrv.cpp` | 2574 / 2576 / 4015 | 1515 | 433 server: brush clip, skeletal import, audio; `#include "../../Engine/Src/UnPath.h"` (relative, resolves); `HWND=` parsed into a `DWORD` (`:3348`, portable); `#pragma DISABLE_OPTIMIZATION` (`:19`) → with T's `UnGnuG.h:87` `DISABLE_OPTIMIZATION` is a `_Pragma("GCC push_options")…` macro, so `#pragma DISABLE_OPTIMIZATION` expands to a nested pragma — T compiles epic's identical lines in `UnEdAct/UnEdRend/UnEdSrv`, so it is known-good. 13 for-scope sites |
+| `UnMeshEd.cpp`, `UnMeshLP.cpp` | 351→1372, 1330→2098 | 1063 / 930 | skeletal import + LOD; includes `UnSkeletalMesh.h` (Engine), `UnSkeletalImport.h`; 1 + 11 for-scope sites |
+| `UnScrCom.cpp` (+ `UnScrCom.h` Δ15) | 5724 / 5730 / 6044 | 518 | 433 compiler; ED2-ED6 |
+| `UnEdClick.cpp`, `UnEdRend.cpp` | 321→564, 539→870 | 293 / 355 | bezier/matinee clicks and drawing; `UnEdClick.cpp:515/525` `PosInList` for-scope; ED1 users |
+| `UnEditor.cpp` | 807 / 820 / 1040 | 265 | ED13; `:212/221` for-scope `i` |
+| `UnEdCsg.cpp`, `UnEdAct.cpp`, `UConformCommandlet.cpp`, `UMakeCommandlet.cpp` | | 221 / 205 / 112 / 141 | 433 features; for-scope per §4.5; ED10, ED16 |
+| `UnBsp.cpp`, `UnShadow.cpp`, `UnVisi.cpp`, `UnEdExp.cpp`, `UnEdFact.cpp`, `UBrushBuilder.cpp`, `Editor.cpp`, `CoolBsp.cpp`, `UBatchExport`, `UMergeDXT`, `UnEdTran.cpp/.h` | | 55 / 48 / 26 / 18 / 26 / 12 / 5 / 2 / 2 / 2 / 2+2 | near-epic; T's hunks apply by analogy. `UnEdFact.cpp` already `#if 0`s `UMusicFactory` (`:926-973`, "TG ALPHA", matching `EditorPrivate.h:167-176`) — consistent, nothing to do. `UnEdFact.cpp:980-1074` `#pragma pack(push,1)`/`pop` around PCX/BMP headers — GCC honours it, keep |
+| `UnEdCnst.cpp`, `UnSyntax.cpp`, `UnTopics.cpp/.h` | | 0 | identical to epic |
+| `EditorPrivate.h` | 268 / 268 / 299 | 75 | 4-arg `DECLARE_CLASS(…,Editor)`; `UTrueTypeFontFactory` gains fields; `UMusicFactory` `#if 0` |
+| `Inc/Editor.h` | 504 / 504 / 563 | 75 | 433 `UEditorEngine` API |
+| `Inc/EditorClasses.h` | 82 / 82 / 84 | 4 | `UBrushBuilder` gains `BitmapFilename`, `ToolTip` (must match `Assets/System/Editor.u`; **never regenerate** from `.uc`); ED11; `#if _MSC_VER #pragma pack(push,4)` (`:6-7`, `:82-83`) → on GCC the pack comes from `-fpack-struct=4`/the template's global flags, same as T |
+| `Classes/` | 12 `.uc` + `Editor.upkg` | — | reference only (`Editor.u` ships in `Assets/System`) |
+| `Src/Editor.dsp` | | | 37 `SOURCE=` lines (`:96-327`): every `.cpp` above **except** `NullEdHook.cpp` and `UPSX2MusicCommandlet.cpp`, i.e. it built `EdHook`, `TTFontImport`, `UMasterCommandlet`, `UPS2ConvertCommandlet` |
+
+### 4.4 Content analysis — which Editor classes HP2 content needs at runtime
+
+Method (re-run this session): `scratchpad/pkgnames.py` — a UE1 package-header reader (name, import and
+export tables; compact-index aware; handles v64+ length-prefixed names, so `strings -e l` is not needed and
+would miss the import graph) — over **all 194 packages** in `Assets/` (`*.u *.unr *.utx *.uax *.umx`:
+`System` 11, `Maps` 48, `Maps/Studies` 41, `Maps/Oldfiles` 7, `Maps/templates` 4, `Textures` 52, `Sounds` 29,
+`PackageSources/HPDialog/SOUNDS` 2). Every file parsed (194 × `ver=`). Output filtered to non-empty
+Editor imports:
+
+| Package | Editor import | Shipped/boot relevance |
+|---------|---------------|------------------------|
+| `System/Editor.u` (v79) | `Class Editor.TransBuffer` (class package `Core`) | **native class** — resolved only through the linked C++ Editor |
+| `Maps/Entry.unr` (v76) | `Texture Editor.B_PlyrOn` | **boot**: `UnGame.cpp:169` `LoadMap( FURL(TEXT("Entry")) … )`, kept resident |
+| `Maps/Quidditch.unr`, `Maps/Quidditch_Intro.unr` (v79) | `Texture Editor.Bad` | shipped Quidditch levels |
+| `Maps/Studies/TrenchRun.unr`, `Maps/Studies/QuidditchStadium.unr`, `Maps/Studies/EntryCV1.unr` | `Texture Editor.Bad` | **new this run** (run 1 scanned only `Maps/*.unr`): developer study maps, not in the shipped map set — no action, but they would need Editor too |
+| everything else (incl. all `Textures/*.utx`, `Sounds/*.uax`, `System/{Core,Engine,Fire,HGame,HPModels,HPParticle,HProps,HPSounds,UnrealShare,UWindow}.u`) | none | — |
+
+Conclusions and ACTIONS:
+
+1. **Link the native Editor into the game** (all three targets; static web build whole-archives it via
+   `INSTALL_TARGETS`, same as T). The runtime-required native classes are `UTransBuffer` (+ its base
+   `UTransactor`, `UnEdTran.cpp:599`), and the two `RF_Native` script classes exported by `Editor.u`,
+   `EditorEngine` (`UnEditor.cpp:23`) and `BrushBuilder` (`UBrushBuilder.cpp:206`): when `Editor.u`
+   loads, their exports are bound to the registered C++ classes, so those two files must be in the build too.
+   The ten `*Builder` subclasses are pure script.
+2. `Editor.B_PlyrOn` / `Editor.Bad` are ordinary textures exported by `Editor.u` — no C++ needed beyond (1).
+3. **`Editor.u` must be in the web boot set** (it is fetched when `Entry.unr` resolves its imports) —
+   `ufrontend-target-contract.md` / `precache.json` owner.
+4. Nothing in the content names commandlets, factories, exporters or `UnrealEd` classes; they are built only
+   because they sit in the same files / support `ucc make`. They add no runtime cost beyond code size.
+5. Verification: native `./Game -log` must show Entry loading with no `Failed to load 'Editor'` line; with
+   `-DBUILD_EDITOR=OFF` (negative test) the same log must show the TransBuffer failure.
+
+### 4.5 CMake for HP2 Editor
+
+Recommended `Source/Editor/CMakeLists.txt` `SRC_FILES` = the current HP2 file **minus
+`Src/UMasterCommandlet.cpp`** (30 files):
+
+```cmake
+set(SRC_FILES
+  "Src/CoolBsp.cpp"            "Src/Editor.cpp"              "Src/UBatchExportCommandlet.cpp"
+  "Src/UBrushBuilder.cpp"      "Src/UConformCommandlet.cpp"  "Src/UMakeCommandlet.cpp"
+  "Src/UMergeDXTCommandlet.cpp" "Src/UPkgCommandlet.cpp"     "Src/UnBsp.cpp"
+  "Src/UnEdAct.cpp"            "Src/UnEdCam.cpp"             "Src/UnEdClick.cpp"
+  "Src/UnEdCnst.cpp"           "Src/UnEdCsg.cpp"             "Src/UnEdExp.cpp"
+  "Src/UnEdFact.cpp"           "Src/UnEditor.cpp"            "Src/UnEdRend.cpp"
+  "Src/UnEdSrv.cpp"            "Src/UnEdTran.cpp"            "Src/UnMatinee.cpp"
+  "Src/UnMeshEd.cpp"           "Src/UnMeshLP.cpp"            "Src/UnParams.cpp"
+  "Src/UnScrCom.cpp"           "Src/UnShadow.cpp"            "Src/UnSyntax.cpp"
+  "Src/UnTopics.cpp"           "Src/UnVisi.cpp"              "Src/NullEdHook.cpp"
+)
+```
+
+Keep the rest of HP2's file (`PUBLIC Inc`, `PRIVATE Src`, `target_link_libraries(Editor Engine Core)`,
+`EDITOR_EXPORTS UPACKAGE_NAME=Editor`). Engine's `Inc` must be reachable for `UnRender.h`,
+`UnSkeletalMesh.h` (it is, through `Engine`'s `PUBLIC` include); `UnEdSrv.cpp:16` reaches
+`../../Engine/Src/UnPath.h` by relative path. Update the header comment: it currently omits
+`UMasterCommandlet` from the exclusion list. Do not add T's `LOW_MEMORY`/`Win32EdHook` branches.
+
+**Windows-only / unwanted files to exclude** (with the proving line):
+
+| File | Evidence | Reason class |
+|------|----------|--------------|
+| `Src/EdHook.cpp` | `:13 #include <windows.h>`, `:16 #include "Window.h"`, `:68 #include "UnEngineWin.h"`, `NE_EdInit( HWND, HWND )` export | Win32 GUI |
+| `Src/TTFontImport.cpp` | `:13 #include <windows.h>`, GDI `CreateFont` | Win32 GDI |
+| `Src/UMasterCommandlet.cpp` | `:11 #include "../../Setup/Inc/Setup.h"` | Setup/UMOD (Windows tool) |
+| `Src/UPS2ConvertCommandlet.cpp` | PS2 sound conversion | PSX2 (policy) |
+| `Src/UPSX2MusicCommandlet.cpp` | 0 bytes | empty |
+| `Src/Editor.dsp` | MSVC6 project | reference only |
+
+### 4.6 Compile fixes to apply to HP2's Editor (complete checklist, HP2 line numbers)
+
+Structural fixes (ED1-ED16 of §4.2 plus the two new ones):
+
+- [ ] ED1 `Engine/Inc/UnCamera.h:323` `PUSH_HIT` → `sizeof(decltype(expr))` (Engine owner; blocks Editor and Render).
+- [ ] ED12 `Editor/Src/UnParams.cpp`: `#ifndef UNREAL_STATIC` before `:22` (first helper comment), `#endif` after the second `GetFROTATOR` (`:160`).
+- [ ] ED13 `UnEditor.cpp:46` remove `: EditPackages( E_NoInit )`.
+- [ ] ED7 `UnEdCam.cpp:622` drop `FPolyVertex::`.
+- [ ] **new** `UnEdCam.cpp:49, 65-69` `__declspec(dllexport)` → `DLL_EXPORT`.
+- [ ] **new/extended** `UnEdCam.cpp:2313, 2345, 2377, 2442` `wcscmp` → `appStrcmp`; remove `:14 #include <wchar.h>`.
+- [ ] ED8 `UnVisi.cpp:599, 634, 1236` `&FEditorVisibility::…`.
+- [ ] ED10 `UMakeCommandlet.cpp:204` `for( TObjectIterator<UClass> It; It; ++It )`.
+- [ ] ED11 `Inc/EditorClasses.h:80` `#endif`.
+- [ ] ED2 `UnScrCom.cpp:1425` `Min<INT>`.
+- [ ] ED3 `UnScrCom.cpp:1697/1732/1770` hoist `It` (leave the inner-block `It` at `:1686` alone).
+- [ ] ED4-ED6 `UnScrCom.cpp:1879`, `2893`, `3058`, `4703`, `5042`, `5112`.
+- [ ] ED15 `UnEdExp.cpp:190`, `:211` (`ItE->Names.Num()`).
+- [ ] `UnEdCsg.cpp:209/239` (`csgRebuild(Level, bVisibleOnly)`): add `FStaticBrushIterator It(Level);` right after `guard(UEditorEngine::csgRebuild);` — exactly T's fix (T `UnEdCsg.cpp:259`); the `for( FStaticBrushIterator It(Level); …)` at `:209` may stay (it shadows), and the `for( It=FStaticBrushIterator(Level); …)` at `:239` then assigns to the function-level `It` (T compiles the identical line at T `:305`, so the assignment is known to work).
+
+For-scope reuse sites (hoist-aware scanner `scratchpad/forscope3.py` = run 1's line scanner + a filter
+that drops a hit when the name is already declared at function level; calibration: **1** residual hit on T
+(a false positive in `UMakeCommandlet`), **54** on E, i.e. it finds what T fixed; it does **not** see
+iterator-object reuse (`It`), which ED3/ED10 cover). HP2, 72 hits — format `decl-line→use-line`:
+
+| File | Sites (`for` declaring the name → first out-of-scope use) |
+|------|--------------------------------------------------------------|
+| `UConformCommandlet.cpp` | `i` 109→113; `i` 182→191 (and 213) |
+| `UnBsp.cpp` | `i` 695→700; 799→806; 901→908; 2278→2282; 2342→2345; 2448→2465; 2524→2628 |
+| `UnEdAct.cpp` | `i` 96→101; 154→160; 209→214; 260→265; 401→414; 567→572 |
+| `UnEdCam.cpp` | `i` 398→404; `i` 642→659; `x` 1112→1143; `vertex` 2782→2786; `i` 2841→2859 |
+| `UnEdClick.cpp` | `PosInList` 515→525 |
+| `UnEdCsg.cpp` | `i` 612→631; `brush` 620→625; `i` 838→852; `i` 1033→1040 |
+| `UnEdExp.cpp` | `i` 187→190; `i` 203→211 (ED15) |
+| `UnEdFact.cpp` | `j` 321→324; `i` 1007→1011; `i` 1388→1399; `i` 1494→1498 |
+| `UnEditor.cpp` | `i` 212→221 |
+| `UnEdSrv.cpp` | `i` 208→214; `poly` 228→241; `actor` 1187→1234; `i` 1925→1928; 2401→2413; 2750→2776; 3456→3467; 3504→3518; 3533→3549; 3606→3609; 3859→3865; 3881→3887; 3919→3929 |
+| `UnEdTran.cpp` | `i` 311→316 |
+| `UnMatinee.cpp` | `iActor` 194→210 |
+| `UnMeshEd.cpp` | `i` 939→972 |
+| `UnMeshLP.cpp` | `i` 225→237; `i` 325→331; `p` 831→864; `i` 1039→1081; `w` 1098→1107; `f` 1225→1244; `t` 1500→1513; `i` 1643→1686; `w` 1698→1707; `f` 1822→1840; `s` 2054→2063 |
+| `UnScrCom.cpp` | `Test` 1879→1881; `LabelRecord` 3058→3066; `i` 4703→4710 (+ ED3/ED5/ED6 sites the scanner cannot see: 1697, 2893, 5042, 5112) |
+| `UnShadow.cpp` | `i` 455→463 |
+| `UnVisi.cpp` | `Link` 727→730; `ClipPortal` 962→972; `i` 1114→1131; 1173→1187; 1244→1248; 1316→1321; `iActor` 1358→1363; `i` 1515→1523; `j` 1835→1838 |
+
+Idiom: either T's `INT i;` at the top of the function (leaving `for( INT i…)` shadows as they are — T's
+choice in `UnBsp/UnEdAct/UnEdCsg/UnVisi`), or give each later loop its own `for( INT i=0; …)` (T's choice in
+`UnMeshLP`, `UConformCommandlet`, `UnEdExp`). Where the variable's **value** is read after the loop
+(`if( i==Level->Actors.Num() )`, `check(Test!=NULL)`, `if( !Link )`, `if( j >= i )`, `UnEdSrv` `appSprintf(…, i)`),
+only the hoist is correct. Expect the compiler to report a handful the scanner missed (macros, `while`-scoped
+names); fix them the same way. Everything else in the Editor compiles unchanged on T's toolchain, by analogy
+with T's near-identical files.
 
 ## 5. Cross-report dependencies
 
-_pending (run 2 in progress)_
+Things this subject cannot compile or run without, and who owns them (report file names in
+`docs/porting/analysis/`). "Blocks" = the first target that fails without it.
+
+| # | Needed by | Symbol / header / fact | Must come from | Owner | Blocks |
+|---|-----------|------------------------|----------------|-------|--------|
+| D1 | Render, Fire, SoftDrv, Editor | `ASM 0`, `ASMLINUX 0`, `ASM3DNOW 0`, `GCC_ALIGN`, empty `DLL_EXPORT`/`DLL_IMPORT`, `__INTEL__` on x86, `typedef double DOUBLE`, `DISABLE_OPTIMIZATION` as `_Pragma` | template `Core/Inc/UnGnuG.h` (T:82-95, 179, 206-212) replacing HP2's Loki one (H `:18` `ASMLINUX 1`, `:97` `DLL_EXPORT extern "C"`) | `template-core.md` | Render (`UnRender.cpp:1036` AT&T asm), SoftDrv (`class DLL_EXPORT USoftwareRenderDevice`) |
+| D2 | Render `UnRender.cpp:703` | `FTime appProcessSeconds()` | declared `Core/Inc/UnFile.h:263`, only defined in `UnVcWin32.cpp:501` → write it in `UnUnix.cpp` | `template-core.md` / `hp2-core-engine-specifics.md` (§ "absent") | link of `Game` |
+| D3 | Render, Editor | `PUSH_HIT` with `sizeof(decltype(expr))` | Engine `Inc/UnCamera.h:323` (T:310) | `template-engine.md` | Editor `UnEdCam.cpp:2017` on clang/wasm |
+| D4 | Render `DrawWorld` (R15b) | `ENGINE_API extern FLOAT GAutoFovFrameBase` | Engine `UnCamera.h/.cpp` (T:449 / :250), only if AutoFOV is ported | `template-engine.md` | nothing (optional) |
+| D5 | Editor (static link) | `UNREAL_STATIC` defined for every static build | top-level `CMakeLists.txt` (H `:63`, `:87`) | `template-core.md` | duplicate `GetFVECTOR`… at link (ED12) |
+| D6 | Editor, Render, SoftDrv, Fire | 4-arg `DECLARE_CLASS(…, Pkg)` (H `Core/Inc/UnObjBas.h:326,336`) | HP2 Core (present); T's files copied into HP2 (SoftDrv) must be converted | this report §3.4 (SoftDrv), `template-drivers.md` (NullDrv etc.) | compile |
+| D7 | SoftDrv | the 433 `URenderDevice` face (`Engine/Inc/UnRenDev.h:75-78`): 5-arg `DrawComplexSurface`, pure `MaxVertices`/`DrawTriangles`, non-pure `DrawGouraudPolygon` forwarding to the fan branch (`Engine/Src/UnCamera.cpp:199-203`), `GetOsSurface` (`:93`, default `return NULL`; only WinDrv calls it, `WinViewport.cpp:939,1005` — SoftDrv/NSDLDrv need **no** override) | HP2 Engine (present) | this report §3 | SoftDrv vtable |
+| D8 | (not this subject, found here) | **HP2's `NullDrv` still has the UT99 face** (`NullDrv/Src/NullDrvPrivate.h:22` 3-arg `DECLARE_CLASS`, `:35` 3-arg `DrawComplexSurface`, `:36` `DrawGouraudPolygon`, no `MaxVertices`/`DrawTriangles`) | fix per `template-drivers.md` row "NullDrv" (it already lists this, incl. `MaxVertices()` = 256) | `template-drivers.md` | NullDrv compile |
+| D9 | Editor `UnEdCam.cpp` | `TCHAR` = `char` (no `UNICODE`/`_UNICODE`) — makes `wcscmp` a hard error | template `Core.h:61`, HP2 build flags | `template-core.md` / `hp2-core-engine-specifics.md` (it lists the same `wcscmp` class of bug in `UnClass.cpp:1439`) | Editor |
+| D10 | Render | `FStats GStat`, `STATS 1`, `FTime` arithmetic with `appSeconds()` (`UnRender.cpp:3677-3679`) | HP2 Core (`UnStat.h:157`, `UnBuild.h:56`) with template `UnGnuG.h`'s FTime-returning `appSeconds` re-added | `template-core.md` | Render |
+| D11 | Fire | `UBitmap::__Client` set by `UClient::UClient()` (`Engine/Src/UnCamMgr.cpp:24`); `NoFractalAnim` config | NSDLDrv's client must derive from `UClient` and run its ctor (the template's does) | `template-drivers.md` | fractals frozen / NULL deref in `ConstantTimeTick` |
+| D12 | Fire | layout: `-fpack-struct=4` (wasm) / MSVC bitfields (MinGW) + F8 `GCC_ALIGN(4)` | top-level flags (T `BUILD.md` "Two ABI differences") | `template-core.md`, `windows-mingw-template.md` | first map with a `FireTexture` (`VERIFY_CLASS_OFFSET`) |
+| D13 | SoftDrv (web) | `SoftFB` blit path in `NSDLViewport.cpp`; `SOFTDRV_MAX_SCREEN=8192` in the wasm preset (H `CMakePresets.json:36`, present) | template NSDLDrv | `template-drivers.md`, `web-layer-template.md` | software rendering on the web |
+| D14 | Editor content | `System/Editor.u` and `Maps/Entry.unr` in the web boot set / precache | frontend target (`precache.json`, boot closure) | `ufrontend-target-contract.md`, `hp2-game-boot-and-content.md` | first `LoadMap(Entry)` |
+| D15 | Render (Darklight) | nothing external — but the `Merge` fix (§1.3) changes lighting for **every** renderer, so XOpenGL/UTGLR screenshot baselines must be taken *after* it lands | — | `renderer-forks.md` (awareness) | visual regression tests |
+| D16 | MinGW | `PLATFORM_WIN32`/`__MINGW32__` for SoftDrv `IN/OUT` undef and Fire `__int64` typedef guard; `PLATFORM_MSVC` for `Line2D.cpp` | top-level CMake (H `:156,161,188`) | `windows-mingw-template.md` | MinGW build |
 
 ## 6. Open questions / verification
 
-_pending (run 2 in progress)_
+Resolved this run (were open in run 1, Appendix Z §6):
+
+- **AutoFOV (R15b)** — HP2 `Engine/Classes/Inventory.uc:239` has the same `0.9/PawnOwner.FOVAngle` offset and
+  `Weapon.RenderOverlays` is reachable (Harry's `PlayerCalcView`, not `bBehindView`), so the base-FOV swap is
+  needed **iff** Engine AutoFOV is ported; decision belongs to `template-engine.md` (§1.1 R15).
+- **`URenderDevice::DrawGouraudPolygon`** — the base forwards to `DrawTriangles( …, NULL, NumPts, … )`
+  (`Engine/Src/UnCamera.cpp:199-203`), so SoftDrv must not define it (§3.2).
+- **`cAlpha` on SoftDrv** — the only callers of `DrawComplexSurface` are `UnRender.cpp:3541` (Lumos,
+  `iAlpha` 0/255 on span devices) and `:3550` (255); nothing else passes a graded alpha. SoftDrv may ignore it.
+- **Is Editor needed at runtime?** — yes, at boot (§4.0/§4.4). Scan widened to all 194 packages; three extra
+  hits are developer study maps only.
+- **`UnTest.cpp`** — drop it (§1.4).
+
+Still open — how to verify each:
+
+1. **`FLightManager::Merge` dark-light fix (§1.3)**: confirm visually in `Adv1Willow` (199 `Darklight`
+   actors) after the fix; before the fix, the tree shadows should appear as bright patches. If retail
+   screenshots are available, compare. Also confirm the MSVC copy's `static` asm-only variables only warn.
+2. **`GCC_ALIGN(4)` on `SparkType`/`FX_Heat`/`DropType` (F8)**: confirm at first boot through
+   `VERIFY_CLASS_OFFSET`/`VERIFY_CLASS_SIZE` in `UFireTexture::PostLoad`/`Init` (a mismatch is an
+   `appErrorf`, so it cannot pass silently), on all three targets (wasm `-fpack-struct=4`, MinGW
+   `-mms-bitfields` change the arithmetic).
+3. **`FX_Heat GCC_PACK(4)` → `GCC_ALIGN(4)`**: believed layout-neutral; verified by (2).
+4. **SoftDrv S14b (`PF_RenderFog` gate on mesh fog)**: check with a particle system inside a fog zone
+   in software mode (no colour garbage) and a mesh in the same zone (fogged).
+5. **`UMasterCommandlet.cpp` header-only compile**: it may actually compile against HP2's
+   `Setup/Inc/Setup.h` + `Core/Inc/FFileManagerArc.h`; irrelevant for the game — keep it excluded unless
+   someone wants `ucc master` on Linux.
+6. **Editor for-scope list (§4.6)** is heuristic (72 hits, calibrated on T/E); the compiler is the
+   authority — expect a few extra sites (iterator objects, `while`-scoped names) and a few benign hits.
+7. **`#pragma DISABLE_OPTIMIZATION`** in `UnEdAct.cpp:11`, `UnEdRend.cpp:11`, `UnEdSrv.cpp:19` with the
+   template's `_Pragma` macro: T compiles epic's identical lines, so expected fine; if clang warns
+   "unknown pragma", ignore.
+8. **UnParticleRn.cpp** was never compiled by GCC/clang (HP2 shipped MSVC only); the scanners found no
+   for-scope leaks, but expect template-deduction / narrowing warnings (`Min`/`Max` on mixed `INT`/`FLOAT`).
+   Build `--target Render` early and fix as reported.
+9. **Content packages imported by `HGame.u`/`HPParticle.u`** (`HPEdit`, `3DWizardCards`, `SpellShapes`): **correction to run 1** (Appendix Z §4.3/§6.5 called them missing) — they exist as `Assets/Textures/HPEdit.utx`, `3DWizardCards.utx`, `SpellShapes.utx`; they are texture packages, found through `Paths=../Textures/*.utx`. Nothing to do here; `hp2-game-boot-and-content.md` owns the boot closure.
 
 ---
 
-## Appendix Z — previous run's report (2026-09-25), kept verbatim until this run completes (UNVERIFIED)
+## Appendix Z — previous run's report (2026-09-25), kept verbatim for history (SUPERSEDED by §0-§6; UNVERIFIED)
 
 ### Render, Fire, SoftDrv and the stripped Editor — template vs epic v400 vs HP2 build 433
 
@@ -1060,3 +1365,5 @@ Not needed: the `Window` link, `Win32EdHook.cpp`, `LOW_MEMORY` variant.
    chose to drop the file and keep `__stdcall` meaningful for MinGW (`UnGnuG.h:99-104`). Drop it.
 7. The `UnParticleRn.cpp` particle renderer was never built with GCC; expect the same class of for-scope
    / template-deduction errors as the rest of Render (the heuristic found none, but it only sees `for`).
+
+## Status: complete

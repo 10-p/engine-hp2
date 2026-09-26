@@ -1,0 +1,66 @@
+Core/Inc/FFileManagerGeneric.h:108 var i used at 112: for( i=0; i<List.Num(); i++ )
+Core/Inc/FMallocDebug.h:191 var C used at 198: C = new FGroupStat(Tag);
+Core/Inc/FMallocDebug.h:236 var C used at 240: for( C = Children; C; C = C->Next )
+Core/Inc/FMallocDebug.h:437 var s used at 445: MemLogList.Set(s);
+Core/Inc/FMallocDebug.h:440 var n used at 443: if( n == MemLogList.Num() )
+Core/Inc/FMallocWindows.h:100 var Index used at 105: FreeList[Index] = Free->Next;
+Core/Inc/FOutputDeviceFile.h:71 var i used at 73: ACh[i] = 0;
+Core/Src/UnLinker.cpp:413 var j used at 418: UBOOL ClassHack = Import.ClassPackage==NAME_UnrealI && Import.SourceLinker->GetExportClassPackage(j)
+Core/Src/UnMath.cpp:23 var i used at 33: for( i=0; i<(1<<APPROX_MAN_BITS); i++ )
+Core/Src/UnMisc.cpp:1852 var c used at 1856: {for( INT i=0,e=-1,c=0; i<=256; i++ )
+Core/Src/UnMisc.cpp:2250 var len used at 2252: Ch.Set(len);
+Core/Src/UnMisc.cpp:2274 var Count used at 2276: Ch[Count] = 0;
+Core/Src/UnName.cpp:138 var i used at 145: checkSlow( appStrlen(HardcodedNames[i].Name) < NAME_SIZE-1 );
+Core/Src/UnObj.cpp:1423 var i used at 1426: for( i=0; i<List.Num(); i++ )
+Core/Src/UnObj.cpp:2886 var i used at 2898: for( i=0; i<Conform->NameMap.Num(); i++ )
+Core/Src/UnObj.cpp:2968 var j used at 2971: check(j<Linker->ExportMap.Num());
+Engine/Inc/UnActor.h:61 var Top used at 62: return Top;
+Engine/Inc/UnModel.h:154 var i used at 157: for( i=0; i<_NumZones; i++ )
+Engine/Src/UnActCol.cpp:117 var i used at 121: for( i=0; i<NUM_BUCKETS; i++ )
+Engine/Src/UnActor.cpp:1145 var i used at 1161: for( i=0; i<ARRAY_COUNT(Actor->Touching); i++ )
+Engine/Src/UnActor.cpp:1243 var i used at 1255: for( i=0; i<ARRAY_COUNT(Other->Touching); i++ )
+Engine/Src/UnAudio.cpp:706 var j used at 735: for (j=0; j<16; j++)
+Engine/Src/UnCamera.cpp:705 var i used at 722: for (i=0; i<4; ++i)
+Engine/Src/UnCamera.cpp:780 var i used at 797: for (i=0; i<4; ++i)
+Engine/Src/UnCamera.cpp:880 var j used at 884: for (;j<destWidth; j++)
+Engine/Src/UnCamera.cpp:968 var i used at 975: for( i=(int)snapV-1; i>=0; i-- )
+Engine/Src/UnCamera.cpp:977 var j used at 981: for (;j<destWidth; j++)
+Engine/Src/UnCanvas.cpp:240 var i used at 334: for( i=0; i<5; i++ )
+Engine/Src/UnChan.cpp:865 var Test used at 871: FFrame( Actor, Test->GetOwnerClass(), Test->RepOffset, NULL ).Step( Actor, &Val );
+Engine/Src/UnChan.cpp:977 var Top used at 978: UPlayer* Player = Top->IsA(APlayerPawn::StaticClass()) ? ((APlayerPawn*)Top)->Player : NULL;
+Engine/Src/UnChan.cpp:1067 var R used at 1070: if( R==LastRep )
+Engine/Src/UnDynBsp.cpp:274 var Link used at 286: for( Link=GroupActors; Link; Link=Link->Next )
+Engine/Src/UnDynBsp.cpp:303 var i used at 308: for( i=0; i<Brush->Polys->Element.Num(); i++ )
+Engine/Src/UnEngine.cpp:288 var C used at 291: if( C && appToUpper(iKey)==YesKey )
+Engine/Src/UnFPoly.cpp:315 var i used at 353: for( i=0; i<NumVertices; i++ )
+Engine/Src/UnGame.cpp:723 var i used at 732: Temp = FString::Printf( TEXT("") PATH_SEPARATOR TEXT(""), *GSys->SaveSlotPath, i++ );
+Engine/Src/UnGame.cpp:896 var i used at 905: for( i=0; i<PackageMap->List.Num(); i++ )
+Engine/Src/UnGame.cpp:1175 var i used at 1186: for( i=1; i<64; i++ )
+Engine/Src/UnGame.cpp:1188 var j used at 1192: for( j=0; j<64; j++ )
+Engine/Src/UnGame.cpp:1373 var i used at 1377: for( i=2; i<GLevel->Actors.Num(); i++ )
+Engine/Src/UnGame.cpp:1990 var i used at 1999: appSprintf( Filename, TEXT("") PATH_SEPARATOR TEXT(""), *GSys->SaveSlotPath, Position, i++ );
+Engine/Src/UnIn.cpp:131 var i used at 137: if( i<Cache->Count )
+Engine/Src/UnIn.cpp:157 var i used at 163: if( i<Cache->Count )
+Engine/Src/UnLevAct.cpp:543 var i used at 628: for( i=0; i<Accepted.Num(); i++ )
+Engine/Src/UnLevAct.cpp:728 var i used at 740: for (i=-1;i<2;i+=2)
+Engine/Src/UnLevAct.cpp:1216 var Test used at 1271: for( Test = FirstHit; Test; Test=Test->GetNext() )
+Engine/Src/UnLevAct.cpp:1388 var Check used at 1423: if( Check )
+Engine/Src/UnLevTic.cpp:646 var i used at 659: for( i=iFirstNetRelevantActor; i<Actors.Num(); i++ )
+Engine/Src/UnLevTic.cpp:784 var i used at 795: for( i=0; i<NetDriver->ClientConnections.Num(); i++ )
+Engine/Src/UnLevel.cpp:820 var i used at 840: for( i=0; i<Engine->Client->Viewports.Num(); i++ )
+Engine/Src/UnLevel.cpp:1217 var i used at 1221: Connection->PackageMap->List.Remove( i );
+Engine/Src/UnPath.cpp:848 var i used at 859: for (i=0; i<Level->Actors.Num(); i++)
+Engine/Src/UnPath.cpp:1184 var i used at 1207: for ( i=0; i<Level->Actors.Num(); i++ )
+Engine/Src/UnPawn.cpp:1752 var i used at 1768: for (i=0;i<4;i++)
+Engine/Src/UnPhysic.cpp:2509 var i used at 2510: return Prev->GetDesiredRotationAtPosition(PosOffset+1,i,NewLocation);
+Engine/Src/UnPrim.cpp:877 var i used at 895: if( i == Node->NumVertices )
+Engine/Src/UnRoute.cpp:261 var j used at 274: for ( j=0; j<AltEndPoints.numPoints; j++ )
+Engine/Src/UnScript.cpp:2312 var i used at 2322: for( i=0;i<Node->NumVertices;i++ )
+Engine/Src/UnScript.cpp:2328 var j used at 2330: for(j=0;j<NumPts;j++)
+Engine/Src/UnScript.cpp:2452 var j used at 2456: MainDecal = &Surf.Decals(j);
+Engine/Src/UnTex.cpp:654 var i used at 664: for( i=0; i<256; i++ )
+Engine/Src/UnTex.cpp:727 var i used at 729: if( i == NUM_PAL_COLORS )
+Engine/Src/UnTex.cpp:925 var i used at 933: for( ; i<256; i++ )
+Engine/Src/UnTex.cpp:1100 var destWidth used at 1102: destWidth = appPow(2, widthFactor);
+Engine/Src/UnTex.cpp:1105 var destHeight used at 1107: destHeight = appPow(2, heightFactor);
+Engine/Src/UnURL.cpp:433 var i used at 436: if( i==Op.Num() )	new( Op )FString( Str );

@@ -11,7 +11,34 @@ Nothing was executed: no cmake/make/yarn, no git writes.
 
 ## 0. Sources read and verdict
 
-(pending)
+**Sources read (all READ ONLY except this report):**
+
+| Area | Files |
+|---|---|
+| ufrontend clone `UF` (branch `hp2`, HEAD `1bb9431` "docs(2.79): §21.10 — released …", i.e. identical to upstream 2.79 — no hp2 commit yet) | `CLAUDE.md`; `docs/{05-engine-repos,06-targets-and-branding,07-build-and-ci,08,09,WHERE-THINGS-GO,CONVENTIONS,README}.md`; `docs/migration/{STATE,ROADMAP}.md` (2.53, 2.75, 2.79, add-a-target, publish-all, portal entries); `targets/{ut99,unreal1,ut2004,ut99-436-compat}/**` (target.json, README.md, branding/*, portal-notes.json, precache.json, manifests); `test/skeleton.test.mjs`; `packages/build/{README.md,bin/*.mjs,src/**}` (build-inputs, publish/{args,run,engine,execute,state,verify,commands,freshness}); `packages/portal/{bin/build-portal.mjs,src/render.mjs}`; `packages/glue/bin/{generate-manifest,generate-deps,generate-travel,generate-precache,generate-quickshots}.cjs`, `packages/glue/src/{target,idb,cache,fetchfs,webrtc,config,artifact}/**`, `packages/glue/test/*`; `packages/frontend/{vite.config.ts,index.html,src/**,test/**}`; `packages/e2e/{playwright.config.js,*-wasm-boot.spec.js,lib/**,tools/**,README.md}`; `.ufront/{gates,hooks}/*`, `.ufront/README.md`, `install-engine-hooks.sh` |
+| HP2 engine repo `HP2` | `CLAUDE.md`, `docs/SOURCE-LAYOUT.md`, `Config/System/{Default,DefUser}.ini`, `Source/{Core,Engine,Game,UWindow}/…` (the lines cited per row), `Source/CMakePresets.json`, `Source/Game/CMakeLists.txt`, `vendor/glue/*`, `Assets/**` (measured) |
+| Infra `INFRA` | `README.md`, `CLAUDE.md`, `config.json`, `docs/{ARCHITECTURE,RUNBOOK}.md`, `infra/main.bicep` + `infra/modules/{site,frontdoor,apps,logs,logs-access,gameproxy}.bicep`, `bin/{deploy-ufront.py,verify-site.mjs,apply-outputs.sh,infra-deploy.sh,set-cache-headers.py}`, `peerjs/server.js`, `relay/src/server.mjs` |
+
+**Verdict: adding `hp2` is mostly DATA work, with four small generic code changes, and all of it is blocked on the engine's first web artifact.**
+
+| # | Finding | Blocking? | ACTION (section) |
+|---|---|---|---|
+| V1 | `yarn build --target hp2` needs **no code change**: targets are discovered by folder (`ufront-build.mjs:63-65`). It needs `targets/hp2/` (§1–§3) + `.ufront/publish.local.json` (§7) + the engine artifact `HP2/build-wasm-perf/SDLLaunch/` with a valid `meta.json`. **Today only `HP2/build-native/` exists.** | yes (engine) | engine Phase "web build" first; then §5.1 |
+| V2 | The descriptor is fully specified in §1.3: `dbPrefix`/`keyPrefix` `hp2` ⇒ IndexedDB **`hp2-user-data`**, `hp2-mods`, `hp2-network-cache`, OPFS `pkg/hp2/`, localStorage `hp2_*` (§1.2). `userFiles` = `Save/*.usa|bmp` + `Save/Slot1..6/*.usa|bmp`. `.ogg → Music`. No `conversions`, no proxy networking, no audio controls until NOpenALDrv. | no | commit §1.3 |
+| V3 | The three generated files were **dry-run** (§3): manifest 460 files / 476 MB, deps 714/714 resolved, precache 231 files / 131.7 MB, travel candidates 0/0. | no | run §3 commands verbatim |
+| V4 | `test/skeleton.test.mjs:76` hard-codes the four targets and `:102-103` require non-empty `travel.modes`/`toggles`; HP2 has **no** GameInfo/Mutator subclass to offer. | yes (unit gate) | §4.3 (discover targets; allow an all-empty travel block; `PlayPanel.vue` hides empty fieldsets) or the §1.5 data fallback |
+| V5 | **No publish-at-root mode exists.** `publish-all` always renders the portal over `<out>/index.html` (`run.mjs:647-666`). | yes for Track B | Track A (folder `hp2`, upload `<out>/hp2/`) works today; Track B = `publish.folder "."` generic change (§6.2, 13 items) |
+| V6 | Engine prerequisites that every `iniPath` / `userFiles` / `logPath` value assumes: `appUserDir()` returns `""` on web, `appInit(TEXT("Game"),…)` instead of `"UnrealTournament"` (`HP2/Source/Game/Src/Launch.cpp:883`), and `appApplyIniOverrides` ported into HP2 Core. | yes (engine) | §1.4, §11 Q3/Q5 |
+| V7 | E2E: no hp2 spec ⇒ `yarn e2e --target hp2` runs **zero tests and passes**. Create `packages/e2e/hp2-wasm-boot.spec.js` + `lib/engines/hp2.profile.js` from `ut99-wasm-boot.spec.js` test 1 + `unreal1`'s SoftDrv test. | yes (e2e-pre-push) | §5.3 |
+| V8 | Other hard-coded target lists: 4 frontend/glue test loops, `precache-baseline.cjs`, `precache-capture.cjs`, `publish-boot-check.cjs`, the `no-engine-specifics` gate regexes (would let an `hp2` literal pass unnoticed), plus infra `peerjs ID_PREFIXES` / `requiredFolders`. | partly | §8.1, §9.1 |
+| V9 | Azure: **Option A** = same Front Door Standard profile `unrealfd`, a second endpoint + a second storage account `$web`, reusing the `coiheaders` rule set (COOP/COEP), the zstd upload convention, the `relay-og` telemetry origin group and the `unrealpeer-we` broker (origins list extended). Plan only. | no (plan) | §10 |
+| V10 | The three renderer forks are **still inside the ufrontend clone** (`UF/XOpenGLDrv`, `UF/utglr-copy`, `UF/gl4es`, untracked `??` in `git -C UF status`, re-checked 2026-09-26), not at `/home/ion/hp2-ufrontend/<fork>` as the task text and `HP2/CLAUDE.md` state. That breaks `yarn lint` and makes every publish "dirty". | yes (lint gate) | move them (§7, §11 Q10) |
+
+Re-checked for this section (2026-09-26): `UF` HEAD `1bb9431`, `targets/` = the four existing folders only, `.ufront/`
+has no `publish.local.json`; `HP2/vendor/glue/ue_abi.h` is byte-identical to `UF/packages/glue/abi/ue_abi.h` (`cmp`);
+`HP2/vendor/glue/webrtc-shim.js` vs `UF/packages/glue/engine-shim/webrtc-shim.js` are **token-identical** once
+whitespace, comments and prettier's trailing commas are removed (so §11 Q16 is closed: formatting-only drift, no
+action for the target contract).
 
 ## 1. `targets/hp2/target.json` — full skeleton with derivations
 
@@ -1090,3 +1117,27 @@ HP2 boot fetches ~230-460 files) add to the same budget — watch `node bin/tele
 | Q14 | Custom domain + DNS provider for "its own domain" | the azurefd.net host changes on endpoint recreation | owner (§10.4) | owner |
 | Q15 | `alert-telemetry-silence` counts `/` GETs on every host of the profile | an HP2 publish without telemetry would trip it | publish HP2 with `telemetryEndpoint`, or scope the regex per host (§10.3) | infra |
 | Q16 | `webrtc-shim.js` vendored in HP2 differs textually from `UF/packages/glue/engine-shim/webrtc-shim.js` (HP2's is byte-identical to `engine-ut99/vendor/glue/webrtc-shim.js`; the monorepo copy is re-formatted) | shim drift is the engine's abi-pin concern, not a target-descriptor one | `diff -w` the two and confirm only formatting differs (engine analyst) | engine analyst |
+
+Addendum (2026-09-26, resumed run): **Q16 closed**: the two `webrtc-shim.js` copies are token-identical after stripping
+whitespace, `//` comments and trailing commas (checked with a `tr -d ' \t\n'` normalisation); the drift is prettier
+formatting only. **Q10 re-confirmed open**: the forks are still nested in `UF` (`git -C UF status --short` →
+`?? XOpenGLDrv/ ?? gl4es/ ?? utglr-copy/`).
+
+## 12. Checklist — adding `hp2` to the ufrontend clone (in order)
+
+- [ ] Engine: `appUserDir()` = `""` on web, `appInit(TEXT("Game"),…)`, `appApplyIniOverrides` ported, `wasm-perf` preset builds `HP2/build-wasm-perf/SDLLaunch/{SDLLaunch.js,.wasm,.data,meta.json}` (§1.4, §5.0)
+- [ ] Move the renderer forks out of `UF` (§7, Q10)
+- [ ] `.ufront/publish.local.json` (§7)
+- [ ] `targets/hp2/target.json` (§1.3; pick Track A `folder "hp2"` or Track B `"."`, Q1), `README.md` (§1.6), `branding/{theme.css,logo.svg,help.md,portal-notes.json}` (§2)
+- [ ] `targets/hp2/{file-manifest,dependency-manifest,precache}.json` via the §3 commands
+- [ ] `test/skeleton.test.mjs` (§4.3) + `PlayPanel.vue` empty-fieldset guard + `packages/frontend/README.md` line (or §1.5 fallback travel data)
+- [ ] Frontend/glue test loops + HP2 glue fixture (§4.4, §8.1)
+- [ ] `.ufront/gates/no-engine-specifics.sh` regexes learn `hp2` (§9.1)
+- [ ] `yarn build --target hp2`, `yarn serve`, hands-on boot (§5.1-5.2)
+- [ ] `packages/e2e/lib/engines/hp2.profile.js` + `hp2-wasm-boot.spec.js` + README (§5.3); `precache-baseline.cjs` hp2 branch (§3.3 B)
+- [ ] Capture real telemetry lines → `CAPTURED` fixtures (§4.2); verify `notices` (Q6)
+- [ ] Track B code (§6.2) if chosen; `publish-boot-check.cjs` root entry (§8.1)
+- [ ] `docs/06`, `docs/07`, `packages/build/README.md`, `packages/e2e/README.md` prose (§8.4); STATE/ROADMAP/step record (§9.3); `.ufront/e2e-stamp` before push
+- [ ] Infra Option A (§10.3), custom domain (§10.4), publish + upload + verify (§10.5)
+
+## Status: complete

@@ -1,13 +1,14 @@
 project(Engine CXX)
 
-# HP2 build 433 Engine: the Engine.dsp list minus winstuff.cpp (Win32 GDI helpers behind UnEngineWin.h)
-# and minus the MPeg wrappers it listed but never referenced (Thirdparty/MPeg). Everything else — the
+# HP2 build 433 Engine: the Engine.dsp list minus winstuff.cpp (Win32 GDI helpers behind UnEngineWin.h),
+# minus palette.cpp (Inc/Palette.h exports HeckbertQuantize with __declspec; its only caller is inside the
+# MSVC-only DXT block of UnTex.cpp — the template drops it too) and minus the MPeg wrappers it listed but
+# never referenced (Thirdparty/MPeg). Everything else — the
 # 433 additions (skeletal meshes, particles, gestures, replay, interpolation, downloads, demo pending
 # level, the native-function table) included — compiles on every target.
 set(SRC_FILES
   "Src/AStatLog.cpp"
   "Src/Engine.cpp"
-  "Src/palette.cpp"
   "Src/ULodMesh.cpp"
   "Src/UnActCol.cpp"
   "Src/UnActor.cpp"

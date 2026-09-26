@@ -57,15 +57,33 @@ docs/          SOURCE-LAYOUT.md (raw-drop → repo mapping), porting notes as th
   Span)`, non-pure `DrawGouraudPolygon`, `GetOsSurface`. Every render driver (XOpenGL, UTGLR, NullDrv,
   the in-tree SoftDrv) must implement that face — gated in the forks on `ENGINE_VERSION==433`.
 - **`UAudioSubsystem` (Engine/Inc/UnAudio.h) is HP2's own:** `PlaySound(…, INT Flags, FLOAT FadeDuration,
-  FLOAT Priority)`, `PlayMusic(FString Song, FLOAT FadeIn)` streams **Ogg Vorbis** files from `Music/`
-  (there is no `.umx`), `FLipSyncData`, `ModifySound`, flag-driven stop/fade. The shipped driver is
-  `ALAudio.ALAudioSubsystem` (OpenAL 1.0 + EAX + vorbisfile + the EA `coda` codec for compressed sounds).
+  FLOAT Priority)`, `PlayMusic(FString Song, FLOAT FadeIn)` opens **Ogg Vorbis** files from `Music/` by
+  path (there is no `.umx`, and music never goes through `Paths=`), `FLipSyncData`, `ModifySound`,
+  flag-driven stop/fade. The shipped driver is `ALAudio.ALAudioSubsystem` (OpenAL 1.0, EAX compiled out,
+  vorbisfile, the closed `coda` library). **Compressed sounds are EA-XA ADPCM** (`sx -eaxa_blk` at
+  import, 15-byte frames / 28 samples — 2,994 of 3,289 sounds); plain sounds are RIFF WAVE PCM 22050 Hz
+  mono 16-bit; dialog is `AllDialog.uax` (97 MB) loaded on demand. Not MPEG Layer II — `MpegLib` has no
+  runtime caller.
 - **No `IpDrv`, `UWeb`, `IpServer`, `UBrowser` in the drop** — the retail game shipped no multiplayer.
   `Default.ini` still names `IpDrv.TcpNetDriver`; the port brings IpDrv (from the template, adapted to
   433) and the engine-local `WebRTCDrv` for P2P.
 - **Closed binaries:** `EAAudioCodec` (`coda`, only `.lib`), `MpegLib.lib`, `s3tc.lib`, `ENCVAG.LIB`
-  (PS2). Worked around, never decompiled: s3tc's encode path is editor-only, ENCVAG is `HAVE_VAG 0`,
-  `coda` is initialised from `UnVcWin32.cpp` only (the Unix core never touches it).
+  (PS2). Worked around, never decompiled, linked on no target: s3tc's encode path is editor-only and the
+  9 DXT1 textures all carry P8 twins (no runtime decode), ENCVAG is `HAVE_VAG 0`, `coda` is initialised
+  from `UnVcWin32.cpp` only and its one job (EA-XA decode) gets an open in-tree decoder in Phase E
+  (`tools/dev/analysis/xadec.py` is the reference).
+- **Static linking is the template's registry, not HP2's `__STATIC_LINK`.** HP2 carries a Loki/PS2-era
+  `__STATIC_LINK` scheme (`GNativeLookupFuncs`, `UnCoreNative.cpp`, `AUTO_INITIALIZE_REGISTRANTS`) whose
+  native table is missing 29 natives; it stays undefined and its macro branches are deleted.
+- **Layout under GCC/clang:** two script classes shift invisibly to the size guard — `ABrush→AMover` and
+  `ANavigationPoint→APlayerStart` (trailing bitfield runs). Both get a 3-byte pad in the generated
+  `EngineClasses.h` under `#ifndef __MINGW32__` (MinGW lays bitfields out the MSVC way and the pad would
+  overshoot there). Never regenerate that header without re-applying the pads.
+- **Paths in content are Windows paths.** `HGame.u` opens `Cutscenes\<file>.int` (the dir is
+  `System/CUTSCENES`), music is `..\music\<Song>.ogg`, the save dir literal is `"..\\Save"`. The Unix file
+  manager folds `\`→`/` and resolves case per component; the web glue does NOT fold case for direct opens
+  under `-sWASMFS`, so this is engine work, not frontend work.
+- **`AudioMutex` has no users** — left unbuilt.
 - **Line endings:** the drop was CRLF; the repo is LF (second commit). Diff against
   `/home/ion/epic-sources/ut99-v400` with `--strip-trailing-cr`.
 
