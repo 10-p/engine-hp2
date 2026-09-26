@@ -2957,7 +2957,7 @@ UBOOL UEditorEngine::Exec( const TCHAR* Stream, FOutputDevice& Ar )
 
 			FString TexturePrefix;
 			UBOOL bNoPrefix = !Parse( Str, TEXT("PREFIX="), TexturePrefix );
-			debugf( NAME_Log, TEXT("Prefix=%s"), bNoPrefix ? TEXT("<None>") : TexturePrefix );
+			debugf( NAME_Log, TEXT("Prefix=%s"), bNoPrefix ? TEXT("<None>") : *TexturePrefix ); // *: an FString through varargs traps on clang
 
 			UBOOL bOverride = 0;
 			Parse( Str,TEXT("OVERRIDE="), bOverride );
@@ -3585,7 +3585,7 @@ UBOOL UEditorEngine::Exec( const TCHAR* Stream, FOutputDevice& Ar )
 				if( Cast<ATeleporter>(Level->Actors(i)) )
 				{
 					ATeleporter& Teleporter = *(ATeleporter *)Level->Actors(i);
-					Results->Logf( TEXT("   %s\r\n"), Teleporter.URL );
+					Results->Logf( TEXT("   %s\r\n"), *Teleporter.URL ); // *: an FString through varargs traps on clang
 					if( appStrchr(*Teleporter.URL,'//') )
 						External++;
 					else
