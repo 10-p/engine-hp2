@@ -376,8 +376,9 @@ map (or a "Continue" button that picks the map itself) would make `?load=<n>` al
 
 The owner's follow-up is to let the launcher list saves and launch straight into one, driven by descriptor data.
 It is specified for the implementing agent in the ufrontend clone:
-`docs/migration/steps/SAVE-GAMES-KICKOFF-PROMPT.md` (branch `hp2`, `56cb5d2`). In short:
-- an optional `saveGames` block (absent = off: ut99, ut2004);
-- `layout: "numbered"` for unreal1 and OldSkool (names from `SlotNames[<n>]` in `Unreal.ini` / `oldskool.ini`);
-- `layout: "slotFolder"` for HP2 (`-SAVESLOT=<k>` + `load=0`; every HP2 save is number 0, the folder is the game);
+`docs/migration/steps/SAVE-GAMES-KICKOFF-PROMPT.md` (branch `hp2`, rev 3 `9f33da3`). In short:
+- an optional `saveGames` block; absent = off (ut99, ut2004);
+- `layout: "slotsIni"` for unreal1 and OldSkool: the slot names in `Unreal.ini` / `oldskool.ini` are the list;
+- `layout: "slotsFolder"` for HP2 with the fixed folder `Save`: ONE save, `load=0`, no `-SAVESLOT`;
+- a new HP2 game = the Storage panel's "Clear User Data";
 - the launch is always `<map>?load=<n>`, never a bare `load=`.
