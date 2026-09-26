@@ -371,3 +371,13 @@ level. `/?map=<any>&load=<n>` works: verified on hp2 (`Command line: PrivetDr?lo
 ../Save/Save0.usa?load`, the saved Ch1Rictusempra state came up although the URL named PrivetDr). The Play panel's
 travel-options field (`load=0` + any map) is the same path. A launcher change that forwards travel options without a
 map (or a "Continue" button that picks the map itself) would make `?load=<n>` alone work — not implemented.
+
+## 11. Next: the single-player save list (designed, not implemented)
+
+The owner's follow-up is to let the launcher list saves and launch straight into one, driven by descriptor data.
+It is specified for the implementing agent in the ufrontend clone:
+`docs/migration/steps/SAVE-GAMES-KICKOFF-PROMPT.md` (branch `hp2`, `56cb5d2`). In short:
+- an optional `saveGames` block (absent = off: ut99, ut2004);
+- `layout: "numbered"` for unreal1 and OldSkool (names from `SlotNames[<n>]` in `Unreal.ini` / `oldskool.ini`);
+- `layout: "slotFolder"` for HP2 (`-SAVESLOT=<k>` + `load=0`; every HP2 save is number 0, the folder is the game);
+- the launch is always `<map>?load=<n>`, never a bare `load=`.
