@@ -207,7 +207,7 @@ void EDITOR_API matGetPlaybackPositions( UViewport* InViewport, TArray<FPosition
 	INT numPoints = -1;
 	for (INT i=0; i<MAX_INTERP_POINTS; i++)
 		PointList[i] = NULL;
-	for (iActor=0; iActor<InViewport->Actor->GetLevel()->Actors.Num(); iActor++)
+	for (INT iActor=0; iActor<InViewport->Actor->GetLevel()->Actors.Num(); iActor++)
 	{
 		Actor = InViewport->Actor->GetLevel()->Actors(iActor);
 		if (Actor && Actor->IsA(AInterpolationPoint::StaticClass()) && (Actor->Tag == matchTag))

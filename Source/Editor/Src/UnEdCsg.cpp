@@ -189,6 +189,7 @@ static void EnlistLeaves( UModel* Model, TArray<INT>& iFronts, TArray<INT>& iBac
 void UEditorEngine::csgRebuild( ULevel* Level, UBOOL bVisibleOnly )
 {
 	guard(UEditorEngine::csgRebuild);
+	FStaticBrushIterator It(Level);
 
 	GWarn->BeginSlowTask( TEXT("Rebuilding geometry"), 1, 0 );
 	FastRebuild = 1;
@@ -405,6 +406,7 @@ void UEditorEngine::polySelectAll(UModel *Model)
 void UEditorEngine::polySelectMatchingGroups( UModel* Model )
 {
 	guard(UEditorEngine::polySelectMatchingGroups);
+	INT i;
 
 	appMemzero( GFlags1, sizeof(GFlags1) );
 	for( INT i=0; i<Model->Surfs.Num(); i++ )
@@ -435,6 +437,7 @@ void UEditorEngine::polySelectMatchingGroups( UModel* Model )
 void UEditorEngine::polySelectMatchingItems(UModel *Model)
 {
 	guard(UEditorEngine::polySelectMatchingItems);
+	INT i;
 
 	appMemzero(GFlags1,sizeof(GFlags1));
 	appMemzero(GFlags2,sizeof(GFlags2));
@@ -605,6 +608,7 @@ void UEditorEngine::polySelectCoplanars(UModel *Model)
 void UEditorEngine::polySelectMatchingBrush(UModel *Model)
 {
 	guard(UEditorEngine::polySelectMatchingBrush);
+	INT i;
 
 	TArray<ABrush*> Brushes;
 
@@ -617,7 +621,8 @@ void UEditorEngine::polySelectMatchingBrush(UModel *Model)
 			ABrush* ParentBrush = Cast<ABrush>(Surf->Actor);
 
 			// See if we've already got this brush ...
-			for( int brush = 0 ; brush < Brushes.Num() ; brush++ )
+			int brush;
+			for( brush = 0 ; brush < Brushes.Num() ; brush++ )
 				if( ParentBrush == Brushes(brush) )
 					break;
 
@@ -832,6 +837,7 @@ void UEditorEngine::polyIntersectSet(UModel *Model)
 void UEditorEngine::polySelectZone( UModel* Model )
 {
 	guard(UEditorEngine::polySelectZone);
+	INT i;
 
 	// identify the list of currently selected zones
 	TArray<INT> iZoneList;
@@ -1026,6 +1032,7 @@ void UEditorEngine::mapBrushPut( ULevel* Level )
 void SendTo( ULevel* Level, int bSendToFirst )
 {
 	guard(SendTo);
+	INT i;
 	FMemMark Mark(GMem);
 
 	// Partition.

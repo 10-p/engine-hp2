@@ -395,7 +395,7 @@ void SoundTopicHandler::Get( ULevel* Level, const TCHAR* Item, FOutputDevice& Ar
 
 			if (pSound && appStrfind (Item, TEXT("MEMBER=")))
 			{
-				unsigned short log[64];
+				TCHAR log[64]; // was 'unsigned short' (retail UNICODE TCHAR); the port is ANSI
 				if (appStrfind (Item, TEXT("Streaming")))
 				{
 					appSprintf( log, TEXT("%d"), pSound->CoreFlags & SF_Streaming );
@@ -490,7 +490,7 @@ void SoundTopicHandler::Get( ULevel* Level, const TCHAR* Item, FOutputDevice& Ar
 
 			if (pSound && appStrfind (Item, TEXT("MEMBER=")))
 			{
-				unsigned short log[64];
+				TCHAR log[64]; // was 'unsigned short' (retail UNICODE TCHAR); the port is ANSI
 				if (appStrfind (Item, TEXT("Looping")))
 				{
 					appSprintf( log, TEXT("%d"), pSound->Data.bLooping );

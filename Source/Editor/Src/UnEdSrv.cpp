@@ -238,7 +238,7 @@ void ClipBrushAgainstPlane( FPlane InPlane, ABrush* InBrush, UBOOL InSel )
 			//GEditor->bspValidateBrush( GiantBrush->Brush, 1, 1 );
 
 			// One final pass to clean the polyflags of all temporary settings.
-			for( poly = 0 ; poly < GiantBrush->Brush->Polys->Element.Num() ; poly++ )
+			for( int poly = 0 ; poly < GiantBrush->Brush->Polys->Element.Num() ; poly++ )
 			{
 				FPoly* Poly = &(GiantBrush->Brush->Polys->Element(poly));
 				Poly->PolyFlags &= ~PF_EdCut;
@@ -1233,7 +1233,7 @@ UBOOL UEditorEngine::Exec( const TCHAR* Stream, FOutputDevice& Ar )
 
 			Level->Modify();
 
-			for( actor = 0; actor < Level->Actors.Num() ; actor++ )
+			for( int actor = 0; actor < Level->Actors.Num() ; actor++ )
 			{
 				AActor* SrcActor = Level->Actors(actor);
 				if( SrcActor && SrcActor->bSelected && SrcActor->IsBrush() )
