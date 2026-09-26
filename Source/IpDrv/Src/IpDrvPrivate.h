@@ -195,23 +195,10 @@ inline int getlocalhostaddr( FOutputDevice& Out, in_addr &HostAddr )
 	IpSetInt( HostAddr, INADDR_ANY );
 	TCHAR Home[256]=TEXT(""), HostName[256]=TEXT("");
 
-#ifdef PLATFORM_DREAMCAST
-	// Initialize network stats to ensure net_default_dev is set
-	net_ipv4_get_stats();
-	
-	if( !net_default_dev )
-	{
-		// TODO: Modem support
-		Out.Logf( TEXT("%s: No network devices available"), SOCKET_API );
-		return 0;
-	}
-	appStrcpy( HostName, TEXT("localhost") );
-#else
 	ANSICHAR AnsiHostName[256]="";
 	if( gethostname( AnsiHostName, 256 ) )
 		Out.Logf( TEXT("%s: gethostname failed (%s)"), SOCKET_API, SocketError() );
 	appStrcpy( HostName, appFromAnsi(AnsiHostName) );
-#endif
 
 	debugf( NAME_Init, TEXT("%s: gethostname: %s"), SOCKET_API, HostName );
 
@@ -232,14 +219,6 @@ inline int getlocalhostaddr( FOutputDevice& Out, in_addr &HostAddr )
 	}
 	else
 	{
-#ifdef PLATFORM_DREAMCAST
-		// Get IP address from KOS network device
-		IpSetBytes( HostAddr, 
-			net_default_dev->ip_addr[0],
-			net_default_dev->ip_addr[1],
-			net_default_dev->ip_addr[2],
-			net_default_dev->ip_addr[3] );
-#else
 		HOSTENT* HostEnt = gethostbyname( appToAnsi(HostName) ); 
 		if( HostEnt==NULL )
 		{
@@ -256,7 +235,6 @@ inline int getlocalhostaddr( FOutputDevice& Out, in_addr &HostAddr )
 			if( !ParseParam(appCmdLine(),TEXT("PRIMARYNET")) )
 				CanBindAll = 1;
 		}
-#endif
 
 		static UBOOL First=0;
 		if( !First )

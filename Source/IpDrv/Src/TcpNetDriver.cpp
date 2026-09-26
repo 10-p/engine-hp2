@@ -39,7 +39,7 @@ UBOOL GInitialized;
 //
 class DLL_EXPORT_CLASS UTcpipConnection : public UNetConnection
 {
-	DECLARE_CLASS(UTcpipConnection,UNetConnection,CLASS_Config|CLASS_Transient)
+	DECLARE_CLASS(UTcpipConnection,UNetConnection,CLASS_Config|CLASS_Transient,IpDrv)
 	NO_DEFAULT_CONSTRUCTOR(UTcpipConnection)
 
 	// Variables.
@@ -160,7 +160,7 @@ IMPLEMENT_CLASS(UTcpipConnection);
 //
 class DLL_EXPORT_CLASS UTcpNetDriver : public UNetDriver
 {
-	DECLARE_CLASS(UTcpNetDriver,UNetDriver,CLASS_Transient|CLASS_Config)
+	DECLARE_CLASS(UTcpNetDriver,UNetDriver,CLASS_Transient|CLASS_Config,IpDrv)
 
 	// Variables.
 	sockaddr_in	LocalAddr;
@@ -216,48 +216,6 @@ class DLL_EXPORT_CLASS UTcpNetDriver : public UNetDriver
 		guard(UTcpNetDriver::TickDispatch);
 		Super::TickDispatch( DeltaTime );
 
-#ifdef PLATFORM_DREAMCAST
-		// Dreamcast: simpler non-blocking poll
-		BYTE Data[NETWORK_MAX_PACKET];
-		sockaddr_in FromAddr;
-		for( ; ; )
-		{
-			socklen_t FromSize = sizeof(FromAddr);
-			INT Size = recvfrom( Socket, (char*)Data, sizeof(Data), 0, (sockaddr*)&FromAddr, &FromSize );
-
-			if( Size==SOCKET_ERROR )
-			{
-				INT Err = WSAGetLastError();
-				if( Err==WSAEWOULDBLOCK || Err==EAGAIN || Err==EWOULDBLOCK || Err==EINPROGRESS )
-					break;
-				static UBOOL FirstError=1;
-				if( FirstError )
-				{
-					debugf( TEXT("UDP recvfrom error: %i"), Err );
-					FirstError = 0;
-				}
-				break;
-			}
-
-			UTcpipConnection* Connection = NULL;
-			if( GetServerConnection() && IpMatches(GetServerConnection()->RemoteAddr,FromAddr) )
-				Connection = GetServerConnection();
-			for( INT i=0; i<ClientConnections.Num() && !Connection; i++ )
-				if( IpMatches( ((UTcpipConnection*)ClientConnections(i))->RemoteAddr, FromAddr ) )
-					Connection = (UTcpipConnection*)ClientConnections(i);
-
-			if( !Connection && Notify->NotifyAcceptingConnection()==ACCEPTC_Accept )
-			{
-				Connection = new UTcpipConnection( Socket, this, FromAddr, USOCK_Open, 0, FURL() );
-				Connection->URL.Host = IpString(FromAddr.sin_addr);
-				Notify->NotifyAcceptedConnection( Connection );
-				ClientConnections.AddItem( Connection );
-			}
-
-			if( Connection )
-				Connection->ReceivedRawPacket( Data, Size );
-		}
-#else
 		// Process all incoming packets.
 		BYTE Data[NETWORK_MAX_PACKET];
 		sockaddr_in FromAddr;
@@ -312,7 +270,6 @@ class DLL_EXPORT_CLASS UTcpNetDriver : public UNetDriver
 			if( Connection )
 				Connection->ReceivedRawPacket( Data, Size );
 		}
-#endif
 		unguard;
 	}
 	FString LowLevelGetNetworkNumber()
@@ -354,19 +311,15 @@ class DLL_EXPORT_CLASS UTcpNetDriver : public UNetDriver
 			Error = FString::Printf( TEXT("WinSock: socket failed (%i)"), SocketError() );
 			return 0;
 		}
-#ifndef PLATFORM_DREAMCAST
 		UBOOL TrueBuffer=1;
 		if( setsockopt( Socket, SOL_SOCKET, SO_BROADCAST, (char*)&TrueBuffer, sizeof(TrueBuffer) ) )
 		{
 			Error = FString::Printf( TEXT("%s: setsockopt SO_BROADCAST failed (%i)"), SOCKET_API, SocketError() );
 			return 0;
 		}
-#endif
-#ifndef PLATFORM_DREAMCAST
 		UBOOL Yes=1;
 		if( setsockopt( Socket, SOL_SOCKET, SO_REUSEADDR, (char*)&Yes, sizeof(Yes) ) )
 			debugf(TEXT("setsockopt with SO_REUSEADDR failed"));
-#endif
 		// Increase socket queue size, because we are polling rather than threading
 		// and thus we rely on Windows Sockets to buffer a lot of data on the server.
 		INT RecvSize = Connect ? 0x8000 : 0x20000, SizeSize=sizeof(RecvSize);

@@ -72,11 +72,9 @@ void ATcpLink::execBindPort( FFrame& Stack, RESULT_DECL )
 		{
 			Socket = socket( AF_INET, SOCK_STREAM, IPPROTO_TCP );
 			INT optval = 1;
-#ifndef PLATFORM_DREAMCAST
 			// ufront 2.33: WinSock types optval as `const char*` where POSIX has `const void*`. The cast
 			// satisfies both — char* converts to void* implicitly, so no platform behaves differently.
 			setsockopt( Socket, SOL_SOCKET, SO_REUSEADDR, (const char*)&optval, sizeof(INT) );
-#endif
 			if( GetSocket() != INVALID_SOCKET )
 			{
 				ling.l_onoff  = 1;	// linger on

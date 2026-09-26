@@ -86,7 +86,7 @@ public:
         Parms.Addr=Addr;
         ProcessEvent(FindFunctionChecked(IPDRV_Resolved),&Parms);
     }
-    DECLARE_CLASS(AInternetLink,AInternetInfo,0|CLASS_Transient)
+    DECLARE_CLASS(AInternetLink,AInternetInfo,0|CLASS_Transient,IpDrv)
     #include "AInternetLink.h"
 };
 
@@ -138,7 +138,7 @@ public:
         Parms.Text=Text;
         ProcessEvent(FindFunctionChecked(IPDRV_ReceivedText),&Parms);
     }
-    DECLARE_CLASS(AUdpLink,AInternetLink,0|CLASS_Transient)
+    DECLARE_CLASS(AUdpLink,AInternetLink,0|CLASS_Transient,IpDrv)
     #include "AUdpLink.h"
 };
 
@@ -225,7 +225,7 @@ public:
     {
         ProcessEvent(FindFunctionChecked(IPDRV_Accepted),NULL);
     }
-    DECLARE_CLASS(ATcpLink,AInternetLink,0|CLASS_Transient)
+    DECLARE_CLASS(ATcpLink,AInternetLink,0|CLASS_Transient,IpDrv)
     #include "ATcpLink.h"
 };
 

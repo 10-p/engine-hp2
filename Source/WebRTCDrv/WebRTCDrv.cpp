@@ -33,7 +33,7 @@ IMPLEMENT_PACKAGE(WebRTCDrv);
 // registers the listen peer as "<prefix>-<room>-srv"). Engine-specific by design — engine-ut99 only ever
 // hosts UnrealTournament, exactly as engine-ut2004 hardcodes "ut2k4" (DATA-not-code governs the generic
 // frontend/glue, not the per-game engine repos).
-#define WEBRTC_PEER_PREFIX      "ut99"
+#define WEBRTC_PEER_PREFIX      "hp2"   // == targets/hp2/target.json network.peerPrefix
 
 // Packet sizing (parity with UTcpipConnection's UDP model).
 #define WEBRTC_MAX_PACKET       (512)
@@ -90,7 +90,7 @@ static void ToAnsiBuf( const TCHAR* Src, ANSICHAR* Dst, INT Max )
 -----------------------------------------------------------------------------*/
 class DLL_EXPORT_CLASS UWebRTCConnection : public UNetConnection
 {
-	DECLARE_CLASS(UWebRTCConnection,UNetConnection,CLASS_Config|CLASS_Transient)
+	DECLARE_CLASS(UWebRTCConnection,UNetConnection,CLASS_Config|CLASS_Transient,WebRTCDrv)
 	NO_DEFAULT_CONSTRUCTOR(UWebRTCConnection)
 
 	// Variables.
@@ -171,7 +171,7 @@ static UWebRTCNetDriver* GClientDriver = NULL;
 
 class DLL_EXPORT_CLASS UWebRTCNetDriver : public UNetDriver
 {
-	DECLARE_CLASS(UWebRTCNetDriver,UNetDriver,CLASS_Transient|CLASS_Config)
+	DECLARE_CLASS(UWebRTCNetDriver,UNetDriver,CLASS_Transient|CLASS_Config,WebRTCDrv)
 
 	// Variables.
 	FString	RoomName;
@@ -396,9 +396,9 @@ class DLL_EXPORT_CLASS UWebRTCNetDriver : public UNetDriver
 		// browser actually wants — how many people are in there right now.
 		if( bIsListenServer )
 		{
-			static DOUBLE LastPush = 0.0;
-			DOUBLE Now = appSeconds();
-			if( Now - LastPush > 1.0 )
+			static FTime LastPush;               // HP2 433: appSeconds() returns FTime
+			FTime Now = appSeconds();
+			if( Now - LastPush > 1.f )
 			{
 				LastPush = Now;
 				FString SName = ServerName, MapName = TEXT("?"), GType = TEXT("");
@@ -426,7 +426,7 @@ class DLL_EXPORT_CLASS UWebRTCNetDriver : public UNetDriver
 					}
 				}
 				if( !SName.Len() )
-					SName = TEXT("UT Server");
+					SName = TEXT("HP2 Server");
 				// ⚠ appToAnsi() returns ONE shared static buffer, so three calls in a single expression
 				// would clobber each other the moment this engine is built UNICODE. Copy each into its
 				// own frame buffer.

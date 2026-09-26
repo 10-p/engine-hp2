@@ -7,10 +7,9 @@ set(SRC_FILES
   "Src/UnSocket.cpp"
   "Src/InternetLink.cpp"
   "Src/TcpNetDriver.cpp"
-  "Src/UMasterServerCommandlet.cpp"
-  "Src/UUpdateServerCommandlet.cpp"
-
 )
+# HP2: UMasterServerCommandlet/UUpdateServerCommandlet (UT99 master-server tooling) are not built -- HP2 has no
+# server browser or master server. No IpDrv.u ships either: TcpNetDriver needs no script class.
 
 add_library(${PROJECT_NAME} ${LIB_TYPE} ${SRC_FILES})
 

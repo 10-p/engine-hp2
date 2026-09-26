@@ -86,6 +86,9 @@ struct FLanServer
 static TArray<FString>    GRooms;
 static TArray<FLanServer> GServers;
 static UBOOL              GDiscoveryPending = 0;
+// HP2 433: appSeconds() returns FTime (32.32 fixed point, no < or >=); this file keeps DOUBLE timestamps.
+static inline DOUBLE LanNow() { return (DOUBLE)appSeconds().GetFloat(); }
+
 static DOUBLE             GLastDiscoveryAt  = 0.0;
 // Set by the net driver when WE are the listen server, so we never advertise ourselves to ourselves.
 static FString            GLocalRoom;
@@ -185,7 +188,7 @@ static FString BeaconProduct()
 
 static void KickDiscovery()
 {
-	DOUBLE Now = appSeconds();
+	DOUBLE Now = LanNow();
 	if( GDiscoveryPending || Now - GLastDiscoveryAt < LAN_DISCOVERY_MIN_INTERVAL )
 		return;
 	GLastDiscoveryAt  = Now;
@@ -214,7 +217,7 @@ static void PumpDiscovery()
 {
 	if( !GDiscoveryPending )
 		return;
-	const DOUBLE PumpNow = appSeconds();
+	const DOUBLE PumpNow = LanNow();
 	if( PumpNow - GLastPumpAt < 0.25 )
 		return;
 	GLastPumpAt = PumpNow;
@@ -427,7 +430,7 @@ UBOOL WebRTCLan_Send( const void* LinkId, DWORD DestAddr, INT DestPort, const TC
 		FLanLink& L = TouchLink( LinkId );
 		L.WantsBeacons  = 0;
 		L.bSweepPending = 1;
-		L.SweepDeadline = appSeconds() + 30.0;   // stop re-kicking eventually; the browser has REFRESH
+		L.SweepDeadline = LanNow() + 30.0;   // stop re-kicking eventually; the browser has REFRESH
 		PumpDiscovery();
 		if( GServers.Num() > 0 )
 		{
@@ -485,7 +488,7 @@ UBOOL WebRTCLan_NextReply( const void* LinkId, DWORD* OutAddr, INT* OutPort, FSt
 	FLanLink* L = FindLink( LinkId );
 	if( L && L->WantsBeacons )
 	{
-		DOUBLE Now = appSeconds();
+		DOUBLE Now = LanNow();
 		if( Now >= L->NextBeaconAt )
 		{
 			L->NextBeaconAt = Now + LAN_BEACON_REPEAT_INTERVAL;
@@ -501,7 +504,7 @@ UBOOL WebRTCLan_NextReply( const void* LinkId, DWORD* OutAddr, INT* OutPort, FSt
 		// ⚠ While a sweep is outstanding, say so every few seconds. "The link stopped ticking" and
 		// "discovery found nothing" produce the same silence otherwise, and telling them apart by
 		// inference has already been wrong once in both directions.
-		DOUBLE Now2 = appSeconds();
+		DOUBLE Now2 = LanNow();
 		if( Now2 - L->LastPendingLog > 5.0 )
 		{
 			L->LastPendingLog = Now2;
@@ -514,7 +517,7 @@ UBOOL WebRTCLan_NextReply( const void* LinkId, DWORD* OutAddr, INT* OutPort, FSt
 			L->bSweepPending = 0;
 			debugf( NAME_DevNet, TEXT("[WebRTC-LAN] answered a pending LAN sweep with %i server(s)"), GServers.Num() );
 		}
-		else if( appSeconds() > L->SweepDeadline )
+		else if( LanNow() > L->SweepDeadline )
 		{
 			L->bSweepPending = 0;
 			debugf( NAME_DevNet, TEXT("[WebRTC-LAN] LAN sweep found nothing before its deadline") );
