@@ -74,3 +74,7 @@ One dated line per green milestone (PLAN §10). Newest last.
   the title song is `Music_StoryBook_v2.ogg` (not `Intro_Movie_Music_Edit`); `Peeves_chase_v2 _mx.ogg` has a
   space in its name (FetchFS encodes it); `PrivetDr` asks for `Music_temp_E3_cut_scene`, absent from retail.
   Owner decisions O1–O5 applied (`-DEBUGMODE` `febcffb`; multiplayer hidden, ufrontend `6662d08`; gl4es original).
+- 2026-09-26 — **Publish folder (O2, no upload)**: `yarn publish-all --out /home/ion/hp2-ufrontend/publish-hp2
+  --target targets/hp2/target.json` rebuilt both web engines at HEAD and wrote a verified 369 MB tree (zstd -19
+  assets, 460/460 manifest entries, 714/714 deps, one-card portal one level up). `publish-hp2/hp2/` served as a
+  site root boots `Ch1Rictusempra` on WebGL 2 with audio bound and no debug overlay. Upload/Azure await the owner.
