@@ -2478,6 +2478,13 @@ UObject* UObject::LoadPackage( UObject* InOuter, const TCHAR* Filename, DWORD Lo
 	{
 		// Create a new linker object which goes off and tries load the file.
 		ULinkerLoad* Linker = GetPackageLinker( InOuter, Filename ? Filename : InOuter->GetName(), LoadFlags | LOAD_Throw, NULL, NULL );
+		// HP2 port (web-layer L10, a template gap): with catching off, GetPackageLinker's web branches return NULL
+		// instead of throwing (SafeLoadError already reported why), so a missing package must not be dereferenced.
+		if( !Linker )
+		{
+			EndLoad();
+			return NULL;
+		}
 		if( !(LoadFlags & LOAD_Verify) )
 			Linker->LoadAllObjects();
 		Result = Linker->LinkerRoot;
