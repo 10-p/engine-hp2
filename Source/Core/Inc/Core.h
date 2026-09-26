@@ -296,6 +296,9 @@ public:
 	virtual void SaveObject( UObject* Object )=0;
 	virtual void SaveArray( UObject* Object, FArray* Array, INT Index, INT Count, INT Oper, INT ElementSize, STRUCT_AR Serializer, STRUCT_DTOR Destructor )=0;
 	virtual void Apply()=0;
+	// Editor's UnScrCom deletes a transaction through this base (ucc make); without a virtual destructor that
+	// is undefined behaviour under GCC/clang. Declared last so the existing slots keep their order.
+	virtual ~FTransactionBase() {}
 };
 
 // File manager.
