@@ -56,6 +56,12 @@ if(USE_GL4ES)
   set(BUILD_NOPENGLDRV ON)
 endif()
 
+# HP2 bring-up (PLAN Phase E flips this): the copied NOpenALDrv is still the template's v400 driver (libxmp/
+# .umx, the v400 UAudioSubsystem face) and cannot compile against HP2's UnAudio.h. Forced OFF on EVERY target
+# with set() (a cached -DBUILD_NOPENALDRV=ON from a preset must not win); the launcher's AudioDevice choice is
+# guarded on HP2_HAS_NOPENALDRV and falls back to SoundDrv.NullAudioSubsystem.
+set(BUILD_NOPENALDRV OFF)
+
 # ---------------------------------------------------------------------------------------------------------
 # Emscripten / WebAssembly — force the web-safe configuration (the wasm presets need no extra -D flags).
 # ---------------------------------------------------------------------------------------------------------
@@ -67,10 +73,6 @@ if(EMSCRIPTEN)
   set(USE_GL4ES ON)               # tree keeps its cached value (the template's 2.19 trap)
   set(BUILD_NOPENGLDRV ON)
   set(BUILD_NULLSOUNDDRV ON)
-  # Phase E flips this ON. Until then the copied NOpenALDrv is the template's v400 driver (libxmp/.umx, the
-  # v400 UAudioSubsystem face) and cannot compile against HP2's UnAudio.h; the launcher's web AudioDevice
-  # override is guarded on HP2_HAS_NOPENALDRV and falls back to SoundDrv.NullAudioSubsystem.
-  set(BUILD_NOPENALDRV OFF)
   add_definitions(-DASM=0)        # Core/Render/SoftDrv use their portable (non-x86) code paths
   # -pthread must be a COMPILE option, not just a link option: it defines __EMSCRIPTEN_PTHREADS__, which the
   # threaded code paths (NSDLViewport's direct WebGL context creation, XOpenGL's entry-point resolver,
@@ -288,8 +290,9 @@ add_subdirectory(Engine)
 add_subdirectory(Render)
 add_subdirectory(IpDrv)
 add_subdirectory(Fire)
-# ucc — command-line tool (commandlets, `make`, dedicated server). Native-only.
-if(NOT EMSCRIPTEN)
+# ucc — command-line tool (commandlets, `make`, dedicated server). Native Linux only for now: no Windows UCC
+# until someone needs it (PLAN Phase B step 6 / Phase F).
+if(NOT EMSCRIPTEN AND NOT MINGW)
   add_subdirectory(UCC)
 endif()
 

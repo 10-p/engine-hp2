@@ -12,40 +12,9 @@ Revision history:
 	#include <errno.h>
 	#include <sys/stat.h>
 #endif
+#include <malloc.h>
 #include <stdio.h>
-
-// Core and Engine
-#include "Engine.h"
-
-#if __STATIC_LINK
-
-// Extra stuff for static links for Engine.
-#include "UnEngineNative.h"
-#include "UnCon.h"
-#include "UnRender.h"
-#include "UnNet.h"
-
-// NullNetDriver static stuff
-#include "NullNetDriver.h"
-
-#ifdef __LINUX_X86__
-// Fire static stuff.
-//#include "UnFractal.h"
-
-// IpDrv static stuff.
-//#include "UnIpDrv.h"
-//#include "UnTcpNetDriver.h"
-//#include "UnIpDrvCommandlets.h"
-//#include "UnIpDrvNative.h"
-
-// UWeb static stuff
-//#include "UWeb.h"
-//#include "UWebNative.h"
-#endif
-
-#endif
-
-INT GFilesOpen, GFilesOpened;
+#include "Core.h"
 
 /*-----------------------------------------------------------------------------
 	Global variables.
@@ -73,14 +42,9 @@ FFeedbackContextAnsi Warn;
 #if WIN32
 	#include "FFileManagerWindows.h"
 	FFileManagerWindows FileManager;
-	#include "FMallocWindows.h"
-	FMallocWindows Malloc;
-#elif __PSX2_EE__
-	#include "FFileManagerPSX2.h"
-	FFileManagerPSX2 FileManager;
 	#include "FMallocAnsi.h"
 	FMallocAnsi Malloc;
-#elif __LINUX_X86__
+#elif __LINUX__
 	#include "FFileManagerLinux.h"
 	FFileManagerLinux FileManager;
 	#include "FMallocAnsi.h"
@@ -118,47 +82,9 @@ void ShowBanner( FOutputDevice& Warn )
 }
 int main( int argc, char* argv[] )
 {
-	#if __STATIC_LINK
-	// Clean lookups.
-	for (INT k=0; k<ARRAY_COUNT(GNativeLookupFuncs); k++)
-	{
-		GNativeLookupFuncs[k] = NULL;
-	}
-
-	// Core lookups.
-	GNativeLookupFuncs[0] = &FindCoreUObjectNative;
-	GNativeLookupFuncs[1] = &FindCoreUCommandletNative;
-
-	// Engine lookups.
-	GNativeLookupFuncs[2] = &FindEngineAActorNative;
-	GNativeLookupFuncs[3] = &FindEngineAPawnNative;
-	GNativeLookupFuncs[4] = &FindEngineAPlayerPawnNative;
-	GNativeLookupFuncs[5] = &FindEngineADecalNative;
-	GNativeLookupFuncs[6] = &FindEngineAStatLogNative;
-	GNativeLookupFuncs[7] = &FindEngineAStatLogFileNative;
-	GNativeLookupFuncs[8] = &FindEngineAZoneInfoNative;
-	GNativeLookupFuncs[9] = &FindEngineAWarpZoneInfoNative;
-	GNativeLookupFuncs[10] = &FindEngineALevelInfoNative;
-	GNativeLookupFuncs[11] = &FindEngineAGameInfoNative;
-	GNativeLookupFuncs[12] = &FindEngineANavigationPointNative;
-	GNativeLookupFuncs[13] = &FindEngineUCanvasNative;
-	GNativeLookupFuncs[14] = &FindEngineUConsoleNative;
-	GNativeLookupFuncs[15] = &FindEngineUScriptedTextureNative;
-
-	#ifdef __LINUX_X86__
-	// IpDrv lookups.
-//	GNativeLookupFuncs[16] = &FindIpDrvAInternetLinkNative;
-//	GNativeLookupFuncs[17] = &FindIpDrvAUdpLinkNative;
-//	GNativeLookupFuncs[18] = &FindIpDrvATcpLinkNative;
-
-	// UWeb lookups.
-//	GNativeLookupFuncs[19] = &FindUWebUWebResponseNative;
-//	GNativeLookupFuncs[20] = &FindUWebUWebRequestNative;
-	#endif
-
-	#endif
-
-	#if !_MSC_VER
+	// ufront 2.12 (native ucc): __Context (the legacy setjmp exception context) was removed in the modern
+	// ut99 native port — the modernized Launch.cpp never initializes it. Guarded out to build against Core.
+	#if !_MSC_VER && defined(UE_LEGACY_CONTEXT)
 		__Context::StaticInit();
 	#endif
 
@@ -172,7 +98,11 @@ int main( int argc, char* argv[] )
 
 		#if !_MSC_VER
 		// Set module name.
-		appStrcpy( GModule, argv[0] );
+		// HP2: basename of argv[0], bounded (GModule is TCHAR[32]) -> ucc-bin.log for absolute invocations too.
+		{
+			const char* Base = strrchr( argv[0], '/' );
+			appStrncpy( GModule, Base ? Base+1 : argv[0], ARRAY_COUNT(GModule) );
+		}
 		#endif
 		
 		// Parse command line.
@@ -191,33 +121,15 @@ int main( int argc, char* argv[] )
 			for( INT i=2; i<argc; i++ )
 			{
 				if( i>2 )
-					appStrcat( CmdLine, " " );
-				appStrcat( CmdLine, argv[i] );
+					appStrncat( CmdLine, " ", ARRAY_COUNT(CmdLine) );
+				appStrncat( CmdLine, argv[i], ARRAY_COUNT(CmdLine) );
 			}
 		#endif
 
-		// Init engine core.
+		// Init.
+		// HP2 retail ucc read/wrote its own HP.ini (the "HP" literal in UCC.exe), keeping `make`'s EditPackages
+		// edits out of the game's Game.ini.
 		appInit( TEXT("HP"), CmdLine, &Malloc, &Log, &Error, &Warn, &FileManager, FConfigCacheIni::Factory, 1 );
-
-		// Init static classes.
-		#if __STATIC_LINK
-			AUTO_INITIALIZE_REGISTRANTS_ENGINE;
-			AUTO_INITIALIZE_REGISTRANTS_NULLNETDRIVER;
-			#ifdef __LINUX_86__
-		//	AUTO_INITIALIZE_REGISTRANTS_FIRE;
-		//	AUTO_INITIALIZE_REGISTRANTS_IPDRV;
-		//	AUTO_INITIALIZE_REGISTRANTS_UWEB;
-			#endif
-		#endif
-
-		// Set up meta package readers.
-//		for( i=0; i<GSys->MetaPackages.Num(); i++ )
-//		{
-//			printf("%s\n", *GSys->MetaPackages(i));
-//			((FFileManagerPSX2*) GFileManager)->AddMetaArchive( *GSys->MetaPackages(i), &Error );
-//		}
-
-		// Get the ucc stuff going.	
 		UObject::SetLanguage(TEXT("int"));
 		FString Token = argc>1 ? appFromAnsi(argv[1]) : TEXT("");
 		TArray<FRegistryObjectInfo> List;
@@ -276,7 +188,8 @@ int main( int argc, char* argv[] )
 				Class = UObject::StaticLoadClass( UCommandlet::StaticClass(), NULL, *(Token+TEXT("Commandlet")), NULL, LoadFlags, NULL );
 			if( !Class )
 			{
-				for( INT i=0; i<List.Num(); i++ )
+				INT i; // ufront 2.12: hoisted out of the for (retail code relied on MSVC's old for-scope; used below)
+				for( i=0; i<List.Num(); i++ )
 				{
 					FString Str = List(i).Object;
 					while( Str.InStr(TEXT("."))>=0 )

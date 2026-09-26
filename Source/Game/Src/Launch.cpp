@@ -71,7 +71,7 @@ UEngine* GWebRTCEngine = NULL;
 #define UFRONT_PACE_MAX 4096
 struct FUfrontPaceSample
 {
-	DOUBLE Start;      // appSeconds() at the top of the frame
+	FLOAT  Start;      // seconds since the first recorded frame (HP2 433: appSeconds() is FTime)
 	FLOAT  TickMs;
 	FLOAT  YieldMs;
 	INT    SleepReqMs; // what the cap computed; INDEX_NONE marks the yield (no-budget) path
@@ -85,7 +85,7 @@ static FUfrontPaceSample GUfrontPace[UFRONT_PACE_MAX];
 static INT GUfrontPaceHead  = 0; // next write slot
 static INT GUfrontPaceCount = 0; // total frames ever recorded (so the ring's fill level is known)
 
-static void UfrontPaceRecord( DOUBLE Start, FLOAT TickMs, FLOAT YieldMs, INT SleepReqMs )
+static void UfrontPaceRecord( FLOAT Start, FLOAT TickMs, FLOAT YieldMs, INT SleepReqMs )
 {
 	FUfrontPaceSample& S = GUfrontPace[GUfrontPaceHead];
 	S.Start      = Start;
@@ -104,7 +104,7 @@ static FString UfrontPaceDump()
 {
 	const INT N = Min(GUfrontPaceCount, (INT)UFRONT_PACE_MAX);
 	const INT First = (GUfrontPaceHead - N + UFRONT_PACE_MAX) % UFRONT_PACE_MAX;
-	FString Out = FString::Printf( TEXT("ufront_pacing v3 frames=%i total=%i now=%f\n"), N, GUfrontPaceCount, appSeconds() );
+	FString Out = FString::Printf( TEXT("ufront_pacing v3 frames=%i total=%i now=%f\n"), N, GUfrontPaceCount, (DOUBLE)appSeconds().GetFloat() );
 	Out += TEXT("start_s,tick_ms,yield_ms,sleep_req_ms,heap_mb\n");
 	for( INT i=0; i<N; i++ )
 	{
@@ -173,83 +173,7 @@ FFileManagerLinux FileManager;
 // Config.
 #include "FConfigCacheIni.h"
 
-#ifdef PLATFORM_DREAMCAST
-#include <kos.h>
-#include <malloc.h>
-#include <assert.h>
-#include <string.h>
-#include <stdarg.h>
-#include <kos/thread.h>
-#define MAIN_STACK_SIZE (32 * 1024)  
-#ifdef DREAMCAST_USE_FATFS
-extern "C" {
-#include <fatfs.h>
-}
-#endif
-KOS_INIT_FLAGS( INIT_DEFAULT | INIT_CDROM | INIT_CONTROLLER | INIT_KEYBOARD | INIT_MOUSE | INIT_VMU | INIT_NET );
-#endif
 
-#ifdef PLATFORM_DREAMCAST
-// fix thread stack underrun
-static void init_thread_stack(void) {
-    kthread_t *current = thd_get_current();
-    if (current) {
-        void *new_stack = malloc(MAIN_STACK_SIZE);
-        if (new_stack) {
-            current->stack = new_stack;
-            current->stack_size = MAIN_STACK_SIZE;
-            current->flags |= THD_OWNS_STACK;
-        }
-    }
-}
-
-// What dbgio device was active at startup
-DLL_EXPORT const char* GStartupDbgDev = nullptr;
-
-//
-// Display error and lock up.
-//
-void FatalError( const char* Fmt, ... ) __attribute__((noreturn));
-void FatalError( const char* Fmt, ... )
-{
-	char Msg[2048];
-
-	va_list Args;
-	va_start( Args, Fmt );
-	vsnprintf( Msg, sizeof( Msg ), Fmt, Args );
-	va_end( Args );
-
-
-	printf( "%s\n\n", Msg );
-
-	arch_stk_trace( 2 );
-
-	while (true)
-		thd_sleep( 100 );
-}
-
-//
-// Handle assertion failure.
-//
-void HandleAssertFail( const char* File, int Line, const char* Expr, const char* Msg, const char* Func )
-{
-	FatalError( "ASSERTION FAILED:\nLoc: %s:%d (%s)\nExpr: %s\n%s", File, Line, Func, Expr, Msg);
-}
-
-void HandleIrqException( irq_t Code, irq_context_t* Context, void* Data )
-{
-	bfont_draw_str_vram_fmt( 8, 8, true, "UNHANDLED EXCEPTION 0x%08x", Code );
-	bfont_draw_str_vram_fmt( 8, 32, true, "PC: %p PR: %p", (void*)Context->pc, (void*)Context->pr );
-	bfont_draw_str_vram_fmt( 8, 56, true, "SR: %p R0: %p", (void*)Context->sr, (void*)Context->r[0] );
-	bfont_draw_str_vram_fmt( 8, 80, true, "PROBABLY OUT OF MEMORY");
-
-	arch_stk_trace_at( Context->r[14], 0 );
-
-	volatile INT Dummy = 1;
-	while (Dummy);
-}
-
-#endif
 
 /*-----------------------------------------------------------------------------
 	Initialization
@@ -257,7 +181,7 @@ void HandleIrqException( irq_t Code, irq_context_t* Context, void* Data )
 
 //
 // ufront 2.9 / 2.12 — unified render-device selection, SHARED between native and web (the
-// #ifdef __EMSCRIPTEN__ guard was removed 2026-07-16 so `./UnrealTournament -SOFTWARERENDERER` /
+// #ifdef __EMSCRIPTEN__ guard was removed 2026-07-16 so `./Game -SOFTWARERENDERER` /
 // -XOPENGLRENDERER / … work identically on native — the run-tree launch scripts are only a testing
 // convenience; the shipped binary is run as-is with a switch).
 //
@@ -274,7 +198,6 @@ static const FRenderSwitch GRenderSwitches[] =
 {
 	{ TEXT("XOPENGLRENDERER"),   TEXT("XOpenGLDrv.XOpenGLRenderDevice") },
 	{ TEXT("UTGLRRENDERER"),     TEXT("OpenGLDrv.OpenGLRenderDevice") },
-	{ TEXT("NOPENGLESRENDERER"), TEXT("NOpenGLESDrv.NOpenGLESRenderDevice") },
 	// -SOFTWARERENDERER selects SoftDrv.SoftwareRenderDevice (the CPU rasterizer), ported into ut99 from the
 	// original UT99 v400 SoftDrv source + engine-unreal1's gcc/wasm portability changes (ASM=0 -> the portable
 	// #if !ASM paths; empty MMX stubs + #if ASM body wraps; Line.h VC++ macros -> no 2D lines on gcc/wasm).
@@ -290,7 +213,6 @@ static const TCHAR* GRenderPreference[] =
 {
 	TEXT("XOpenGLDrv.XOpenGLRenderDevice"),
 	TEXT("OpenGLDrv.OpenGLRenderDevice"),
-	TEXT("NOpenGLESDrv.NOpenGLESRenderDevice"),
 };
 // The class a -*RENDERER switch requested (empty if none) — persisted after a successful Init().
 static FString GRequestedRenderDevice;
@@ -440,6 +362,15 @@ static void SelectRenderDevice()
 			return;
 		}
 	}
+	// HP2: 4) nothing hardware is compiled in (the Phase-B bring-up builds only SoftDrv/NullDrv) -> the
+	//    software rasterizer rather than leaving the retail ini's D3DDrv.D3DRenderDevice, which the engine
+	//    loads LOAD_NoFail and would abort on.
+	if( IsPackageClassAvailable( TEXT("SoftDrv.SoftwareRenderDevice") ) )
+	{
+		debugf( NAME_Warning, TEXT("ufront 2.9: no hardware render device is compiled into this build -> SoftDrv.SoftwareRenderDevice") );
+		SetRenderDeviceConfig( TEXT("SoftDrv.SoftwareRenderDevice") );
+		return;
+	}
 	debugf( NAME_Warning, TEXT("ufront 2.9: no known render device is compiled into this build!") );
 }
 
@@ -475,15 +406,15 @@ static void PersistRenderChoiceIfSwitched()
 static UEngine* InitEngine()
 {
 	guard(InitEngine);
-	DOUBLE LoadTime = appSeconds();
+	FTime LoadTime = appSeconds();
 
 	// Set exec hook.
 	GExec = NULL;
 
 #ifdef __EMSCRIPTEN__
-	// ufront 2.7c: the shipped Default.ini is Dreamcast-configured (PVRDrv/KOSDrv/AICADrv). Force the web
+	// ufront 2.7c: the shipped Default.ini names Win32 drivers (WinDrv/ALAudio/D3DDrv). Force the web
 	// driver set BEFORE Engine->Init() loads the subsystems — mirrors engine-unreal1's SDLLaunch override.
-	// SDL2 windowing (NSDLDrv) + NOpenGLESDrv (GLES2 -> WebGL) + the null (silent) audio subsystem. The net
+	// SDL2 windowing (NSDLDrv) + the audio subsystem below. The net
 	// driver auto-switches IpDrv.TcpNetDriver -> WebRTCDrv in step 2.7d. Keeping this in code (not the asset
 	// inis) leaves the game data pristine — the override travels with the engine.
 	GConfig->SetString( TEXT("Engine.Engine"), TEXT("ViewportManager"),      TEXT("NSDLDrv.NSDLClient") );
@@ -492,7 +423,13 @@ static UEngine* InitEngine()
 	// pumped from Update() (the web build is single-threaded; EFX/HRTF compiled out under NOPENAL_WEB). The
 	// driver's constructor defaults are audible (MasterVolume=255) so no ini is required. Native uses the
 	// same driver (openal-soft, full EFX). Mirrors engine-unreal1.
+#if HP2_HAS_NOPENALDRV
 	GConfig->SetString( TEXT("Engine.Engine"), TEXT("AudioDevice"),          TEXT("NOpenALDrv.NOpenALAudioSubsystem") );
+#else
+	// HP2: until the 433 NOpenALDrv exists (PLAN Phase E) the web build is silent. InitAudio loads the
+	// AudioDevice class LOAD_NoFail, so it must name a driver that is compiled in.
+	GConfig->SetString( TEXT("Engine.Engine"), TEXT("AudioDevice"),          TEXT("SoundDrv.NullAudioSubsystem") );
+#endif
 	// ufront 2.7d: BSD sockets don't work in a browser — auto-switch the net driver to the engine-local
 	// WebRTC driver (its transport is the glue webrtc_* ABI). Mirrors engine-unreal1/engine-ut2004.
 	GConfig->SetString( TEXT("Engine.Engine"), TEXT("NetworkDevice"),        TEXT("WebRTCDrv.WebRTCNetDriver") );
@@ -522,7 +459,7 @@ static UEngine* InitEngine()
 	// insists, they just start OFF and nothing spawns on a normal Start.
 	GConfig->SetString( TEXT("Engine.GameInfo"),           TEXT("bWorldLog"), TEXT("False") );
 	GConfig->SetString( TEXT("Engine.GameInfo"),           TEXT("bLocalLog"), TEXT("False") );
-	GConfig->SetString( TEXT("IpServer.UdpServerUplink"),  TEXT("DoUplink"),  TEXT("False") );
+	// HP2: no IpServer package exists, so the UT99 DoUplink default is not written.
 #endif
 
 #ifndef __EMSCRIPTEN__
@@ -550,14 +487,19 @@ static UEngine* InitEngine()
 
 	// ufront 2.12: unified render-device selection — SHARED native+web, run BEFORE Engine->Init() (which loads
 	// the subsystems). A -*RENDERER switch wins, else a persisted hardware default OR the user's marked pick,
-	// else the preference order. (Was #ifdef __EMSCRIPTEN__; now also honors `./UnrealTournament -SOFTWARERENDERER`
+	// else the preference order. (Was #ifdef __EMSCRIPTEN__; now also honors `./Game -SOFTWARERENDERER`
 	// etc. on native.)
 	SelectRenderDevice();
 
-	// Update first-run.
+	// Update first-run. HP2 433 reads the stamp first (UnEngineWin.h InitEngine); its [FirstRun] Reconfig /
+	// ForceSoftware keys drove the Win32 D3D detection dialogs and are ignored here.
 	INT FirstRun=0;
-	if (FirstRun<ENGINE_VERSION)
+	GConfig->GetInt( TEXT("FirstRun"), TEXT("FirstRun"), FirstRun );
+	if( FirstRun<ENGINE_VERSION )
+	{
+		debugf( NAME_Init, TEXT("First run of this build (FirstRun=%i -> %i)"), FirstRun, ENGINE_VERSION );
 		FirstRun = ENGINE_VERSION;
+	}
 	GConfig->SetInt( TEXT("FirstRun"), TEXT("FirstRun"), FirstRun );
 
 	// Create the global engine object.
@@ -568,7 +510,8 @@ static UEngine* InitEngine()
 		NULL, LOAD_NoFail, NULL 
 	);
 	UEngine* Engine = ConstructObject<UEngine>( EngineClass );
-#ifdef __EMSCRIPTEN__
+	// HP2: on EVERY platform, not only the web -- HP2's retail ini lists the same six UT99 actors, and IpServer/
+	// UWeb do not exist anywhere in HP2 (ULevel::Listen loads each LOAD_NoFail, so any listen would abort).
 	// ufront 2.7d: drop UT99's retail ServerActors before Engine->Init() -> Browse() spins up a listen server
 	// and spawns them. The game ini's [Engine.GameEngine] lists six — IpDrv.UdpBeacon, IpServer.UdpServerQuery,
 	// 3x IpServer.UdpServerUplink (master-server uplinks) and UWeb.WebServer (web-admin) — every one a UDP /
@@ -582,19 +525,15 @@ static UEngine* InitEngine()
 	// UT99 configures these actors (unreal1/ut2004 need no equivalent). ServerPackages (skins) is left intact.
 	if( Engine->IsA(UGameEngine::StaticClass()) )
 		((UGameEngine*)Engine)->ServerActors.Empty();
-#endif
 	Engine->Init();
 	// ufront 2.12: persist a -*RENDERER switch choice so it sticks next boot — SHARED native+web (writes the
 	// ufrontUserRenderDevice marker if Init didn't rewrite GameRenderDevice to a fallback).
 	PersistRenderChoiceIfSwitched();
-#ifdef PLATFORM_DREAMCAST
-	malloc_stats();
-#endif
 #ifdef __EMSCRIPTEN__
 	// ufront 2.7d: expose the running engine to WebRTCDrv (listen-status push) + ue_exec_command (ADR-10).
 	GWebRTCEngine = Engine;
 #endif
-	debugf( TEXT("Startup time: %f seconds."), appSeconds()-LoadTime );
+	debugf( TEXT("Startup time: %f seconds."), appSeconds()-LoadTime ); // FTime - FTime -> FLOAT
 
 	return Engine;
 	unguard;
@@ -611,12 +550,12 @@ void HandleError( const char* Exception )
 	debugf( NAME_Exit, "Exiting due to exception" );
 	GErrorHist[ARRAY_COUNT(GErrorHist)-1]=0;
 #ifdef PLATFORM_SDL
-	SDL_ShowSimpleMessageBox( SDL_MESSAGEBOX_ERROR, LocalizeError("Critical"), GErrorHist, SDL_GetKeyboardFocus() );
-#elif defined(PLATFORM_DREAMCAST)
-	if( Exception )
-		FatalError( "FATAL ERROR:\n%s\n\n%s", Exception, GErrorHist );
-	else
-		FatalError( "FATAL ERROR:\n%s", GErrorHist );
+	// HP2: a modal box under Xvfb/CI (or SDL's dummy/offscreen video) blocks forever on an invisible dialog.
+	const char* VideoDriver = getenv( "SDL_VIDEODRIVER" );
+	const UBOOL Headless = ParseParam( appCmdLine(), TEXT("NOMSGBOX") )
+		|| ( VideoDriver && ( !appStricmp( VideoDriver, "dummy" ) || !appStricmp( VideoDriver, "offscreen" ) ) );
+	if( !Headless )
+		SDL_ShowSimpleMessageBox( SDL_MESSAGEBOX_ERROR, LocalizeError("Critical"), GErrorHist, SDL_GetKeyboardFocus() );
 #endif
 }
 
@@ -634,19 +573,24 @@ static void MainLoop( UEngine* Engine )
 
 	// Loop while running.
 	GIsRunning = 1;
-DOUBLE OldTime = appSeconds();
-	DOUBLE SecondStartTime = OldTime;
+	// HP2 433: appSeconds() returns FTime (32.32 fixed point). FTime - FTime yields FLOAT seconds and is exact
+	// for frame-sized deltas; FTime has >, + and - but no <, so every comparison is written with >.
+	FTime OldTime = appSeconds();
+	FTime SecondStartTime = OldTime;
+#ifdef __EMSCRIPTEN__
+	const FTime PaceEpoch = OldTime;     // pacing-ring timestamps are FLOAT seconds since the loop started
+#endif
 	INT TickCount = 0;
 	while( GIsRunning && !GIsRequestingExit )
 	{
 #ifdef __EMSCRIPTEN__
 		// ufront 2.43 — hoisted out of the guard() blocks below (each opens its own scope, so a variable
 		// declared inside UpdateWorld is not visible in EnforceTickRate where the yield happens).
-		DOUBLE PaceFrameStart = 0.0, PaceTickEnd = 0.0;
+		FTime PaceFrameStart, PaceTickEnd;
 #endif
 		// Update the world.
 		guard(UpdateWorld);
-		DOUBLE NewTime   = appSeconds();
+		FTime  NewTime   = appSeconds();
 		FLOAT  DeltaTime = NewTime - OldTime;
 		Engine->Tick( DeltaTime );
 		if( GWindowManager )
@@ -657,7 +601,7 @@ DOUBLE OldTime = appSeconds();
 #endif
 		OldTime = NewTime;
 		TickCount++;
-		if( OldTime > SecondStartTime + 1 )
+		if( OldTime > SecondStartTime + 1.f )
 		{
 			Engine->CurrentTickRate = (FLOAT)TickCount / (OldTime - SecondStartTime);
 			SecondStartTime = OldTime;
@@ -711,21 +655,21 @@ DOUBLE OldTime = appSeconds();
 		// browser-clamped >= 1 ms timer on every one of them. That distinction is preserved exactly: the cap
 		// below only ever converts spare time into sleep, and never adds a timer to a frame with none.
 		{
-			DOUBLE Budget = Cap>0.0 ? (1.0/Cap) : 0.0;
-			INT SleepMs = (INT)((Budget - (appSeconds()-OldTime)) * 1000.0);
+			FLOAT Budget = Cap>0.f ? (1.f/Cap) : 0.f;
+			INT SleepMs = (INT)((Budget - (appSeconds()-OldTime)) * 1000.f);
 			if( SleepMs > 1 )
 				emscripten_sleep( SleepMs );
 			else
 				ufront_yield_frame();
 			// ufront 2.43 — one sample per frame. Recorded AFTER the yield so YieldMs covers the present
 			// point; SleepReqMs is INDEX_NONE on the yield path so the two mechanisms stay distinguishable.
-			const DOUBLE PaceEnd = appSeconds();
-			UfrontPaceRecord( PaceFrameStart, (FLOAT)((PaceTickEnd-PaceFrameStart)*1000.0), (FLOAT)((PaceEnd-PaceTickEnd)*1000.0), SleepMs>1 ? SleepMs : INDEX_NONE );
+			const FTime PaceEnd = appSeconds();
+			UfrontPaceRecord( PaceFrameStart-PaceEpoch, (PaceTickEnd-PaceFrameStart)*1000.f, (PaceEnd-PaceTickEnd)*1000.f, SleepMs>1 ? SleepMs : INDEX_NONE );
 		}
 #else
 		if( Cap>0.0 )
 		{
-			FLOAT Delta = (1.0/Cap) - (appSeconds()-OldTime);
+			FLOAT Delta = (1.f/Cap) - (appSeconds()-OldTime);
 			appSleep( Max(0.f,Delta) );
 		}
 #endif
@@ -741,34 +685,14 @@ DOUBLE OldTime = appSeconds();
 -----------------------------------------------------------------------------*/
 
 //
-// Simple copy.
-// 
-
-void SimpleCopy(TCHAR* fromfile, TCHAR* tofile)
-{
-	INT c;
-	FILE* from;
-	FILE* to;
-	from = fopen(fromfile, "r");
-	if (from == NULL)
-		return;
-	to = fopen(tofile, "w");
-	if (to == NULL)
-	{
-		printf("Can't open or create %s", tofile);
-		return;
-	}
-	while ((c = getc(from)) != EOF)
-		putc(c, to);
-	fclose(from);
-	fclose(to);
-}
-
-//
 // Exit wound.
 //
-int CleanUpOnExit(int ErrorLevel)
+int CleanUpOnExit( int ErrorLevel, UEngine* Engine )
 {
+	// HP2 retail (Launch.cpp): detach audio from the viewport before the subsystems shut down. Skipped after
+	// a crash (Engine==NULL) -- do not touch audio then.
+	if( Engine && Engine->Audio )
+		Engine->Audio->SetViewport( NULL );
 	GFileManager->Delete(TEXT("Running.ini"),0,0);
 	debugf( NAME_Title, LocalizeGeneral("Exit") );
 	appPreExit();
@@ -778,24 +702,6 @@ int CleanUpOnExit(int ErrorLevel)
 	appExit();
 	GIsStarted = 0;
 
-	// Restore the user's configuration.
-	TCHAR baseconfig[PATH_MAX] = TEXT("");
-	if( getcwd(baseconfig, sizeof(baseconfig)) == NULL )
-	{
-		appStrcpy( baseconfig, TEXT("./User.ini") );
-	}
-	else
-	{
-		appStrcat(baseconfig, "/User.ini");
-	}
-
-	TCHAR userconfig[PATH_MAX] = TEXT("");
-	sprintf(userconfig, "~/.utconf");
-
-	TCHAR exec[PATH_MAX] = TEXT("");
-	sprintf(exec, "cp -f %s %s", baseconfig, userconfig);
-	//system( exec );
-
 	return ErrorLevel;
 }
 
@@ -804,105 +710,68 @@ int CleanUpOnExit(int ErrorLevel)
 //
 int main( int argc, char* argv[] )
 {
-#ifdef PLATFORM_DREAMCAST
-	// fix thread stack underrun
-	init_thread_stack();
-	// Redirect dbgio to the framebuffer if we're not already using dcload.
-	GStartupDbgDev = dbgio_dev_get();
-	if( !GStartupDbgDev || !appStrstr( GStartupDbgDev, "dcl" ) )
-		dbgio_dev_select( "fb" );
-	assert_set_handler( HandleAssertFail );
-	irq_set_handler( EXC_UNHANDLED_EXC, HandleIrqException, nullptr );
-#ifdef DREAMCAST_USE_FATFS
-	if( fs_fat_mount_sd() == 0 )
-	{
-		printf( "SD card found, will try to load data from there\n" );
-	}
-	else
-	{
-		// failed
-		printf( "SD card not found, will default to CD\n" );
-		sd_shutdown();
-		fs_fat_shutdown();
-	}
-#endif
-#endif
 	try
 	{
 	guard(main);
 	
 	INT ErrorLevel = 0;
 	GIsStarted	   = 1;
-#ifndef PLATFORM_DREAMCAST
-	// Set module name.
-	appStrcpy( GModule, argv[0] );
+	// Set module name: the BASENAME of argv[0], bounded (GModule is TCHAR[32]). An absolute or ./-prefixed
+	// argv[0] must still give "Game" -> Game.log / Game.ini / THIS_PACKAGE "Game" (Game.int).
+	{
+		const char* Base = strrchr( argv[0], '/' );
+		appStrncpy( GModule, Base ? Base+1 : argv[0], ARRAY_COUNT(GModule) );
+	}
 
 	// Set the package name.
 	appStrcpy( THIS_PACKAGE, appPackage() );	
-#endif
 	// Get the command line.
 	TCHAR CmdLine[1024], *CmdLinePtr=CmdLine;
 	*CmdLinePtr = 0;
 	for( INT i=1; i<argc; i++ )
 	{
+		// Bounded: the web argv carries -ini: tokens plus the URL; 1023 chars is reachable.
 		if( i>1 )
-			appStrcat( CmdLine, " " );
-		appStrcat( CmdLine, argv[i] );
+			appStrncat( CmdLine, " ", ARRAY_COUNT(CmdLine) );
+		appStrncat( CmdLine, argv[i], ARRAY_COUNT(CmdLine) );
 	}
-#ifndef PLATFORM_DREAMCAST
-	// Take care of .ini swapping.
-	TCHAR userconfig[PATH_MAX] = TEXT("");
-	sprintf(userconfig, "~/.utconf");
-
-	TCHAR baseconfig[PATH_MAX] = TEXT("");
-	if( getcwd(baseconfig, sizeof(baseconfig)) == NULL )
-	{
-		appStrcpy( baseconfig, TEXT("./User.ini") );
-	}
-	else
-	{
-		appStrcat(baseconfig, "/User.ini");
-	}
-
-	TCHAR exec[PATH_MAX] = TEXT("");
-	sprintf(exec, "cp -f %s %s", userconfig, baseconfig);
-	//system( exec );
-#endif
-	//SimpleCopy( userconfig, baseconfig );
-
 	// Init core.
 	GIsClient = 1;
 	GIsGuarded = 0;
-#ifdef __EMSCRIPTEN__
+#ifndef __EMSCRIPTEN__
+	// HP2: natively, run from the executable's directory (System/). HP2's appInit derives MapPath from the
+	// base dir's "System" component and every Paths= entry is ../-relative; Core's appBaseDir() is
+	// SDL_GetBasePath() already, and the cwd has to agree for the relative package paths.
+	{
+		char* ExeDir = SDL_GetBasePath();
+		if( ExeDir )
+		{
+			if( chdir( ExeDir ) != 0 )
+				fprintf( stderr, "Game: cannot chdir to %s\n", ExeDir );
+			SDL_free( ExeDir );
+		}
+	}
+#else
 	// ufront 2.7b (web port): the MEMFS root is "/", but UT99 runs from its System/ dir like a native
 	// install — Default.ini is preloaded at /System and the package-search Paths (../System, ../Maps, ...)
 	// resolve relative to appBaseDir(). FetchFS has created /System (from the manifest) in preRun. chdir
 	// here, BEFORE appInit() caches appBaseDir()=getcwd(), so the base dir becomes "/System/".
 	chdir( "/System" );
 #endif
-	appInit( TEXT("UnrealTournament"), CmdLine, &Malloc, &Log, &Error, &Warn, &FileManager, FConfigCacheIni::Factory, 1 );
+	appInit( TEXT("Game"), CmdLine, &Malloc, &Log, &Error, &Warn, &FileManager, FConfigCacheIni::Factory, 1 );
 
 	// Init mode.
 	GIsServer		= 1;
 	GIsClient		= !ParseParam(appCmdLine(), TEXT("SERVER"));
 	GIsEditor		= 0;
 	GIsScriptable	= 1;
-#ifdef PLATFORM_DREAMCAST
-	GLazyLoad  		= 1;
-#else
 	GLazyLoad		= !GIsClient || ParseParam(appCmdLine(), TEXT("LAZY"));
-#endif
-#ifdef PLATFORM_DREAMCAST
-		Warn.AuxOut = GLog;
-		GLog		= &Warn;
-#else
 		// Init console log.
 	if (ParseParam(CmdLine, TEXT("LOG")))
 	{
 			Warn.AuxOut = GLog;
 			GLog		= &Warn;
 	}
-#endif
 
 	// Init engine.
 	UEngine* Engine = InitEngine();
@@ -926,7 +795,7 @@ int main( int argc, char* argv[] )
 	}
 
 	// Finish up.
-	return CleanUpOnExit(ErrorLevel);
+	return CleanUpOnExit( ErrorLevel, Engine );
 
 	unguard;
 	}
@@ -934,6 +803,6 @@ int main( int argc, char* argv[] )
 	{
 		// Chained abort.  Do cleanup.
 		HandleError(NULL);
-		return CleanUpOnExit(1);
+		return CleanUpOnExit( 1, NULL );
 	}
 }
