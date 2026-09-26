@@ -1560,6 +1560,36 @@ ULevel* UGameEngine::LoadMap( const FURL& URL, UPendingLevel* Pending, const TMa
 //
 // Draw a global view.
 //
+//
+// Scoped AutoFOV override (template step 2.16). Everything that consumes the FOV during a frame reads it
+// from Viewport->Actor->FovAngle: the engine's clip planes (FSceneNode::ComputeRenderSize) and EVERY
+// render device independently (SoftDrv, XOpenGLDrv, UTGLR). Overriding it for the duration of the draw
+// keeps culling and projection in agreement across all of them with no per-driver change, and it is
+// restored on every exit path, so the value script sees outside the draw is untouched.
+//
+// HP2 note: script that runs INSIDE the draw (the HUD's PostRender, UWindow's DrawClippedActor, a prop's
+// RenderHud DrawActor) sees the corrected angle, i.e. the one it is projected with -- consistent. Script
+// that runs in the tick does not: hprop's fly-to-HUD target is CameraToWorld'd once at pickup with the
+// stock angle, so on a wide window the flying prop ends a little nearer the centre than its HUD icon
+// (at 16:9, 160 px off vs 224 px stock -- the retail script already misses it vertically at any aspect).
+//
+struct FScopedAutoFov
+{
+	APlayerPawn* Actor;
+	FLOAT        Saved;
+	FScopedAutoFov( UViewport* Viewport )
+	:	Actor ( Viewport->Actor )
+	,	Saved ( Viewport->Actor->FovAngle )
+	{
+		GAutoFovFrameBase = Saved;
+		Actor->FovAngle = ufrontEffectiveFov( Saved, Viewport->SizeX, Viewport->SizeY, 1 );
+	}
+	~FScopedAutoFov()
+	{
+		Actor->FovAngle = Saved;
+	}
+};
+
 void UGameEngine::Draw( UViewport* Viewport, UBOOL Blit, BYTE* HitData, INT* HitSize )
 {
 	guard(UGameEngine::Draw);
@@ -1577,6 +1607,10 @@ void UGameEngine::Draw( UViewport* Viewport, UBOOL Blit, BYTE* HitData, INT* Hit
 	FRotator     ViewRotation = ViewActor->Rotation;
 	Viewport->Actor->eventPlayerCalcView( ViewActor, ViewLocation, ViewRotation );
 	check(ViewActor);
+
+	// AutoFOV: armed after script has calculated the view (PlayerCalcView still sees the real FOV) and
+	// before Viewport->Lock, because a render device may latch the FOV during Lock.
+	FScopedAutoFov AutoFovScope( Viewport );
 
 	if( Viewport->RenDev->PrecacheOnFlip && !Viewport->bSuspendPrecaching && ViewActor->Level->LevelAction == LEVACT_None )
 	{

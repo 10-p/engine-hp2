@@ -418,5 +418,46 @@ class ENGINE_API UClient : public UObject
 };
 
 /*-----------------------------------------------------------------------------
+	ufront AutoFOV (template step 2.16) - aspect-correct field of view.
+-----------------------------------------------------------------------------*/
+
+//
+// UE1 defines FovAngle as the HORIZONTAL field of view and derives the vertical one by dividing by the
+// viewport aspect, so widening the window buys width out of height: 90 deg at 4:3 shows 73.7 deg
+// vertically, but only 58.7 at 16:9 and 41.1 at 24:9 -- the world looks zoomed in. AutoFOV re-derives
+// the horizontal FOV from the live aspect so the VERTICAL one stays put.
+//
+//   Off      (0) - stock: FovAngle used verbatim.
+//   HorPlus  (1) - 2*atan( tan(Fov/2) * Aspect/Ref ). Vertical FOV pinned to its value at Ref.
+//   Adaptive (2) - max(Fov, HorPlus). DEFAULT. Identical to HorPlus at/above Ref, stock below it (pure
+//                  Hor+ on a tall/half-screen window would cut BOTH axes).
+//
+// Applied as a SCOPED override around the frame draw (UGameEngine::Draw), never written back, so every
+// render device, the software renderer and the culling planes agree on one value while script keeps
+// seeing the real FOV: PlayerPawn.uc derives MouseScale from DesiredFOV, and HP2's camera scripts
+// (BaseCam, FOVController) and PlayerTick's FovAngle->DesiredFOV interpolation must never see ours.
+// Config: [ufront.AutoFOV] AutoFOV / ReferenceAspect in the game ini (one home; per launch use the
+// generic -ini:System:[ufront.AutoFOV]:AutoFOV=0).
+//
+// HP2 takes only the view part of the template's AutoFOV. Its viewmodel parts (WeaponScale, the
+// RenderOverlays base swap) have nothing to act on -- HP2 draws through a camera ViewTarget, whose
+// RenderOverlays is the empty Actor one -- and AutoFOVUI scales a HudScale property HP2's HUD does not have.
+//
+enum EAutoFovMode
+{
+	AUTOFOV_Off      = 0,
+	AUTOFOV_HorPlus  = 1,
+	AUTOFOV_Adaptive = 2,
+};
+
+// Effective horizontal FOV for a viewport of SizeX x SizeY. Returns BaseFov unchanged when disabled or
+// when the size is degenerate. Config is parsed once, then it is pure arithmetic. bLog: emit the
+// one-line report when the inputs change -- only the PRIMARY view (the scope in UGameEngine::Draw) passes 1.
+ENGINE_API FLOAT ufrontEffectiveFov( FLOAT BaseFov, INT SizeX, INT SizeY, UBOOL bLog = 0 );
+
+// The UNCORRECTED FovAngle of the frame being drawn, published by the scoped override in UGameEngine::Draw.
+ENGINE_API extern FLOAT GAutoFovFrameBase;
+
+/*-----------------------------------------------------------------------------
 	The End.
 -----------------------------------------------------------------------------*/

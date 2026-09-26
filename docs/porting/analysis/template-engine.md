@@ -903,7 +903,7 @@ rows above. "Tpl" = copy the template text; "Adapt" = hand port; "HP2" = HP2-own
 - [ ] D5 `?connect` host promotion, B18 "Received" log in `UnDownload.cpp:176` — only with IpDrv/WebRTCDrv — Tpl/Adapt
 
 **Phase 4 — features**
-- [ ] AutoFOV: I7 + C2 + D14 (`FScopedAutoFov` after `check(ViewActor)` in `Draw`); ship `[ufront.AutoFOV] AutoFOV=2`; **skip** C4 (viewmodel pass) and D15 (AutoFOVUI) — Tpl/Adapt
+- [x] AutoFOV (2026-09-26): I7 + C2 + D14 (`FScopedAutoFov` after `check(ViewActor)` in `Draw`); ship `[ufront.AutoFOV] AutoFOV=2`; **skip** C4 (viewmodel pass) and D15 (AutoFOVUI) — Tpl/Adapt
 - [ ] optional: I4/C1 `VolumetricLightingMeshes` only if the template SoftDrv mesh-fog path is ported
 - [ ] optional warning clean-ups: I12, §10.3 (`GCC_PACK`→`GCC_ALIGN` on the 13 BYTE sites, `#endif NAMES_ONLY`), G14 BMP pack, G17 `-Wno-unknown-pragmas`
 

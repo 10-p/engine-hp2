@@ -252,6 +252,67 @@ UBOOL UViewport::SetDrag( UBOOL NewDrag )
 }
 
 /*-----------------------------------------------------------------------------
+	ufront AutoFOV (template step 2.16; declarations and rationale in UnCamera.h).
+-----------------------------------------------------------------------------*/
+
+ENGINE_API FLOAT GAutoFovFrameBase = 90.0f;
+
+static UBOOL  GAutoFovParsed   = 0;
+static INT    GAutoFovMode     = AUTOFOV_Adaptive;
+static FLOAT  GAutoFovRef      = 4.0f / 3.0f;
+static INT    GAutoFovLastX    = -1;
+static INT    GAutoFovLastY    = -1;
+static FLOAT  GAutoFovLastBase = -1.0f;
+
+static void ufrontParseAutoFov()
+{
+	guard(ufrontParseAutoFov);
+	GAutoFovParsed = 1;
+
+	// A plain config section, not a class: it is read from UGameEngine::Draw (Engine), no retail-Engine.u
+	// class may gain properties, and the section is spelled identically in every ufront engine.
+	INT   Mode = GAutoFovMode;
+	FLOAT Ref  = GAutoFovRef;
+	GConfig->GetInt  ( TEXT("ufront.AutoFOV"), TEXT("AutoFOV"),         Mode );
+	GConfig->GetFloat( TEXT("ufront.AutoFOV"), TEXT("ReferenceAspect"), Ref  );
+	GAutoFovMode = Clamp( Mode, (INT)AUTOFOV_Off, (INT)AUTOFOV_Adaptive );
+	GAutoFovRef  = (Ref > 0.01f) ? Ref : (4.0f / 3.0f);
+
+	debugf( NAME_Log, TEXT("[AutoFOV] mode=%i referenceAspect=%f"), GAutoFovMode, GAutoFovRef );
+	unguard;
+}
+
+ENGINE_API FLOAT ufrontEffectiveFov( FLOAT BaseFov, INT SizeX, INT SizeY, UBOOL bLog )
+{
+	guard(ufrontEffectiveFov);
+	if( !GAutoFovParsed )
+		ufrontParseAutoFov();
+
+	if( GAutoFovMode == AUTOFOV_Off || SizeX <= 0 || SizeY <= 0 )
+		return BaseFov;
+
+	// Guard the trig: a degenerate or hostile FOV must not produce a broken projection.
+	FLOAT Base    = Clamp( BaseFov, 1.0f, 170.0f );
+	FLOAT Aspect  = (FLOAT)SizeX / (FLOAT)SizeY;
+	FLOAT HorPlus = (FLOAT)( appAtan( appTan( Base * PI / 360.0 ) * ( Aspect / GAutoFovRef ) ) * 360.0 / PI );
+	FLOAT Eff     = ( GAutoFovMode == AUTOFOV_Adaptive ) ? Max( Base, HorPlus ) : HorPlus;
+	Eff = Clamp( Eff, 1.0f, 170.0f );
+
+	// Log when the INPUTS change: the viewport size (the resize the E2E asserts on) or the base FOV (HP2's
+	// cameras and cut scenes move it; UE interpolates, so a change costs a handful of lines, once).
+	if( bLog && ( SizeX != GAutoFovLastX || SizeY != GAutoFovLastY || Abs(Base - GAutoFovLastBase) > 0.5f ) )
+	{
+		GAutoFovLastX    = SizeX;
+		GAutoFovLastY    = SizeY;
+		GAutoFovLastBase = Base;
+		debugf( NAME_Log, TEXT("[AutoFOV] viewport=%ix%i aspect=%f base=%f effective=%f"),
+			SizeX, SizeY, Aspect, Base, Eff );
+	}
+	return Eff;
+	unguard;
+}
+
+/*-----------------------------------------------------------------------------
 	Scene frames.
 -----------------------------------------------------------------------------*/
 
