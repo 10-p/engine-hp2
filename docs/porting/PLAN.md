@@ -268,7 +268,7 @@ Owner decisions (ask once, record the answer in §2):
 
 Verify on the first boots (do not decide in advance):
 - **O6** ~~`Startup.MyLevel` vs `startup.MyLevel`~~ — **answered: `startup.MyLevel`** (the level name follows the file, `Bringing Level startup.MyLevel up for play (0)...`; `docs/porting/logs/native-first-boot.log`).
-- **O7** `SetString("Core.System","paths",…)` replaces the **last** `Paths=` line? (read the written `Game.ini`).
+- **O7** ~~last `Paths=` line?~~ — **answered: yes.** The written native `Game.ini` keeps six `Paths=` and the last one became `../Save/*.usa` (retail `../save/*.usa`), i.e. the save-slot path.
 - **O8** With `GetGlobalTime`→0, do hub persistent-actor caches survive a web reload?
 - **O9** Retail D3D7 `PF_LumosAffected` quirk: blob shadows visible or not? (wine + retail `Game.exe`).
 - **O10** ~~Resident heap~~ — **native answer: no `-LAZY`**: RSS 168 MB (menu), 185 MB `Ch6WizardCard`, 189 MB `Ch1Rictusempra`, 199 MB `Entryhall_hub`, 204 MB `Adv6Goyle` (SoftDrv, null audio). Re-measure the wasm heap in Phase D.
