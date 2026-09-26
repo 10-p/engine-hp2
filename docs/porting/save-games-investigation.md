@@ -372,7 +372,7 @@ level. `/?map=<any>&load=<n>` works: verified on hp2 (`Command line: PrivetDr?lo
 travel-options field (`load=0` + any map) is the same path. A launcher change that forwards travel options without a
 map (or a "Continue" button that picks the map itself) would make `?load=<n>` alone work — not implemented.
 
-## 11. Next: the single-player save list (designed, not implemented)
+## 11. The single-player save list (designed here; landed as ufrontend 2.82)
 
 Specified for the implementing agent in the ufrontend clone:
 `docs/migration/steps/SAVE-GAMES-KICKOFF-PROMPT.md` (branch `hp2`, rev 4). In short:
@@ -384,3 +384,14 @@ Specified for the implementing agent in the ufrontend clone:
 - a new HP2 game = the Storage panel's "Clear User Data";
 - a launch with no map lands on the title level and never loads the save;
 - the launch is always `<map>?load=<n>`, never a bare `load=`.
+
+**Landed (2026-09-26).** ufrontend 2.82 (`44d5379`, `8a2241f` on main) implemented the kickoff; the `hp2` branch
+was rebased on it and hp2 got `defaults.engineOptions` = `CPUSPEED=3000 -LOAD=0` (`abbda65`). One correction to the
+kickoff: a plain Start sends **no** map (the field is empty; `defaults.map` is only a hint and the save-pick
+fallback), so hp2 boots the title level with `-LOAD=0`. Checked natively in a fresh run tree: with no save the
+engine logs `Failed to load '../Save/Save0.usa'` and keeps the title level running (the title cutscene plays); with
+a save the title level comes up and then travels into it. The web E2E proves the second case
+(`continueOnStart`: `Possessed PlayerPawn: harry Save0.Harry0` with nothing typed).
+⚠ **Clear User Data is not a new game in the same tab** (a generic launcher gap, reported to the ufrontend owner):
+it deletes `hp2-user-data` but the save the page restored into the engine filesystem stays until a reload, so
+Start continues it. After a reload Start stays on the title level. hp2's help tells players to reload.

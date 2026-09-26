@@ -84,3 +84,10 @@ One dated line per green milestone (PLAN §10). Newest last.
   implemented). It surfaced a port bug, fixed: `FindFiles` could not match `*_pa.*`, so HP2's per-level progress
   (Jellybeans, secrets) never reached the save slot (`79b21ff`). After it: hp2 E2E 10/10, Windows rebuilt, and the
   publish folder re-published at `150e6fb` and boot-checked (title level, WebGL 2, openal-soft, music, debug off).
+- 2026-09-26 — **Rebased on ufrontend 2.82 + continue on Start.** The `hp2` branch rebased onto `origin/main`
+  `bca749d` (one STATE.md conflict); hp2 `defaults.engineOptions` = `CPUSPEED=3000 -LOAD=0` (`abbda65`), help/README
+  refreshed (`ecfe6c2`). A plain Start boots the title level; `-LOAD=0` continues `Save/Save0.usa` when it exists and
+  is a harmless `Failed to load` when it does not (native run in a fresh tree). hp2 E2E 11/11 (+ first-light
+  options check, + `continueOnStart`), gates green. Found: Clear User Data leaves the restored save in the engine
+  filesystem until a page reload (generic; reported). Publish folder rebuilt from these HEADs and re-served on :8092.
+
