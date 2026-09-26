@@ -259,12 +259,19 @@ Commit + `BUILD.md` native section.
 
 ## 11. Open questions
 
-Owner decisions (ask once, record the answer in §2):
-- **O1** `travel` block: contract §1.5 data fallback (default) or the generic test/PlayPanel change (§4.3)?
-- **O2** Root publish: Track A now / Track B later? New endpoint on the existing Front Door profile (Option A, recommended)?
-- **O3** Ship `[HGame.baseConsole] bDebugMode=true` (debug keys, cheats, level list) in the published web ini? Default: `true` for bring-up, `false` at publish.
-- **O4** Expose WebRTC multiplayer for hp2 at all (HP2 has no replicated gameplay)? Default: build the driver, hide the panel, no broker prefix.
-- **O5** gl4es ref: keep the template pin `fix/cubemap-bind-active-unit` (no HP2 change needed) or push/retag `hp2`?
+Owner decisions — **answered 2026-09-26** (recorded in §2):
+- **O1** `travel`: the Story-mode fallback (contract §1.5) — done as shipped. Enhancement for the END of the project
+  (investigate only, implement nothing): how HP2 stores save games vs Unreal 1 and UT99 "oldskool" — is there a
+  common pattern (e.g. the launcher reading every file in `Save/`) the frontend could share? Keep the inis in
+  scope (their naming convention). See §12 "Last".
+- **O2** Root publish / Azure: **last**. For now only produce the publish folder that can be served
+  (`/home/ion/hp2-ufrontend/publish-hp2`); no upload, no infra.
+- **O3** Debug mode: a **command-line option** — `-DEBUGMODE` sets `[HGame.baseConsole] bDebugMode` on every
+  boot, off otherwise (`febcffb`); the web ini ships False.
+- **O4** Multiplayer panel: **hidden** — `targets/hp2/target.json` `network.multiplayer: false`, honoured by the
+  generic launcher (`App.vue`); WebRTCDrv stays built.
+- **O5** gl4es: **the original** — we never changed it; the clone is back on the template's pin
+  `fix/cubemap-bind-active-unit` (the empty local `hp2` branch was deleted).
 
 Verify on the first boots (do not decide in advance):
 - **O6** ~~`Startup.MyLevel` vs `startup.MyLevel`~~ — **answered: `startup.MyLevel`** (the level name follows the file, `Bringing Level startup.MyLevel up for play (0)...`; `docs/porting/logs/native-first-boot.log`).
@@ -292,4 +299,5 @@ Verify on the first boots (do not decide in advance):
 - [x] D: web inis · W1 link · W2 smoke · W3 loader sweep (L10 `fd6910c`) · `targets/hp2` + manifests + tests (ufrontend `22aa692..42012c7`) · **web boot to the title map on XOpenGL** (`yarn e2e --target hp2`: boot, SoftDrv, direct map load, config persistence, save/load — all green; UTGLR/gl4es + NullDrv boot too) · BUILD.md web section
 - [ ] E: EA-XA decoder + oracle · NOpenALDrv from ALAudio · vorbis · web audio ON
 - [x] F: Windows `Game.exe` under wine — first MinGW build, imports on the allow-list, `startup.MyLevel` on SoftDrv and `Ch1Rictusempra` gameplay on XOpenGL (wine + Mesa); fixed the thumbnail overrun it exposed (`0bda916`). Audio (L6) rides on Phase E
-- [ ] G: root publish track chosen · Azure Option A prepared (deploy on go-ahead)
+- [ ] G: servable publish folder `/home/ion/hp2-ufrontend/publish-hp2` (Track A, no upload) · root publish + Azure — LAST (owner O2)
+- [ ] Last: investigate save-game storage HP2 vs Unreal 1 vs UT99 oldskool (+ ini naming) for a shared frontend pattern — report only, no implementation (owner O1)
