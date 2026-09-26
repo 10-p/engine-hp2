@@ -46,3 +46,6 @@ desktop.ini
 
 # Claude Code per-machine local override.
 .claude/settings.local.json
+
+# Python bytecode from the tools.
+__pycache__/

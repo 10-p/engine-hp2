@@ -148,8 +148,15 @@ struct MeshRn
 #if INDEX
 	inline INT ProcessVert( FTransTexture* P )
 	{
-		INT ID = P - BasePt;
-		if( ID >= 0 && ID < VertBufferInds.Num() )
+		// HP2 port: not `P - BasePt`. Clipped vertices live in a different buffer, so P need not point into
+		// BasePt's array; pointer subtraction is then undefined, and GCC/clang compile it as an EXACT division
+		// (a multiply by the inverse of sizeof(FTransTexture) = 88), which turns a non-multiple difference into a
+		// garbage negative ID that passes the range test and reads far out of bounds (segfault in PrivetDr's and
+		// Ch1Rictusempra's first mesh frames). MSVC's real division truncated, which is what retail relied on.
+		// Byte arithmetic plus an explicit multiple check keeps an out-of-array vertex on the isolated-point path.
+		const intptr_t Bytes = (intptr_t)P - (intptr_t)BasePt;
+		const INT ID = (INT)(Bytes / (intptr_t)sizeof(FTransTexture));
+		if( Bytes >= 0 && Bytes % (intptr_t)sizeof(FTransTexture) == 0 && ID < VertBufferInds.Num() )
 		{
 			if( VertBufferInds(ID) == _WORD(-1) )
 			{
