@@ -117,7 +117,12 @@ frontend could share across the three UE1 games it serves?
 - Side note, not investigated: an exec file that ran `thumbnail`/`savethumbnail` **before the first frame**
   segfaulted. The in-game path always has a frame; the console path is an edge case.
 
-### 2.4 Engine bug: `*_pa.*` never matches on Linux or the web
+### 2.4 Engine bug: `*_pa.*` never matches on Linux or the web — **FIXED in `79b21ff`**
+
+> Status 2026-09-26: `FindFiles` now does a real case-insensitive `*`/`?` glob (Win32 `FindFirstFile`
+> semantics). Verified natively: a slot's `Test_pa.usa` is copied into `cache/` at boot and back on `savegame`.
+> The "New Game must empty the slot" note below still applies once slots are used on the web.
+
 
 `FFileManagerLinux::FindFiles` (`Core/Inc/FFileManagerLinux.h:379`, inherited verbatim from engine-ut99's) handles
 `*`, `*.*`, `*.ext`, `name.*` and `a*b`. A pattern that starts with `*` takes the `*.ext` branch, so `*_pa.*` becomes
