@@ -3072,18 +3072,23 @@ void USoftwareRenderDevice::DrawTile( FSceneNode* Frame, FTextureInfo& Texture, 
 	{
 		static FSpanBuffer TempSpanBuffer;
 		static INT SavedX=0, SavedY=0;
-		static FSpan *SpanIndex[1200], DefaultSpan;
+		static FSpan *SpanIndex[MaximumYScreenSize], DefaultSpan;
 		if( SavedX!=Viewport->SizeX || SavedY!=Viewport->SizeY )
 		{
 			SavedX = Viewport->SizeX;
 			SavedY = Viewport->SizeY;
+			// ufront 2.12: clamp the span-table height to the array capacity so SizeY > MaximumYScreenSize
+			// can NEVER overrun SpanIndex (that overflow clobbered DefaultSpan.Next into a self-loop -> the
+			// tile blitter's for(Span;Span;Span=Span->Next) walk hung the main thread — the web SoftDrv
+			// tab-freeze at >1200-tall viewports). Above the ceiling the bottom rows just aren't spanned.
+			const INT SpanY = Min( Viewport->SizeY, (INT)MaximumYScreenSize );
 			TempSpanBuffer.Index  = SpanIndex;
 			TempSpanBuffer.StartY = 0;
-			TempSpanBuffer.EndY   = Viewport->SizeY;
+			TempSpanBuffer.EndY   = SpanY;
 			DefaultSpan.Start = 0;
 			DefaultSpan.End   = Viewport->SizeX;
 			DefaultSpan.Next  = 0;
-			for( INT i=0; i<Viewport->SizeY; i++ ) SpanIndex[i]  = &DefaultSpan;
+			for( INT i=0; i<SpanY; i++ ) SpanIndex[i]  = &DefaultSpan;
 		}
 		Span = &TempSpanBuffer;
 	}

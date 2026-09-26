@@ -7,21 +7,79 @@
 	Dependencies.
 ------------------------------------------------------------------------------------*/
 
-#include "..\..\Render\Inc\Render.h"
+#include "Render.h" // HP2 433: the private render header lives in Render/Inc/Render.h
+
+// ufront 2.33 (Windows/MinGW): the Win32 headers reached through the chain above define IN and OUT as
+// EMPTY parameter-annotation macros, which silently deletes any local named `IN` — DrawSurf.cpp's
+// bilinear filter has one, and the error it produces ("expected unqualified-id before '='") points at the
+// assignment rather than at the macro. Undefining is preferable to renaming the local: it is
+// preprocessor-only, so the Linux and web builds are textually and byte-for-byte unaffected. Nothing in
+// this engine uses the annotations.
+#ifdef PLATFORM_WIN32
+#undef IN
+#undef OUT
+#endif
 
 /*------------------------------------------------------------------------------------
 	Software rendering private definitions.
 ------------------------------------------------------------------------------------*/
 
-// Maximum supported sizes. 
-#define MaximumYScreenSize  1200   
-#define MaximumXScreenSize  2048
+// ufront: SoftDrv ported into engine-ut99 (ut99 software renderer step). This is the v400 UT99 source,
+// which already carries portable #if !ASM paths for its x86 __asm rasterization; we build with -DASM=0.
+// Portability shims below mirror engine-unreal1's SoftDrv. If ASM is disabled but we're on x86 (the native
+// -m32 preset), also force-disable MMX so the portable Pentium path is taken.
+#if !ASM && __INTEL__
+#define GIsMMX false
+#endif
+
+// Maximum supported sizes. 2.12: 1200/2048 -> 4096 so high-res viewports don't overrun the SizeY-indexed
+// span tables (Setup/MMXSetup/SpanIndex) or the SizeX-indexed ones (UCoordTable/Photon). Mirrors
+// engine-unreal1's SoftDrv; the DrawTile span-fill also hard-clamps to this ceiling.
+//
+// ufront 2.19f: overridable at build time (-DSOFTDRV_MAX_SCREEN=n), because these are the bounds of
+// STATIC arrays — they cost their full size in .bss at every resolution, not just at the ceiling.
+// Measured on ut99 at 4096: Setup 128K + MMXSetup 128K + Photon 64K + UCoordTable 16K + two SpanIndex
+// 32K = 368 KB resident whether the viewport is 4K or 240x240. (The other 160 KB of SoftDrv .bss —
+// TexSetupHeap and Shade — is genuinely fixed-size and unaffected by this.) At a 256 ceiling the same
+// tables cost 23 KB, which is what makes the software renderer plausible on a 64 MB target.
+//
+// Lowering it is safe and fail-soft, not a landmine: SetRes clamps the requested width to
+// MaximumXScreenSize, DrawPoly skips the frame outright above MaximumYScreenSize, and DrawTile clamps
+// its span-fill to the ceiling. A viewport above the ceiling degrades rather than corrupting.
+#ifndef SOFTDRV_MAX_SCREEN
+#define SOFTDRV_MAX_SCREEN 4096
+#endif
+#define MaximumYScreenSize  SOFTDRV_MAX_SCREEN
+#define MaximumXScreenSize  SOFTDRV_MAX_SCREEN
+
 
 // Coarse fast square root approximation
 #define FASTAPPROX_MAN_BITS 8   /* Number of bits of approximate square root mantissa, <=23 */
 extern FLOAT FastSqrtTbl[2<<FASTAPPROX_MAN_BITS];
 
 void SetupFastSqrt();
+
+//
+// _rotl / _rotr alternatives for non-MSVC platforms (mirrors engine-unreal1's SoftDrv shim).
+//
+#ifdef PLATFORM_WIN32
+#include <stdlib.h> // for _rotl and _rotr
+#elif defined(PLATFORM_X86)
+#include <x86intrin.h> // for _rotl and _rotr
+#else
+inline unsigned int _rotl( unsigned int a, int s )
+{
+	s &= 31;
+	if( s == 0 ) return a; // 2.12: avoid UB shift-by-32 at s==0 (inert on wasm/x86; matters non-x86 native)
+	return (a << s) | (a >> (32 - s));
+}
+inline unsigned int _rotr( unsigned int a, int s )
+{
+	s &= 31;
+	if( s == 0 ) return a; // 2.12: avoid UB shift-by-32 at s==0 (inert on wasm/x86; matters non-x86 native)
+	return (a >> s) | (a << (32 - s));
+}
+#endif
 
 //
 // An 8-byte MMX structure.
@@ -80,6 +138,7 @@ union FMMX
 		DWORD FH, FL;
 #endif
 	};
+	DOUBLE D;
 	QWORD  Q;
 	SQWORD SQ;
 };
@@ -123,6 +182,14 @@ class DLL_EXPORT USoftwareRenderDevice : public URenderDevice
 	BITFIELD		FastTranslucency;
 	BITFIELD		HighResTextureSmooth;
 	BITFIELD		LowResTextureSmooth;
+	// Which filtering to use when HighRes/LowResTextureSmooth have already enabled it for this
+	// resolution: False = the original 2x2 knight's-move coordinate dither (one texel, ~free),
+	// True = true bilinear (four texels and a blend). Smoothing off is point sampling either way,
+	// so this knob only ever picks between the two filtered modes.
+	BITFIELD		BilinearFiltering;
+	// HP2 433: the template keeps this in Engine's URenderDevice; HP2's URenderDevice lacks it, and adding it
+	// there would change the layout every driver compiles against, so it is a SoftDrv-local config bool.
+	BITFIELD		VolumetricLightingMeshes;
 	BITFIELD		RAM32Mode;
 	BITFIELD		TextureSmooth;
 	FLOAT			DetailBias;
@@ -152,7 +219,8 @@ class DLL_EXPORT USoftwareRenderDevice : public URenderDevice
 	UBOOL Exec( const TCHAR* Cmd, FOutputDevice& Ar );
 	void Lock( FPlane FlashScale, FPlane FlashFog, FPlane ScreenClear, DWORD RenderLockFlags, BYTE* InHitData, INT* InHitSize );
 	void Unlock( UBOOL Blit );
-	
+	// HP2 433 render face (Engine/Inc/UnRenDev.h). No DrawGouraudPolygon here: the non-pure base forwards
+	// it to DrawTriangles' fan branch.
 	void DrawComplexSurface( FSceneNode* Frame, FSurfaceInfo& Surface, FSurfaceFacet& Facet, DWORD PolyFlags, BYTE cAlpha );
 	INT MaxVertices();
 	void DrawTriangles( FSceneNode* Frame, FTextureInfo& Info, FTransTexture** Pts, INT NumPts, _WORD* Indices, INT NumIndices, DWORD PolyFlags, FSpanBuffer* Span );

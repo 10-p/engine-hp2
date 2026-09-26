@@ -60,6 +60,10 @@ void USoftwareRenderDevice::Draw2DLine
 			}
 		}
 
+		// Line.h/Line1.h use VC++-only macro-expansion (token pasting), so no 2D lines on gcc/wasm for now
+		// (mirrors engine-unreal1's SoftDrv). The palette table above is still built; only the rasterization
+		// below is skipped, so SoftDrv still renders world/tiles/surfaces.
+#ifdef PLATFORM_MSVC
 		// Depth cued line drawer.
 		#define DEPTHSETUP(Arclen) FixDG = (FixG2-FixG1)/Arclen;
 		INT FixG1 = ::Clamp( appRound(P1.Z * 65536.0 * 10000.0), 100*65536, 255*65536 );
@@ -137,6 +141,7 @@ void USoftwareRenderDevice::Draw2DLine
 			#undef  SHIFT
 			#undef  DRAWPIXEL
 		}
+#endif // PLATFORM_MSVC (no gcc/wasm 2D lines — see the note above)
 	}
 	unguard;
 }
