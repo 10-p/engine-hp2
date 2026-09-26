@@ -5,10 +5,14 @@ project(Engine CXX)
 # MSVC-only DXT block of UnTex.cpp — the template drops it too) and minus the MPeg wrappers it listed but
 # never referenced (Thirdparty/MPeg). Everything else — the
 # 433 additions (skeletal meshes, particles, gestures, replay, interpolation, downloads, demo pending
-# level, the native-function table) included — compiles on every target.
+# level) included — compiles on every target. UnEngineNative.cpp is HP2's stale __STATIC_LINK native
+# table; with __STATIC_LINK undefined it compiles to nothing (natives register through IMPLEMENT_FUNCTION).
+# EngineLayoutAsserts.cpp is generated (see its header): compile-time offset/size checks of every native
+# class in Inc/EngineClasses.h against the shipped Engine.u — it has no code, only static_asserts.
 set(SRC_FILES
   "Src/AStatLog.cpp"
   "Src/Engine.cpp"
+  "Src/EngineLayoutAsserts.cpp"
   "Src/ULodMesh.cpp"
   "Src/UnActCol.cpp"
   "Src/UnActor.cpp"
