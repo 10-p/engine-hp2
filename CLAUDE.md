@@ -18,8 +18,8 @@ NullDrv, SoundDrv null), web-friendly inis and the WebRTC net driver. Read that 
    lines, the progress checklist. Read it before touching anything.
 2. `docs/porting/analysis/00-critique.md`, then the analysis report for the phase you are in.
 3. The template's `CLAUDE.md` + `BUILD.md` (`/home/ion/engines/engine-ut99`) for the *why* of every convention.
-4. Build: `cd Source && cmake --preset native && cmake --build --preset native -j"$(nproc)"` (see `BUILD.md`
-   once Phase A lands). Three-way-merge helper: `tools/dev/merge3.sh <outdir>`.
+4. Build, run and test: **`BUILD.md`** (native + web + E2E). Three-way-merge helper: `tools/dev/merge3.sh <outdir>`;
+   `docs/porting/LOG.md` is the dated progress log (newest last).
 
 ## Map of the world
 | Thing | Path | Role |
