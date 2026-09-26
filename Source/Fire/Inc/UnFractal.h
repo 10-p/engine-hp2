@@ -16,7 +16,9 @@
 	General structures.
 ----------------------------------------------------------------------------*/
 
-#if !_MSC_VER
+// This file uses MSVC's __int64 spelling. Supply it where the compiler does not -- but NOT on MinGW,
+// where __int64 is a builtin keyword and typedef'ing it is a syntax error (ufront 2.33).
+#if !_MSC_VER && !defined(__MINGW32__)
 	typedef SQWORD __int64;
 #endif
 
@@ -170,13 +172,14 @@ class DLL_EXPORT_CLASS UFireTexture : public UFractalTexture
 {
 	DECLARE_CLASS(UFireTexture,UFractalTexture,0,Fire)
 
-	// Persistent variables.
-    BYTE		SparkType;    
+	// Persistent variables. GCC_ALIGN(4): GCC/clang (Itanium ABI) would otherwise place SparkType in
+	// UFractalTexture's tail padding; Fire.u has it at the MSVC offset (VERIFY_CLASS_OFFSET is fatal).
+    BYTE		SparkType GCC_ALIGN(4);    
     BYTE        RenderHeat;
 	BITFIELD	bRising:1 GCC_PACK(4);
 
 	// FX specifics
-	BYTE		FX_Heat GCC_PACK(4);
+	BYTE		FX_Heat GCC_ALIGN(4);
 	BYTE		FX_Size;
 	BYTE		FX_AuxSize;
 	BYTE		FX_Area;
@@ -289,7 +292,7 @@ class DLL_EXPORT_CLASS UWaterTexture : public UFractalTexture
 	DECLARE_ABSTRACT_CLASS(UWaterTexture,UFractalTexture,0,Fire)
 
 	// Persistent variables:
-	BYTE		DropType;       // Warning: force all 'enum' types to be BYTEs.	
+	BYTE		DropType GCC_ALIGN(4);       // Warning: force all 'enum' types to be BYTEs.	
     BYTE		WaveAmp; 
 	// FX specifics
 	BYTE		FX_Frequency;

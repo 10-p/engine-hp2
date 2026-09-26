@@ -172,7 +172,8 @@ void InitTables()
 	if( !Initialized )
 	{
 		// Init 8-bit sine table.
-		for( INT t=0; t<256; t++ )
+		INT t;
+		for( t=0; t<256; t++ )
 		{
 			PhaseTable[t] = appRound(127.45f + 127.5f*appSin( ((FLOAT)t/256.f) * 6.2831853f ));
 		}
@@ -302,7 +303,7 @@ void CalcWrapFire(  BYTE* BitmapAddr,BYTE* RenderTable,DWORD Xdimension,DWORD Yd
 
     // Special case: line-before-last -> lowest line wraps around.
 
-    Y = (Ydimension - 2);
+    DWORD Y = (Ydimension - 2);
     {
         BYTE* ThisLine  = BitmapAddr + Y * Xdimension;
         BYTE* BelowLine =   ThisLine +   Xdimension;
@@ -427,7 +428,7 @@ void CalcSlowFire( BYTE* BitmapAddr,BYTE* RenderTable,DWORD Xdimension,DWORD Ydi
     } //Y
 
     // Special case: last line -> lower line wraps around.
-    Y = (Ydimension - 1);
+    DWORD Y = (Ydimension - 1);
     {
         BYTE* ThisLine  = BitmapAddr + Y * Xdimension;
         BYTE* BelowLine = ThisLine;
@@ -1316,6 +1317,7 @@ void UFireTexture::DrawFlashRamp( LineSeg LL, BYTE Color1, BYTE Color2 )
         INT  FlashBias = (( (INT)RealYlen << 6) - FlashPos) / MajorLen;  
 
         //
+        INT Flash;
         for( Flash=0; Flash<LL.Xlen; Flash++ )
         {
 			Ypoz += FlashArray[Flash] + FlashBias;
@@ -1335,6 +1337,7 @@ void UFireTexture::DrawFlashRamp( LineSeg LL, BYTE Color1, BYTE Color2 )
         INT  FlashBias = (( (INT)RealXlen << 6) - FlashPos) / MajorLen;   
 
         //
+        INT Flash;
         for( Flash=0; Flash<LL.Ylen; Flash++ )
         {
 			Xpoz += FlashArray[Flash] + FlashBias;
@@ -3944,21 +3947,21 @@ void BlueLagunaPalette(UPalette* TargetPal)
 {
 	for( INT i=0; i< 64; i++ )
 	{
-		TargetPal->Colors(i).R     = Min(    0+ (i* 59)/64 ,255);
-		TargetPal->Colors(i).G     = Min(    0+ (i* 67)/64 ,255);
-		TargetPal->Colors(i).B     = Min(    0+ (i*100)/64 ,255);
+		TargetPal->Colors(i).R     = Min<INT>(    0+ (i* 59)/64 ,255);
+		TargetPal->Colors(i).G     = Min<INT>(    0+ (i* 67)/64 ,255);
+		TargetPal->Colors(i).B     = Min<INT>(    0+ (i*100)/64 ,255);
 
-		TargetPal->Colors(i+64).R  = Min(   59+ (i* 55)/64 ,255);
-		TargetPal->Colors(i+64).G  = Min(   67+ (i* 60)/64 ,255);
-		TargetPal->Colors(i+64).B  = Min(  100+ (i* 97)/64 ,255);
+		TargetPal->Colors(i+64).R  = Min<INT>(   59+ (i* 55)/64 ,255);
+		TargetPal->Colors(i+64).G  = Min<INT>(   67+ (i* 60)/64 ,255);
+		TargetPal->Colors(i+64).B  = Min<INT>(  100+ (i* 97)/64 ,255);
 
-		TargetPal->Colors(i+128).R = Min(  114+ (i* 64)/64 ,255);
-		TargetPal->Colors(i+128).G = Min(  127+ (i* 60)/64 ,255);
-		TargetPal->Colors(i+128).B = Min(  197+ (i* 33)/64 ,255);
+		TargetPal->Colors(i+128).R = Min<INT>(  114+ (i* 64)/64 ,255);
+		TargetPal->Colors(i+128).G = Min<INT>(  127+ (i* 60)/64 ,255);
+		TargetPal->Colors(i+128).B = Min<INT>(  197+ (i* 33)/64 ,255);
 
-		TargetPal->Colors(i+192).R = Min(  178+ (i* 78)/64 ,255);
-		TargetPal->Colors(i+192).G = Min(  187+ (i* 69)/64 ,255);
-		TargetPal->Colors(i+192).B = Min(  230+ (i* 26)/64 ,255);
+		TargetPal->Colors(i+192).R = Min<INT>(  178+ (i* 78)/64 ,255);
+		TargetPal->Colors(i+192).G = Min<INT>(  187+ (i* 69)/64 ,255);
+		TargetPal->Colors(i+192).B = Min<INT>(  230+ (i* 26)/64 ,255);
 	}
 };
 
@@ -4338,8 +4341,8 @@ UWaterTexture::UWaterTexture()
 	guard(UWaterTexture::UWaterTexture);
 
 	// Fill the algorithm lookup table.
-    for( INT t=0; t<(1024+512); t++ )
-		WaveTable[t] = Clamp( (t/2 - 256) + ( (t-512)< 256), 0, 255 );
+	for( INT t=0; t<(1024+512); t++ )
+		WaveTable[t] = Clamp<INT>( (t/2 - 256) + ( (t-512)< 256), 0, 255 );
 
 	// Init most non-serialized vars.
 	OldWaveAmp     = -1; 
@@ -4654,7 +4657,7 @@ void UWaveTexture::SetWaveLight()
         if( Square(Reflected-Viewer) < Square(PhongRadius) )
             TempLight +=  (INT) ((PhongRange * 2 ) * (PhongRadius - Abs(Reflected-Viewer)) / PhongRadius);
 
-        RenderTable[i] = Clamp( TempLight, 0, 255 );
+		RenderTable[i] = Clamp<INT>( TempLight, 0, 255 );
     }
 	unguard;
 }
@@ -4820,7 +4823,7 @@ void UWetTexture::SetRefractionTable()
 	for( INT i=0; i<1024 ; i++ )
     {
 		INT TempLight = (INT) ((+i-511) * ((FLOAT)WaveAmp/512.0F));
-		RenderTable[i] = Clamp( TempLight, -128, 127 );
+		RenderTable[i] = Clamp<INT>( TempLight, -128, 127 );
     }
 	unguard;
 }
