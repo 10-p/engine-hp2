@@ -1,5 +1,14 @@
 # XOpenGLDrv — Web (WebGL2) integration guide
 
+> **HP2 note.** This guide is the engine-ut99 (UT99 v400) original, kept for its WebGL2 findings (§4 GL
+> profiles, §6 S3TC/DXT1, the GLOB gotcha in §1), which apply unchanged to HP2 because those fork sites are
+> now gated `XOGL_UE1_V4XX` (400 **and** 433). Its build/wiring specifics do **not** describe this repo: HP2
+> has no `WASM_USE_XOPENGL` option or NOpenGLESDrv — `BUILD_XOPENGLDRV` (ON by default, forced ON on web,
+> `Source/CMakeLists.txt`) builds the device, the launcher's switch table (`Source/Game/Src/Launch.cpp`,
+> `-XOPENGLRENDERER`) and the web `Default.ini` select it, and the paths/commands are this repo's presets
+> (`BUILD.md`). The HP2 433 face (Lumos `cAlpha`, `DrawTriangles`, straight alpha) is in
+> `ENGINE_CHANGES.md` §0.
+
 Handoff for the agent wiring the new renderer(s) into the UT99 **web (Emscripten/WASM)** build. This is the
 "how to build, assemble, and test the WebGL build" companion to:
 

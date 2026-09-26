@@ -1,4 +1,74 @@
-# XOpenGLDrv (v400 port) — engine-tree changes & driver-local adaptations
+# XOpenGLDrv (HP2 433 port, on the UT99 v400 port) — engine-tree changes & driver-local adaptations
+
+## 0. HP2 — Harry Potter and the Chamber of Secrets, Unreal Engine 1 build 433 (branch `hp2-v433-compat`)
+
+The driver source is the OldUnreal fork, FetchContent'd from branch **`hp2-v433-compat`** (locally
+`/home/ion/hp2-ufrontend/XOpenGLDrv` via `FETCHCONTENT_SOURCE_DIR_XOPENGLDRV`), which is the template's
+`ut99-v400-compat` plus the HP2 commits (`git log ut99-v400-compat..hp2-v433-compat`). HP2's
+`Core/Inc/UnObjVer.h` defines `ENGINE_VERSION 433`. Nothing outside `Source/XOpenGLDrv/` (this glue) and
+the fork changed for it. Plan and evidence: `docs/porting/analysis/renderer-forks.md` §2–§5, §10.4.
+
+### 0.1 Gates (`Inc/XOpenGLDrv.h`)
+
+| Macro | True on | Carries |
+|---|---|---|
+| `XOGL_UE1_V4XX` | `ENGINE_VERSION` 400 **and** 433 | every former `#if ENGINE_VERSION==400` site that 433 needs too (24 sites: `BOOL/TRUE/FALSE/PF_None/NAME_DevGraphics` shims, `clockFast`, `FShaderWriterX` TArray shims, `MaxTextureSize` member, TEXF aliases / `FIsCompressedFormat` / `FTextureFormatString` / `ERenderZTest`, WebGL2 profile, SDL/WebGL context adoption, no own swap, `SizeX/Y` present, gamma guards, DXT1 soft decode, s3tc ext name, `DumpShader`, ANSI log, `ADD_OPTION`) — a mechanical `==400` → `XOGL_UE1_V4XX` substitution |
+| `XOGL_HP2` | 433 only | the 433 render-device face and HP2's blend semantics (below); `#include "Render.h"` (433 has no `RenderPrivate.h`); the 4-arg `DECLARE_CLASS(…, CLASS_Config, XOpenGLDrv)` |
+
+**v400 regression:** every fork TU preprocessed against engine-ut99's headers (`-E -P`, `__FILE__`/`__LINE__`
+neutralised) is byte-identical between `ut99-v400-compat` and `hp2-v433-compat`, so the UT99 build is
+textually unchanged.
+
+### 0.2 The 433 face (`XOGL_HP2`; behavioural spec = retail `Source/D3DDrv/Src/Direct3D7.cpp`)
+
+- **`DrawComplexSurface(Frame, Surface, Facet, DWORD PolyFlags, BYTE cAlpha)`** (`Src/DrawComplex.cpp`): uses
+  the `PolyFlags` argument, never `Surface.PolyFlags` (Render's Lumos path passes a modified copy). A surface
+  with `PF_HighShadowDetail` **and** a blend bit (`PF_Modulated|PF_Translucent`) is Lumos: straight alpha
+  (`GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA`) with opacity `(255-cAlpha)/255` on the diffuse alpha factor
+  (`cAlpha` is transparency: 255 = gone), blend bits and the Lumos markers (`PF_Gouraud`/`PF_DirtyShadows`)
+  stripped, depth writes = the `PF_Occlude` Render decided; a masked Lumos surface keeps its masked texture
+  upload but blends instead of alpha-testing. D3D7's `PolyFlags & PF_LumosAffected` "any bit" test (which
+  would also catch every plain `PF_Modulated` poly) is deliberately not reproduced.
+- **`INT MaxVertices()` = 256** (== D3D7/SoftDrv/NullDrv; the mesh batcher sizes its buffers once).
+- **`DrawTriangles(Frame, Info, Pts, NumPts, _WORD* Indices, NumIndices, PolyFlags, Span)`**
+  (`Src/DrawGouraud.cpp`): indexed triangle list (meshes incl. CPU-skinned skeletal, particles) / `Indices==NULL
+  && NumIndices==NumPts` → one convex fan (decals, blob shadows) / otherwise a plain list. Normals are zeroed
+  unless HW lighting or bump maps read them (particles never write `Normal`). Per-vertex alpha = `Light.W`.
+- **`DrawGouraudPolygon` is NOT declared** by the driver on 433: the base `URenderDevice::DrawGouraudPolygon`
+  forwards to `DrawTriangles` as a fan. Its v400 body lives on as the private fan path `DrawGouraudFan`.
+- `GetOsSurface` is not overridden (the base default returns NULL; only WinDrv calls it).
+- **`PF_AlphaBlend`/`PF_Straight_AlphaBlend` = synthetic `PF_XOGL_AlphaBlend = 0x20000000`** (the one
+  `EPolyFlags` bit 433 leaves free; `PF_Premultiplied_AlphaBlend` stays 0). With it real, the fork's existing
+  alpha-blend paths (SetBlend, `DF_AlphaBlended`, Gouraud vertex-alpha) work unchanged; `DrawSimple` lines/points
+  now use a real alpha blend of `Color.W=1` (visually identical).
+- **`HP2AdjustPolyFlags`** (`Src/SetTexture.cpp`), called on entry by `DrawTriangles` and `DrawTile`: alpha-palette
+  tiles (`Palette[128].A != 255`, not translucent) → `PF_Highlighted` (premultiplied, as D3D7 `DrawTile`);
+  `PF_Highlighted|PF_Translucent` → straight alpha (fading actors, `Opacity < 1`; `PF_Masked` wins, as SoftDrv);
+  `PF_Modulated` drops `PF_RenderFog` (D3D7 `AdjustPolyFlags`).
+- **`Draw3DLine`** skips the `Frame->Coords` transform for `LINE_PreTransformed` (no HP2 caller today).
+
+### 0.3 Deferred / to verify at first light
+
+- Two-sided depth bias (HP2's `bTwoSidedBias`, `Render/Src/UnMeshRnLOD.h`): not implemented — decide after
+  looking at Harry's robe/hair close-ups (renderer-forks §3.5, C7).
+- `UTexture::Alpha > 0` fade (a 227 convention in the fork): **no shipped HP2 texture sets `Alpha`** (3,988
+  textures in `Assets/{Textures,Maps,System}` scanned with `tools/dev/analysis/upkg.py`), so it never triggers.
+- Alpha palettes: 130 of 3,385 shipped palettes have `Palette[128].A != 255` (mostly `HP_FX.utx`, A = 0 →
+  premultiplied tiles with A = 0 draw additively, exactly as on D3D7).
+- `ActorXBlending` must stay True (the web ini sets it): with it False the Gouraud shader scales the vertex
+  colour **including `Light.W`** by 1.5, which would make fading actors too opaque.
+
+§1–§5 below are the engine-ut99 (UT99 v400) record this glue inherits verbatim. Their engine-tree edits
+(`WASM_USE_XOPENGL`, `Source/UnrealTournament/…`, NOpenGLESDrv) describe the template's tree, not HP2's (HP2
+selects the device in `Source/Game/Src/Launch.cpp` and builds XOpenGL with `BUILD_XOPENGLDRV`; the header
+comments in this folder's `CMakeLists.txt` are likewise the template's — on 433 the fork's `Render.h` comes
+from `Render/Inc` through the `Render` link, and `../Render/Src` is only kept for fidelity); every
+`#if ENGINE_VERSION==400` they cite is now `#if XOGL_UE1_V4XX` in the fork, and the 3-arg `DECLARE_CLASS`
+note applies to v400 only.
+
+---
+
+# The UT99 v400 port (inherited from engine-ut99)
 
 This port follows a **driver-only** rule: all XOpenGLDrv adaptations for vanilla **UT99 v400** (UE1)
 live inside `Source/XOpenGLDrv/` and are gated `#if ENGINE_VERSION==400` (v400's `Core/Inc/UnObjVer.h`
