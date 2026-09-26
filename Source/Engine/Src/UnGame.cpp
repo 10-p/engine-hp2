@@ -1027,11 +1027,10 @@ ULevel* UGameEngine::LoadMap( const FURL& URL, UPendingLevel* Pending, const TMa
 		}
 #endif
 	}
-	#if _MSC_VER
-	catch( TCHAR* CatchError )
-	#else
-	catch( char* CatchError )
-	#endif
+	// HP2 port: `const`, on every compiler. The linker throws both appThrowf's TCHAR* and
+	// `throw( LocalizeError(…) )`'s const TCHAR*; a non-const handler (HP2's MSVC TCHAR* / PS2 char* pair)
+	// lets the const ones escape past EndLoad() to an outer handler under GCC/clang. (hp2-core §k.3.)
+	catch( const TCHAR* CatchError )
 	{
 		// Safely failed loading.
 		EndLoad();
