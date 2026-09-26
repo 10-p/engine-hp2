@@ -396,7 +396,7 @@ void UEditorEngine::modelBuildBounds( USkeletalMesh* Mesh )
 	TArray<FLOAT> Radii( Mesh->RefSkeleton.Num() );
 	for_array ( t, Mesh->RefSkeleton )
 		Radii(t) = Mesh->RefSkeleton(t).BonePos.Length;
-	for( t=Mesh->RefSkeleton.Num()-1; t>0; t-- )
+	for( INT t=Mesh->RefSkeleton.Num()-1; t>0; t-- )
 	{
 		INT p = Mesh->RefSkeleton(t).ParentIndex;
 		if( p != t )
@@ -969,7 +969,7 @@ void UEditorEngine::movementDigest(	UAnimation* Anim, INT MoveIndex )
 			// Set to minimum value. It would be nice to have mesh info here.
 			BoneSizes(b) = 1.f;}
 
-		for( i=RawTracks.Num()-1; i>=0; i-- )
+		for( INT i=RawTracks.Num()-1; i>=0; i-- )
 		{
 			INT b=Hierarchy(i);
 			if( b != 0 ) // Ignore root track offset which does not represent a bone.
@@ -992,7 +992,7 @@ void UEditorEngine::movementDigest(	UAnimation* Anim, INT MoveIndex )
 		}
 
 		// For leaf bones, add the average size.
-		for( i=RawTracks.Num(); i>=0; i-- )
+		for( INT i=RawTracks.Num(); i>=0; i-- )
 		NLOG( debugf(TEXT("Max bone size for this animation: %f"), BoneMax) );
 		
 		// Scale bone errors depending on max bone size.
@@ -1013,10 +1013,12 @@ void UEditorEngine::movementDigest(	UAnimation* Anim, INT MoveIndex )
 			{
 				// Test every point below as the start of segment.
 				// Due to compression format, can't eliminate more than 255 consecutive frames.
-				for( INT s=e-2; s>=0 && s>=e-255; s-- )
+				INT s;
+				for( s=e-2; s>=0 && s>=e-255; s-- )
 				{
 					// Test every point in between for error.
-					for( INT m=s+1; m<e; m++ )
+					INT m;
+					for( m=s+1; m<e; m++ )
 					{
 						FLOAT PosErr = GetInterKeyError( Track, s, m, e, BoneSizes(b) );
 						if( PosErr > POSERRCMP )
@@ -1168,7 +1170,7 @@ void UEditorEngine::movementDigest(	UAnimation* Anim, INT MoveIndex )
 #endif
 
 		// Turn any 2-key tracks into 1 key tracks if possible.
-		for( b=0; b<RawTracks.Num(); b++)
+		for( INT b=0; b<RawTracks.Num(); b++)
 		{
 			FRawTrack& Track = RawTracks(b);
 			
@@ -1198,7 +1200,7 @@ void UEditorEngine::movementDigest(	UAnimation* Anim, INT MoveIndex )
 
 		INT RemovedPos = 0;
 		
-		for( b=0; b<RawTracks.Num(); b++ )
+		for( INT b=0; b<RawTracks.Num(); b++ )
 		{
 			FLOAT MaxDelta = 0.0f;
 			for(INT i=0; i<RawTracks(b).KeyPos.Num(); i++)
@@ -1222,7 +1224,7 @@ void UEditorEngine::movementDigest(	UAnimation* Anim, INT MoveIndex )
 		debugf(TEXT("QuatKeys after lossy culling 2:%i  Duplicates: %i LerpMatches: %i Removed Pos tracks: %i"),TotalKeys,RemovedMatched,RemovedLerped,RemovedPos);
 		
 		// Align quats. The first and last quats in looping animations can only be aligned at runtime...
-		for( b=0; b<RawTracks.Num(); b++)
+		for( INT b=0; b<RawTracks.Num(); b++)
 		{
 			for(INT i=1; i< RawTracks(b).KeyQuat.Num(); i++)
 			{
@@ -1243,7 +1245,7 @@ void UEditorEngine::movementDigest(	UAnimation* Anim, INT MoveIndex )
 	}
 
 	// Merge RawTracks into compressed MasterTrack, and store counts.
-	for( i=0; i<RawTracks.Num(); i++)
+	for( INT i=0; i<RawTracks.Num(); i++)
 	{
 		for_array( q, RawTracks(i).KeyQuat )
 			//Anim->MasterTrack.KeyQuat.AddItem( FAnimVec(RawTracks(i).KeyQuat(q)) );

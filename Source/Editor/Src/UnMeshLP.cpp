@@ -234,7 +234,7 @@ TFace::~TFace()
 		}
 	}
 
-	for( i=0; i<3; i++) 
+	for( INT i=0; i<3; i++) 
 	{
 		INT i2 = (i+1)%3;
 		if( ! Verts[i] || ! Verts[i2] ) continue;
@@ -328,7 +328,7 @@ void TFace::ReplaceVertex(TVertex *VOld, TVertex *VNew)
 		Verts[i]->RemoveIfNonNeighbor(VOld);
 	}
 
-	for( i=0; i<3; i++ ) 
+	for( INT i=0; i<3; i++ ) 
 	{
 		check( Verts[i]->Faces.FindItemIndex(this) != INDEX_NONE ); 
 		for( INT j=0; j<3; j++ ) if( i!=j ) 
@@ -861,7 +861,7 @@ void UEditorEngine::meshLODProcess( ULodMesh* Mesh,	ULODProcessInfo* LODInfo)
 
 	// Materials building.
 	// A material is any unique combination of a texture and the flags.
-	for( p=0; p<Mesh->Tris.Num(); p++ )
+	for( INT p=0; p<Mesh->Tris.Num(); p++ )
 	{
 		UBOOL Unique = true;
 		INT ThisMatIndex = 0;
@@ -905,7 +905,7 @@ void UEditorEngine::meshLODProcess( ULodMesh* Mesh,	ULODProcessInfo* LODInfo)
 
 	// Record Wedges.
 	Mesh->Wedges.Empty();
-	for( p=0; p<Mesh->Tris.Num(); p++ )
+	for( INT p=0; p<Mesh->Tris.Num(); p++ )
 	{
 		for( INT t=0; t<3; t++)
 		{
@@ -983,7 +983,7 @@ void UEditorEngine::meshLODProcess( ULodMesh* Mesh,	ULODProcessInfo* LODInfo)
 	// Full vertex set for LOD now known.
 	INT TrueFrameVertNum = TModel.GVerts.Num();
 	// Backup original indices.
-	for( t=0; t<TModel.GVerts.Num(); t++)
+	for( INT t=0; t<TModel.GVerts.Num(); t++)
 	{
 		TModel.GOriginalVertIdx.AddItem(TModel.GVerts(t)->OriginalIndex);
 		TModel.GVerts(t)->OriginalIndex = t; // Create permutation using CURRENT index set.
@@ -1000,7 +1000,7 @@ void UEditorEngine::meshLODProcess( ULodMesh* Mesh,	ULODProcessInfo* LODInfo)
 	// Fill more of the TModel.
 	
 	// Wedges
-	for( t=0; t<Mesh->Wedges.Num(); t++ )
+	for( INT t=0; t<Mesh->Wedges.Num(); t++ )
 	{
 		TWedge NewWedge;
 		// NewWedge.MaterialID
@@ -1017,7 +1017,7 @@ void UEditorEngine::meshLODProcess( ULodMesh* Mesh,	ULODProcessInfo* LODInfo)
 	
 
 	// Faces, Wedge materials.
-	for( t=0; t<Mesh->Faces.Num(); t++)
+	for( INT t=0; t<Mesh->Faces.Num(); t++)
 	{
 		TWedge* TV[3];
 		for( int j=0; j<3; j++ )
@@ -1065,11 +1065,11 @@ void UEditorEngine::meshLODProcess( ULodMesh* Mesh,	ULODProcessInfo* LODInfo)
 	NOTE(debugf(TEXT("##reduced mesh - vertices: %i  Triangles: %i Wedges: %i "),TModel.GVerts.Num(),TModel.GFaces.Num(),TModel.GWedges.Num()+TModel.GAuxWedges.Num()));
 
 	// Debugging
-	for ( t=0; t<Mesh->CollapsePointThus.Num(); t++ )
+	for( INT t=0; t<Mesh->CollapsePointThus.Num(); t++ )
 	{
 		NOTE( debugf(TEXT(" CollapsePointThus # %5i    %5i "), t, Mesh->CollapsePointThus(t) );)
 	}
-	for ( t=0; t<Permutation.Num(); t++ )
+	for( INT t=0; t<Permutation.Num(); t++ )
 	{
 		NOTE( debugf(TEXT(" Permutation # %5i    %5i "), t, Permutation(t) );)
 	}
@@ -1078,7 +1078,7 @@ void UEditorEngine::meshLODProcess( ULodMesh* Mesh,	ULODProcessInfo* LODInfo)
 	//  Vertex collapse list preparation .
 	NOTE( debugf(TEXT(" Vertex collapse list preparation - collapsingarray size: %i"),Mesh->CollapsePointThus.Num());)
 	NOTE( debugf(TEXT(" Permutation array size: %i"),Permutation.Num());)
-	for( i=0; i<Mesh->CollapsePointThus.Num(); i++ ) 
+	for( INT i=0; i<Mesh->CollapsePointThus.Num(); i++ ) 
 	{
 		if( Mesh->CollapsePointThus(i) != 0xFFFF )
 		{
@@ -1104,7 +1104,7 @@ void UEditorEngine::meshLODProcess( ULodMesh* Mesh,	ULODProcessInfo* LODInfo)
 	// Reorder all vertex indices in the Wedges accordingly, and prepare its internal resort array.
 	TWedgeSort* WedgePermutation = New<TWedgeSort>(GMem,TModel.GWedges.Num());
 
-	for( w=0; w<TModel.GWedges.Num(); w++ )
+	for( INT w=0; w<TModel.GWedges.Num(); w++ )
 	{
 		// Permutate the vertices inside all our wedges.
 		TModel.GWedges(w).VertexIndex = Permutation(TModel.GWedges(w).VertexIndex);
@@ -1129,7 +1129,7 @@ void UEditorEngine::meshLODProcess( ULodMesh* Mesh,	ULODProcessInfo* LODInfo)
 	
 	// Apply the sorted WedgePermutation.
 	TArray<TWedge>  WorkWedges;
-	for( w=0; w<TModel.GWedges.Num(); w++ )
+	for( INT w=0; w<TModel.GWedges.Num(); w++ )
 	{
 		INT PermIdx = WedgePermutation[w].SortedWedgeIndex;
 		WorkWedges.AddItem( TModel.GWedges(PermIdx) );
@@ -1145,7 +1145,7 @@ void UEditorEngine::meshLODProcess( ULodMesh* Mesh,	ULODProcessInfo* LODInfo)
 
 	WedgeRemapList.Add(WorkWedges.Num()); 
 
-	for ( w=0; w<WorkWedges.Num(); w++)
+	for( INT w=0; w<WorkWedges.Num(); w++)
 	{
 		// Build the condensed version.
 		if ( w==0 )
@@ -1173,7 +1173,7 @@ void UEditorEngine::meshLODProcess( ULodMesh* Mesh,	ULODProcessInfo* LODInfo)
 
 	TArray<INT> WedgeFlagger;
 	WedgeFlagger.Add(WorkWedges.Num());
-	for ( w=0; w<WorkWedges.Num(); w++) 
+	for( INT w=0; w<WorkWedges.Num(); w++) 
 	{
 		WedgeFlagger(w)=-1;
 	}
@@ -1182,11 +1182,11 @@ void UEditorEngine::meshLODProcess( ULodMesh* Mesh,	ULODProcessInfo* LODInfo)
 	// Create the wedge LOD collapse list. Mesh->CollapseWedgeThus...
 	//
 	Mesh->CollapseWedgeThus.Add(UniqueWedges.Num());
-	for ( w=0; w<UniqueWedges.Num(); w++) 
+	for( INT w=0; w<UniqueWedges.Num(); w++) 
 	{
 		Mesh->CollapseWedgeThus(w)= w;
 	}
-	for( w=0; w<WorkWedges.Num(); w++)
+	for( INT w=0; w<WorkWedges.Num(); w++)
 	{
 		INT WOrig = WorkWedges(w).OriginalIndex;
 		INT UIndex = WedgeRemapToUnique(w);
@@ -1205,7 +1205,7 @@ void UEditorEngine::meshLODProcess( ULodMesh* Mesh,	ULODProcessInfo* LODInfo)
 	//
 	Mesh->Wedges.Empty();
 	Mesh->Wedges.Add(UniqueWedges.Num());
-	for( w=0; w<UniqueWedges.Num(); w++ )
+	for( INT w=0; w<UniqueWedges.Num(); w++ )
 	{
 		Mesh->Wedges(w).TexUV.U = UniqueWedges(w).U;
 		Mesh->Wedges(w).TexUV.V = UniqueWedges(w).V;
@@ -1214,7 +1214,7 @@ void UEditorEngine::meshLODProcess( ULodMesh* Mesh,	ULODProcessInfo* LODInfo)
 		NOTE(debugf(TEXT(" Finalwedge: # %4i Wedge UV %3i %3i   Vertex: %4i Origindex: %4i "),w,UniqueWedges(w).U,UniqueWedges(w).V,UniqueWedges(w).VertexIndex,UniqueWedges(w).OriginalIndex ));  
 	}
 
-	for ( w=0; w<UniqueWedges.Num(); w++) 
+	for( INT w=0; w<UniqueWedges.Num(); w++) 
 	{
 		 NOTE(debugf(TEXT(" CollapseWedgeThus ( %4i ) = %4i , vertex: %i"), w, Mesh->CollapseWedgeThus(w),UniqueWedges(w).VertexIndex ););
 	}
@@ -1241,13 +1241,13 @@ void UEditorEngine::meshLODProcess( ULodMesh* Mesh,	ULODProcessInfo* LODInfo)
 	}
 
 	// Copy TModel's Facelevel array over to Mesh
-	for( f=0; f<TModel.FaceLevel.Num(); f++)
+	for( INT f=0; f<TModel.FaceLevel.Num(); f++)
 	{
 		Mesh->FaceLevel.AddItem(TModel.FaceLevel(f));
 	}
 
 	// test: are FACE collapse FaceLevels set correctly ?
-	for( w=0; w< Mesh->Faces.Num() ; w++ )
+	for( INT w=0; w< Mesh->Faces.Num() ; w++ )
 		NOTE(debugf(TEXT(" Face: %4i  Matx: %i  Wedges: %4i %4i %4i  FaceLevel %4i  Verts: %4i %4i %4i"),w,Mesh->Faces(w).MaterialIndex, Mesh->Faces(w).iWedge[0],Mesh->Faces(w).iWedge[1],Mesh->Faces(w).iWedge[2],Mesh->FaceLevel(w),
 		              Mesh->Wedges(Mesh->Faces(w).iWedge[0]).iVertex,Mesh->Wedges(Mesh->Faces(w).iWedge[1]).iVertex,Mesh->Wedges(Mesh->Faces(w).iWedge[2]).iVertex); )
 
@@ -1280,12 +1280,12 @@ void UEditorEngine::meshLODProcess( ULodMesh* Mesh,	ULODProcessInfo* LODInfo)
 	}
 	*/
 
-	for( t=0; t<SpecialCoordVerts.Num(); t++)
+	for( INT t=0; t<SpecialCoordVerts.Num(); t++)
 	{
 		FullRemap(t) = SpecialCoordVerts(t); // map special coords to the beginning.
 	}
 
-	for( t=0; t<TrueFrameVertNum; t++)
+	for( INT t=0; t<TrueFrameVertNum; t++)
 	{
 		// Map all regular used verts to their sorted position after the special ones.
 		NOTE( debugf(TEXT(" # %5i FR DestIndex %5i  NewIn %5i "),t, SpecialCoordVerts.Num()+Permutation(t),TModel.GOriginalVertIdx(t));)
@@ -1294,7 +1294,7 @@ void UEditorEngine::meshLODProcess( ULodMesh* Mesh,	ULODProcessInfo* LODInfo)
 	}
 
 	
-	for( t=0; t<FullFrameVertNum; t++)
+	for( INT t=0; t<FullFrameVertNum; t++)
 	{
 		NOTE(debugf(TEXT(" Fullremap index %5i  content %5i "),t, FullRemap(t));)
 	}
@@ -1303,7 +1303,7 @@ void UEditorEngine::meshLODProcess( ULodMesh* Mesh,	ULODProcessInfo* LODInfo)
 	TArray<FMeshVert> NewVerts;
 	NewVerts.Add( FullFrameVertNum * Mesh->AnimFrames);
 
-	for( f=0; f<Mesh->AnimFrames; f++ )
+	for( INT f=0; f<Mesh->AnimFrames; f++ )
 	{
 		NOTE(debugf(TEXT(" fullremap AnimFrames %i "),f);)
 		INT FrameStart = f * Mesh->FrameVerts;
@@ -1330,11 +1330,11 @@ void UEditorEngine::meshLODProcess( ULodMesh* Mesh,	ULODProcessInfo* LODInfo)
 	// for the texture LOD gauging !
 	TArray<INT> UnFullRemap; 
 	UnFullRemap.Add(Mesh->FrameVerts);
-	for( t=0; t<FullFrameVertNum; t++)
+	for( INT t=0; t<FullFrameVertNum; t++)
 	{
 		UnFullRemap(FullRemap(t))= t;
 	}
-	for( t=0; t<Mesh->Tris.Num(); t++)
+	for( INT t=0; t<Mesh->Tris.Num(); t++)
 	{
 		Mesh->Tris(t).iVertex[0] = UnFullRemap( Mesh->Tris(t).iVertex[0] );
 		Mesh->Tris(t).iVertex[1] = UnFullRemap( Mesh->Tris(t).iVertex[1] );
@@ -1510,7 +1510,7 @@ void UEditorEngine::modelLODProcess( USkeletalMesh* Mesh, ULODProcessInfo* LODIn
 	//
 	// Mesh faces from RawDataFaces ->   Mesh->Faces; also size TModel.FaceLevel.AddItem(0xFFFF) !!
 	//
-	for( t=0; t< RawData->Faces.Num(); t++ )
+	for( INT t=0; t< RawData->Faces.Num(); t++ )
 	{
 		FMeshFace NewFace;
 
@@ -1530,7 +1530,7 @@ void UEditorEngine::modelLODProcess( USkeletalMesh* Mesh, ULODProcessInfo* LODIn
 	//
 	//  Mesh Materials
 	//
-	for( t=0; t< RawData->Materials.Num(); t++)
+	for( INT t=0; t< RawData->Materials.Num(); t++)
 	{
 		FMeshMaterial NewStuff;
 	
@@ -1562,7 +1562,7 @@ void UEditorEngine::modelLODProcess( USkeletalMesh* Mesh, ULODProcessInfo* LODIn
 	// Mesh Wedges 
 	//
 	Mesh->Wedges.Empty();
-	for( t=0; t< RawData->Wedges.Num(); t++)
+	for( INT t=0; t< RawData->Wedges.Num(); t++)
 	{
 		FMeshWedge NewWedge;
 		NewWedge.iVertex = RawData->Wedges(t).PointIndex;
@@ -1579,7 +1579,7 @@ void UEditorEngine::modelLODProcess( USkeletalMesh* Mesh, ULODProcessInfo* LODIn
 
 	// Backup original Point indices = needed to get wedges pointing properly after points
 	// are sorted in collapse order.
-	for( t=0; t<TModel.GVerts.Num(); t++)
+	for( INT t=0; t<TModel.GVerts.Num(); t++)
 	{
 		TModel.GOriginalVertIdx.AddItem(TModel.GVerts(t)->OriginalIndex);
 		TModel.GVerts(t)->OriginalIndex = t; // Create permutation using CURRENT index set.
@@ -1598,7 +1598,7 @@ void UEditorEngine::modelLODProcess( USkeletalMesh* Mesh, ULODProcessInfo* LODIn
 	// Fill more of the TModel.
 	
 	// Wedges
-	for( t=0; t<Mesh->Wedges.Num(); t++ )
+	for( INT t=0; t<Mesh->Wedges.Num(); t++ )
 	{
 
 		TWedge NewWedge;
@@ -1614,7 +1614,7 @@ void UEditorEngine::modelLODProcess( USkeletalMesh* Mesh, ULODProcessInfo* LODIn
 	}
 	
 	// Faces, Wedge materials.
-	for( t=0; t<Mesh->Faces.Num(); t++)
+	for( INT t=0; t<Mesh->Faces.Num(); t++)
 	{
 		TWedge* TV[3];
 		for( int j=0; j<3; j++ )
@@ -1671,11 +1671,11 @@ void UEditorEngine::modelLODProcess( USkeletalMesh* Mesh, ULODProcessInfo* LODIn
 	NLOG(debugf(TEXT("##reduced mesh - vertices: %i  Triangles: %i Wedges: %i "),TModel.GVerts.Num(),TModel.GFaces.Num(),TModel.GWedges.Num()+TModel.GAuxWedges.Num()));
 
 	// Debugging
-	for ( t=0; t<Mesh->CollapsePointThus.Num(); t++ )
+	for( INT t=0; t<Mesh->CollapsePointThus.Num(); t++ )
 	{
 		NLOG(debugf(TEXT(" CollapsePointThus # %5i    %5i "), t, Mesh->CollapsePointThus(t) );)
 	}
-	for ( t=0; t<Permutation.Num(); t++ )
+	for( INT t=0; t<Permutation.Num(); t++ )
 	{
 		NLOG(debugf(TEXT(" Permutation # %5i    %5i "), t, Permutation(t) );)
 	}
@@ -1683,7 +1683,7 @@ void UEditorEngine::modelLODProcess( USkeletalMesh* Mesh, ULODProcessInfo* LODIn
 	//  Vertex collapse list preparation .
 	NLOG(debugf(TEXT(" Vertex collapse list preparation - collapsingarray size: %i"),Mesh->CollapsePointThus.Num());)
 	NLOG(debugf(TEXT(" Permutation array size: %i"),Permutation.Num());)
-	for( i=0; i<Mesh->CollapsePointThus.Num(); i++ ) 
+	for( INT i=0; i<Mesh->CollapsePointThus.Num(); i++ ) 
 	{
 		if( Mesh->CollapsePointThus(i) != 0xFFFF )
 		{
@@ -1704,7 +1704,7 @@ void UEditorEngine::modelLODProcess( USkeletalMesh* Mesh, ULODProcessInfo* LODIn
 	// Reorder all vertex indices in the Wedges accordingly, and prepare its internal resort array.
 	TWedgeSort* WedgePermutation = New<TWedgeSort>(GMem,TModel.GWedges.Num());
 
-	for( w=0; w<TModel.GWedges.Num(); w++ )
+	for( INT w=0; w<TModel.GWedges.Num(); w++ )
 	{
 		// Permutate the vertices inside all our wedges.
 		TModel.GWedges(w).VertexIndex = Permutation(TModel.GWedges(w).VertexIndex);
@@ -1729,7 +1729,7 @@ void UEditorEngine::modelLODProcess( USkeletalMesh* Mesh, ULODProcessInfo* LODIn
 	
 	// Apply the sorted WedgePermutation.
 	TArray<TWedge>  WorkWedges;
-	for( w=0; w<TModel.GWedges.Num(); w++ )
+	for( INT w=0; w<TModel.GWedges.Num(); w++ )
 	{
 		INT PermIdx = WedgePermutation[w].SortedWedgeIndex;
 		WorkWedges.AddItem( TModel.GWedges(PermIdx) );
@@ -1745,7 +1745,7 @@ void UEditorEngine::modelLODProcess( USkeletalMesh* Mesh, ULODProcessInfo* LODIn
 
 	WedgeRemapList.Add(WorkWedges.Num()); 
 
-	for ( w=0; w<WorkWedges.Num(); w++)
+	for( INT w=0; w<WorkWedges.Num(); w++)
 	{
 		// Build the condensed version.
 		if ( w==0 )
@@ -1773,18 +1773,18 @@ void UEditorEngine::modelLODProcess( USkeletalMesh* Mesh, ULODProcessInfo* LODIn
 
 	TArray<INT> WedgeFlagger;
 	WedgeFlagger.Add(WorkWedges.Num());
-	for ( w=0; w<WorkWedges.Num(); w++) 
+	for( INT w=0; w<WorkWedges.Num(); w++) 
 	{
 		WedgeFlagger(w)=-1;
 	}
 	
 	// Create the wedge LOD collapse list. Mesh->CollapseWedgeThus...
 	Mesh->CollapseWedgeThus.Add(UniqueWedges.Num());
-	for ( w=0; w<UniqueWedges.Num(); w++) 
+	for( INT w=0; w<UniqueWedges.Num(); w++) 
 	{
 		Mesh->CollapseWedgeThus(w)= w;
 	}
-	for( w=0; w<WorkWedges.Num(); w++)
+	for( INT w=0; w<WorkWedges.Num(); w++)
 	{
 		INT WOrig = WorkWedges(w).OriginalIndex;
 		INT UIndex = WedgeRemapToUnique(w);
@@ -1803,7 +1803,7 @@ void UEditorEngine::modelLODProcess( USkeletalMesh* Mesh, ULODProcessInfo* LODIn
 	// Move final wedges to the Mesh->Wedges wedge array.
 	Mesh->Wedges.Empty();
 	Mesh->Wedges.Add(UniqueWedges.Num());
-	for( w=0; w<UniqueWedges.Num(); w++ )
+	for( INT w=0; w<UniqueWedges.Num(); w++ )
 	{
 		Mesh->Wedges(w).TexUV.U = UniqueWedges(w).U;
 		Mesh->Wedges(w).TexUV.V = UniqueWedges(w).V;
@@ -1812,7 +1812,7 @@ void UEditorEngine::modelLODProcess( USkeletalMesh* Mesh, ULODProcessInfo* LODIn
 		NLOG(debugf(TEXT(" Finalwedge: # %4i Wedge UV %3i %3i   Vertex: %4i Origindex: %4i "),w,UniqueWedges(w).U,UniqueWedges(w).V,UniqueWedges(w).VertexIndex,UniqueWedges(w).OriginalIndex ));  
 	}
 
-	for ( w=0; w<UniqueWedges.Num(); w++) 
+	for( INT w=0; w<UniqueWedges.Num(); w++) 
 	{
 		 NLOG(debugf(TEXT(" CollapseWedgeThus ( %4i ) = %4i , vertex: %i"), w, Mesh->CollapseWedgeThus(w),UniqueWedges(w).VertexIndex ););
 	}
@@ -1837,7 +1837,7 @@ void UEditorEngine::modelLODProcess( USkeletalMesh* Mesh, ULODProcessInfo* LODIn
 	}
 
 	// Copy TModel's Facelevel array over to Mesh
-	for( f=0; f<TModel.FaceLevel.Num(); f++)
+	for( INT f=0; f<TModel.FaceLevel.Num(); f++)
 	{
 		Mesh->FaceLevel.AddItem(TModel.FaceLevel(f));
 	}
@@ -1846,7 +1846,7 @@ void UEditorEngine::modelLODProcess( USkeletalMesh* Mesh, ULODProcessInfo* LODIn
 	
 
 	// test: are FACE collapse FaceLevels set correctly ?
-	for( w=0; w< Mesh->Faces.Num() ; w++ )
+	for( INT w=0; w< Mesh->Faces.Num() ; w++ )
 		NLOG(debugf(TEXT(" Face: %4i  Matx: %i  Wedges: %4i %4i %4i  FaceLevel %4i  Verts: %4i %4i %4i"),w,Mesh->Faces(w).MaterialIndex, Mesh->Faces(w).iWedge[0],Mesh->Faces(w).iWedge[1],Mesh->Faces(w).iWedge[2],Mesh->FaceLevel(w),
 		              Mesh->Wedges(Mesh->Faces(w).iWedge[0]).iVertex,Mesh->Wedges(Mesh->Faces(w).iWedge[1]).iVertex,Mesh->Wedges(Mesh->Faces(w).iWedge[2]).iVertex); )
 
@@ -1868,14 +1868,14 @@ void UEditorEngine::modelLODProcess( USkeletalMesh* Mesh, ULODProcessInfo* LODIn
 
 
 
-	for( t=0; t<TrueFrameVertNum; t++)
+	for( INT t=0; t<TrueFrameVertNum; t++)
 	{
 		// Map all regular used verts to their sorted position 
 		NLOG(debugf(TEXT(" # %5i FR DestIndex %5i  NewIn %5i "),t, Permutation(t),TModel.GOriginalVertIdx(t));)
 		FullRemap(Permutation(t)) =  TModel.GOriginalVertIdx(t); 
 	}
 
-	for( t=0; t<TrueFrameVertNum; t++)
+	for( INT t=0; t<TrueFrameVertNum; t++)
 	{
 		NLOG(debugf(TEXT(" Fullremap index %5i  content %5i "),t, FullRemap(t));)
 	}
@@ -1884,7 +1884,7 @@ void UEditorEngine::modelLODProcess( USkeletalMesh* Mesh, ULODProcessInfo* LODIn
 	NLOG(debugf(TEXT("Start rawdata remap - Number: %i"),RawData->Influences.Num()));
 
 	// Remap  point indices inside raw bone influences also...
-	for( t=0; t<RawData->Influences.Num(); t++)
+	for( INT t=0; t<RawData->Influences.Num(); t++)
 	{
 		RawData->Influences(t).PointIndex = Permutation( RawData->Influences(t).PointIndex );
 		
@@ -1921,7 +1921,7 @@ void UEditorEngine::modelLODProcess( USkeletalMesh* Mesh, ULODProcessInfo* LODIn
 	// Reorder all vertex indices in the Wedges accordingly, and prepare its internal resort array.
 	TBoneSort* BonePermutation = New<TBoneSort>(GMem, RawData->Influences.Num());
 
-	for( w=0; w<RawData->Influences.Num(); w++ )
+	for( INT w=0; w<RawData->Influences.Num(); w++ )
 	{
 		//NLOG(
 		//debugf(TEXT("## [ %4i ] RawBoneInf BoneIDX %8i PointIDX %8i Weight %9f "),w,RawData->Influences(w).BoneIndex, RawData->Influences(w).PointIndex, RawData->Influences(w).Weight); 
@@ -1948,7 +1948,7 @@ void UEditorEngine::modelLODProcess( USkeletalMesh* Mesh, ULODProcessInfo* LODIn
 	//debugf(TEXT("Apply rawdata influences permutation "));
 	//debugf(TEXT("## Sorted BoneWeightIdx-es %i BoneWeights %i "), Mesh->BoneWeightIdx.Num(), Mesh->BoneWeights.Num());
 
-	for( w=0; w<RawData->Influences.Num(); w++ )
+	for( INT w=0; w<RawData->Influences.Num(); w++ )
 	{	
 		INT Idx = BonePermutation[w].SortedInfluenceIndex;		
 		_WORD ThisBone = _WORD(RawData->Influences( Idx ).BoneIndex ) ; 
@@ -2018,7 +2018,7 @@ void UEditorEngine::modelLODProcess( USkeletalMesh* Mesh, ULODProcessInfo* LODIn
 #endif
 
 	// Make NumChildren include all descendents.
-    for( b=Mesh->RefSkeleton.Num()-1; b>= 0; b-- )
+    for( INT b=Mesh->RefSkeleton.Num()-1; b>= 0; b-- )
 	{
 		FMeshBone& Bone = Mesh->RefSkeleton(b);
 		if( Bone.ParentIndex != b )
@@ -2027,7 +2027,7 @@ void UEditorEngine::modelLODProcess( USkeletalMesh* Mesh, ULODProcessInfo* LODIn
 
 	// Add hierarchy index to each bone and detect max depth.
 	Mesh->SkeletalDepth = 0;
-	for( b=0; b<Mesh->RefSkeleton.Num(); b++)
+	for( INT b=0; b<Mesh->RefSkeleton.Num(); b++)
 	{
 		INT Parent = Mesh->RefSkeleton(b).ParentIndex;
 		INT Depth = 1;
@@ -2060,7 +2060,7 @@ void UEditorEngine::modelLODProcess( USkeletalMesh* Mesh, ULODProcessInfo* LODIn
 	}
 
 	// Invert the spacebases
-	for( s=0; s < SpaceBases.Num(); s++ )
+	for( INT s=0; s < SpaceBases.Num(); s++ )
 	{
 		SpaceBases(s) = SpaceBases(s).Inverse();
 	}
@@ -2072,7 +2072,7 @@ void UEditorEngine::modelLODProcess( USkeletalMesh* Mesh, ULODProcessInfo* LODIn
 	// debugf( TEXT("Points into bone spaces. MeshPoints %i  BoneWeights %i SpaceBases %i"), Mesh->Points.Num(), Mesh->BoneWeights.Num(), SpaceBases.Num() );
 
 	// Transform points into their bone space.
-	for( w=0; w< Mesh->BoneWeightIdx.Num(); w++)
+	for( INT w=0; w< Mesh->BoneWeightIdx.Num(); w++)
 	{
 		INT Index = Mesh->BoneWeightIdx(w).WeightIndex;
 		INT Number = Mesh->BoneWeightIdx(w).Number;
@@ -2081,7 +2081,7 @@ void UEditorEngine::modelLODProcess( USkeletalMesh* Mesh, ULODProcessInfo* LODIn
 	
 		if ( Number > 0)
 		{
-			for( b=Index; b<(Index+Number); b++)
+			for( INT b=Index; b<(Index+Number); b++)
 			{
 				FVector Point3D = Mesh->Points( Mesh->BoneWeights(b).PointIndex );
 				Mesh->LocalPoints(b) = Point3D << SpaceBases(w);
