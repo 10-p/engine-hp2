@@ -90,4 +90,14 @@ One dated line per green milestone (PLAN §10). Newest last.
   is a harmless `Failed to load` when it does not (native run in a fresh tree). hp2 E2E 11/11 (+ first-light
   options check, + `continueOnStart`), gates green. Found: Clear User Data leaves the restored save in the engine
   filesystem until a page reload (generic; reported). Publish folder rebuilt from these HEADs and re-served on :8092.
+- 2026-09-26 — **AutoFOV + a persistent-actor crash.** AutoFOV (`c8566eb`): the template's scoped Hor+ override in
+  `UGameEngine::Draw`, view part only (no viewmodel pass — HP2 draws through a camera `ViewTarget`; no AutoFOVUI —
+  no `HudScale`); native, wine and web builds log `base=90 effective=106.26` at 1280x720. Crash (`f536996`, reported
+  from the web: re-entering `Entryhall_hub` after `transition`): `FFileManagerLinux.h` lacked retail's
+  `operator<<(FName&)` on the file reader/writer, so `<Map>_pa.usa` stored no property names and the load read an
+  uninitialised `FPropertyTag::Name`; ported with validation + a per-actor resync. Same report, triaged as SHIPPED
+  DATA, not the port: `Entryhall_hub`'s `CutMark12/13/14/16` have no `CutName` (the Password cut scene's four
+  `teleport` commands fail, so Hermione/Fred/George/Ron stay put), and `PC_Hry_Password_10` / `Pc_Hry_Password_14`
+  exist in neither `hpdialog.int` nor `AllDialog.uax` (a `<?int?HPdialog.all.…?>` subtitle and silence). Still open:
+  three ghosts "fell out of the world" in `Entryhall_hub` at `GSTATE010` (not reproduced at `gstate060`).
 
