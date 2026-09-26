@@ -491,6 +491,16 @@ static UEngine* InitEngine()
 	// etc. on native.)
 	SelectRenderDevice();
 
+	// HP2: the game's debug mode (on-screen cut-scene/debug messages, the dev console, fast-forward, the level list
+	// in the credits page) is the globalconfig bool [HGame.baseConsole] bDebugMode, which HGame reads when it loads.
+	// Retail shipped it True in Default.ini; here it is a command-line option, set on EVERY boot (so a value written
+	// to Game.ini by an earlier session never leaks into the next): -DEBUGMODE turns it on, otherwise it is off.
+	{
+		const UBOOL bDebugMode = ParseParam( appCmdLine(), TEXT("DEBUGMODE") );
+		GConfig->SetBool( TEXT("HGame.baseConsole"), TEXT("bDebugMode"), bDebugMode );
+		debugf( NAME_Init, TEXT("HP2 debug mode %s (-DEBUGMODE)"), bDebugMode ? TEXT("on") : TEXT("off") );
+	}
+
 	// Update first-run. HP2 433 reads the stamp first (UnEngineWin.h InitEngine); its [FirstRun] Reconfig /
 	// ForceSoftware keys drove the Win32 D3D detection dialogs and are ignored here.
 	INT FirstRun=0;
