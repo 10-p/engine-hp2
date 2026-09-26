@@ -126,124 +126,6 @@ struct FTransform : public FOutVector
 		static const BYTE OutYMinTab [2] = { 0, FVF_OutYMin };
 		static const BYTE OutYMaxTab [2] = { 0, FVF_OutYMax };
 
-#if ASM
-		__asm
-		{
-			; 30 cycle clipping number and outcode computation.
-			;
-			mov  ecx,[this]					; Get this pointer
-			mov  esi,[Frame]				; Get scene frame pointer
-			;
-			; Compute clipping numbers:
-			;
-			fld  [ecx]FVector.Z				; Z
-			fld  [ecx]FVector.Z				; Z Z
-			fxch							; Z Z
-			fmul [esi]FSceneNode.PrjXM		; Z*ProjZM Z
-			fxch							; Z Z*ProjXM
-			fmul [esi]FSceneNode.PrjYM		; Z*ProjYM Z*ProjXM
-			fld  [ecx]FVector.Z				; Z Z*ProjYM Z*ProjXM
-			fld  [ecx]FVector.Z				; Z Z Z*ProjYM Z*ProjXM
-			fxch                            ; Z Z Z*ProjYM Z*ProjXM
-			fmul [esi]FSceneNode.PrjXP      ; Z*ProjXP Z Z*ProjYM Z*ProjXM
-			fxch                            ; Z Z*ProjXP Z*ProjYM Z*ProjXM
-			fmul [esi]FSceneNode.PrjYP      ; Z*ProjYP Z*ProjXP Z*ProjYM Z*ProjXM
-			fxch st(3)                      ; Z*ProjXM Z*ProjXP Z*ProjYM Z*ProjYP
-			fadd [ecx]FVector.X             ; X+Z*ProjXM Z*ProjXP Z*ProjYM Z*ProjYP
-			fxch st(2)                      ; Z*ProjYM Z*ProjXP X+Z*ProjXM Z*ProjYP
-			fadd [ecx]FVector.Y             ; Y+Z*ProjYM Z*ProjXP X+Z*ProjXM Z*ProjYP
-			fxch st(1)                      ; Z*ProjXP Y+Z*ProjYM X+Z*ProjXM Z*ProjYP
-			fsub [ecx]FVector.X             ; X-Z*ProjXP Y+Z*ProjYM X+Z*ProjXM Z*ProjYP
-			fxch st(3)                      ; Z*ProjYP Z+Y*ProjYM Z+X*ProjXM Z+X*ProjXP
-			fsub [ecx]FVector.Y             ; Y-Z*ProjYP Z+Y*ProjYM Z+X*ProjXM Z+X*ProjXP
-			fxch st(2)                      ; Z+X*ProjXM Z+Y*ProjYM Z+Y*ProjYP Z+X*ProjXP
-			fstp ClipXM                     ; Z+Y*ProjYM Z+Y*ProjYP Z+X*ProjXP
-			fstp ClipYM                     ; Z+Y*ProjYP Z+X*ProjXP
-			fstp ClipYP                     ; Z+X*ProjXP
-			fstp ClipXP                     ; (empty)
-			;
-			; Compute flags.
-			;
-			mov  ebx,ClipXM					; ebx = XM clipping number as integer
-			mov  edx,ClipYM					; edx = YM clipping number as integer
-			;
-			shr  ebx,31						; ebx = XM: 0 iff clip>=0.f, 1 iff clip<0.f
-			mov  edi,ClipXP					; edi = XP
-			;
-			shr  edx,31                     ; edx = YM: 0 or 1
-			mov  esi,ClipYP					; esi = YP: 0 or 1
-			;
-			shr  edi,31						; edi = XP: 0 or 1
-			mov  al,OutXMinTab[ebx]			; al = 0 or FVF_OutXMin
-			;
-			shr  esi,31						; esi = YP: 0 or 1
-			mov  bl,OutYMinTab[edx]			; bl = FVF_OutYMin
-			;
-			or   bl,al						; bl = FVF_OutXMin, FVF_OutYMin
-			mov  ah,OutXMaxTab[edi]			; ah = FVF_OutXMax
-			;
-			or   bl,ah						; bl = FVF_OutXMin, FVF_OutYMin, OutYMax
-			mov  al,OutYMaxTab[esi]			; bh = FVF_OutYMax
-			;
-			or   al,bl                      ; al = FVF_OutYMin and FVF_OutYMax
-			;
-			mov  [ecx]FOutVector.Flags,al	; Store flags
-		}
-#elif ASMLINUX
-		// Load member variables into local variables.
-		asm volatile ("
-			#
-			# Compute clipping numbers.
-			#
-			flds %0;				# Z
-			flds %0;				# Z Z
-			fxch;					# Z Z
-			fmuls %1;				# Z*ProjXM Z
-			fxch;					# Z Z*ProjXM
-			fmuls %2;				# Z*ProjYM Z*ProjXM
-			flds %0;				# Z Z*ProjYM Z*ProjXM
-			flds %0;				# Z Z Z*ProjYM Z*ProjXM
-			fxch;					# Z Z Z*ProjYM Z*ProjXM
-			fmuls %3;				# Z*ProjXP Z Z*ProjYM Z*ProjXM
-			fxch;					# Z Z*ProjXP Z*ProjYM Z*ProjXM
-			fmuls %4;				# Z*ProjYP Z*ProjXP Z*ProjYM Z*ProjXM
-			fxch %%st(3);			# Z*ProjXM Z*ProjXP Z*ProjYM Z*ProjYP
-			fadds %5;				# Z*ProjXM+X Z*ProjXP Z*ProjYM Z*ProjYP
-			fxch %%st(2);			# Z*ProjYM Z*ProjXP Z*ProjXM+X Z*ProjYP
-			fadds %6;				# Z*ProjYM+Y Z*ProjXP Z*ProjXM+X Z*ProjYP
-			fxch %%st(1);			# Z*ProjXP Z*ProjYM+Y Z*ProjXM+X Z*ProjYP
-			fsubs %5;				# Z*ProjXP-X Z*ProjYM+Y Z*ProjXM+X Z*ProjYP
-			fxch %%st(3);			# Z*ProjYP Z*ProjYM+Y Z*ProjXM+X Z*ProjXP-X
-			fsubs %6;				# Z*ProjYP-Y Z*ProjYM+Y Z*ProjXM+X Z*ProjXP-X
-			fxch %%st(2);			# Z*ProjXM+X Z*ProjYM+Y Z*ProjYP-Y Z*ProjXP-X
-		"
-		:
-		: "g" (Point.Z),
-		  "g" (Frame->PrjXM),
-		  "g" (Frame->PrjYM),
-		  "g" (Frame->PrjXP),
-		  "g" (Frame->PrjYP),
-		  "g" (Point.X),
-		  "g" (Point.Y)
-		);
-		asm volatile ("
-								# Z*ProjXM+X Z*ProjYM+Y Z*ProjYP-Y Z*ProjXP-X
-			fstps %0;			# Z*ProjYM+Y Z*ProjYP-Y Z*ProjXP-X
-			fstps %1;			# Z*ProjYP-Y Z*ProjXP-X
-			fstps %2;			# Z*ProjXP-X
-			fstps %3;			# (empty)
-		"
-		: "=g" (ClipXM),
-		  "=g" (ClipYM),
-		  "=g" (ClipYP),
-		  "=g" (ClipXP)
-		);
-		Flags  =
-		(	OutXMinTab [ClipXM < 0.f]
-		+	OutXMaxTab [ClipXP < 0.f]
-		+	OutYMinTab [ClipYM < 0.f]
-		+	OutYMaxTab [ClipYP < 0.f]);
-#else
 		ClipXM = Frame->PrjXM * Point.Z + Point.X;
 		ClipXP = Frame->PrjXP * Point.Z - Point.X;
 		ClipYM = Frame->PrjYM * Point.Z + Point.Y;
@@ -253,7 +135,6 @@ struct FTransform : public FOutVector
 		+	OutXMaxTab [ClipXP < 0.f]
 		+	OutYMinTab [ClipYM < 0.f]
 		+	OutYMaxTab [ClipYP < 0.f]);
-#endif
 	}
 	FTransform operator+( const FTransform& V ) const
 	{

@@ -492,7 +492,9 @@ UT_REPLACEMENT_ALLOC inline void* operator new( size_t Size )
 	return appMalloc( Size, TEXT("new") );
 	unguardSlow;
 }
-UT_REPLACEMENT_ALLOC inline void operator delete( void* Ptr )
+// noexcept: the standard declares replacement deallocation functions noexcept; without it any TU that
+// includes <new> after Core.h (HP2's particle code pulls <list>) fails with "different exception specifier".
+UT_REPLACEMENT_ALLOC inline void operator delete( void* Ptr ) noexcept
 {
 	guardSlow(delete);
 	appFree( Ptr );
@@ -512,7 +514,7 @@ UT_REPLACEMENT_ALLOC inline void* operator new[]( size_t Size )
 	return appMalloc( Size, TEXT("new") );
 	unguardSlow;
 }
-UT_REPLACEMENT_ALLOC inline void operator delete[]( void* Ptr )
+UT_REPLACEMENT_ALLOC inline void operator delete[]( void* Ptr ) noexcept
 {
 	guardSlow(delete);
 	appFree( Ptr );

@@ -322,7 +322,8 @@ public:
 		while( Remaining-- > 0 )
 		{
 			check(!Reader.AtEnd());
-			for( FHuffman* Node=&Root; Node->Ch==-1; Node=Node->Child(Reader.ReadBit()) );
+			FHuffman* Node; // ISO for-scope: used after the loop.
+			for( Node=&Root; Node->Ch==-1; Node=Node->Child(Reader.ReadBit()) );
 			BYTE B = Node->Ch;
 			Out << B;
 			if( Notify && !Notify->NotifyProgress( (FLOAT)(Total-Remaining) / (FLOAT)Total ) )
