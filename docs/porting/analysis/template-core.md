@@ -503,6 +503,116 @@ HP2-only (keep): 4-arg `DECLARE_CLASS(…,Core)` everywhere; `EStaticConstructor
 §5 UnClass.cpp); `UStruct::SerializeTaggedPersistentProperties` (HP2 save-game persistence); `UClass::ClassCRC` +
 `GetClassCRC()`; `AddDependency` moved out-of-line; `GetScriptTextCRC()` removed.
 
+### 4.15 `Inc/UnMath.h` — CONFLICTS=5 (epic→tmpl 346, epic→HP2 1410)
+
+Epic→template hunks (`diff --strip-trailing-cr -w`, E line → T line):
+
+| # | Template hunk | Commit / why | HP2 site | Class | ACTION |
+|---|---|---|---|---|---|
+| 1 | E:8 → T:8-12 `#ifdef PLATFORM_DREAMCAST #include "dc/fmath.h" #elif PLATFORM_LOW_MEMORY #include <math.h>` | 17b0864 (DC) | none | N/A | skip |
+| 2 | E:837 → T:842-884,905,909,915 `FGlobalMath` gets DC / LOW_MEMORY `Sqrt/SinTab/CosTab/SinFloat/CosFloat` computed forms and drops the trig/sqrt tables under `PLATFORM_LOW_MEMORY` | 17b0864 (DC RAM) | HP2 `FGlobalMath` is structurally different (433/436-era approximations: `SqrtManTbl`, `DivSqrtManTbl`, `DivManTbl`, …`ExpTbl`, `SqrtApprox/DivSqrtApprox/DivApprox/Power`; the MSVC `POWER_ASM` block is already `#if 0` at H:1542-1586, with the C `#else` at H:1587+) | N/A | keep HP2's `FGlobalMath` as is |
+| 3 | E:905-1168 deleted (T:953): the `#if ASM` MSVC `ASMTransformPoint/ASMTransformVector` and the `#elif ASMLINUX` AT&T versions | cbdb054 — ASM off; the `ASMLINUX` bodies are multi-line string literals (`asm volatile("\n…`) | H:1679-1820 (`#if ASM`), H:1822-1878 (`#if ASM`), H:1880-1937 (`#if ASMLINUX`) | ADAPT (optional) | with `ASM`/`ASMLINUX` undefined (template UnGnuG.h never defines them) these are dead preprocessor groups. **Verified 2026-09-26:** HP2's *unmodified* `UnMath.h`, included through the template's other headers (`syn/` isolation set, see §10), passes `g++ -m32 -std=gnu++17 -fsyntax-only` and `clang++ --target=i686-linux-gnu` / `--target=wasm32-unknown-emscripten -fsyntax-only` with zero errors — the unterminated multi-line literals in skipped groups are tolerated by both. So deletion is hygiene, not a blocker. Recommended: delete them anyway (they are ~450 lines of noise that every future diff drags along) |
+| 4 | E:1174-1204 → T:958-970 `TransformPointBy/TransformVectorBy` keep only the C body | cbdb054 | H:1943-2011 / H:2018-2079 `#if ASM / #elif ASMLINUX / #elif __PSX2_EE__ (VU0 asm) / #else` C body | ADAPT | keep only the `#else` bodies (H:2008-2010, H:2077-2078); delete the three other branches. Also dead code today — same "hygiene" status as #3 |
+| 5 | E:1231,1254,1296,1305 → T:997,1020,1062,1071 `FPointsAreSame/FPointsAreNear/FParallel/FCoplanar` return `UBOOL` (Epic: `int`) | cbdb054 — match the `friend UBOOL` declarations in `FVector` | H:2112, 2135, 2177, 2186 still `inline int …` | AC | take for tidiness. Not a blocker: the template's `UnGnuG.h:177` has `typedef int32_t UBOOL;` and `int32_t` is `int` on gcc -m32, MinGW i686 and wasm32, so `friend UBOOL f()` + `inline int f()` is the same declaration (confirmed by the 0-error syntax check). It would only break on a target where `int32_t` is `long` (none of ours) |
+
+HP2-only content (keep / delete):
+
+- `#if __PSX2_EE__` PS2 `FVector` (16-byte, with `W`, VU0 `asm volatile("…` bodies) H:192-652 → **delete**; keep the `#else`
+  `FVector` H:654-925 (12 bytes `X,Y,Z` — the on-disk and `-fpack-struct=4` layout the shipped packages expect).
+  `FVECTOR_ALIGNMENT` (H:193/657) has **no user** in HP2 `Source/` (grep) → delete with the PS2 block.
+- `RandomSpreadVector` (H:2515-2558, "Math added by Legend on 4/12/2000") — keep; it calls `appAcos` (declared in
+  HP2 `Inc/UnFile.h`, defined in HP2 `Src/UnAnsi.cpp`) and backs the 433 native `execRandomSpreadVector`. When the
+  template's `UnAnsi.cpp` hunks are merged, make sure `appAcos` survives (it is HP2-only).
+- `TTypeInfo<FVector/FPlane/FCoords/FRotator/FScale/FQuat/FPlace>::FastSerialize()` under `__INTEL_BYTE_ORDER__`
+  (H:2940-2972) — keep. The template's UnGnuG.h defines `__INTEL_BYTE_ORDER__` unless `PLATFORM_BIG_ENDIAN`
+  (§4.2 hunk 1), so fast bulk serialization stays on; it is correct only while these structs have no padding —
+  true under both natural and `-fpack-struct=4` layout (all members are 4-byte). Add a `static_assert(sizeof(FVector)==12)`
+  etc. next to them (cheap insurance; the static single binary makes it trivial).
+- `(DWORD&)F` / `(FLOAT&)A` type punning in `SqrtApprox`/`Power` (H:1588-1600) — relies on `-fno-strict-aliasing`
+  (global in the template's root CMake — keep it global in HP2).
+
+**File strategy:** do **not** 3-way merge (1410 HP2-changed lines against 346 template lines, all template lines
+are DC or ASM deletions). Keep HP2's file; hand-apply hunk 5; delete the PS2 `FVector` and the ASM/PS2
+branches of the transform code (optional but recommended). Verify: `grep -n "asm\|__PSX2_EE__\|ASMLINUX\|^#if ASM" Source/Core/Inc/UnMath.h` → only the `#if 0` `POWER_ASM` block (or nothing if that too is deleted).
+
+### 4.16 `Inc/UnMem.h` — CLEAN (epic→tmpl 18, epic→HP2 10)
+
+| # | Template hunk (T lines) | Commit / why | HP2 site | Class | ACTION |
+|---|---|---|---|---|---|
+| 1 | T:62-64 the three `friend void* operator new( size_t, FMemStack&, …)` declarations lose their default arguments; T:125,132,141 the definitions gain them | cbdb054 — GCC: "default argument given for parameter N of … after previous specification" (Epic had defaults on both) | H: Epic's text at the same place (HP2's delta is elsewhere in the file) | AC | take (the clean merge does) |
+| 2 | T:114 `NewOned`: `BYTE* Result = Mem.PushBytes(…)` replaces Epic's `return (T*)Mem.PushBytes(…); appMemset( Result, … )` (dead code referencing an undeclared `Result`) | cbdb054 — hard error once the template is instantiated/parsed by a conforming compiler (`Result` is non-dependent → error at definition) | H: Epic's (same bug) | AC | take |
+| 3 | T:137 `appMemzero(Result,…)` → `appMemset(Result,0,…)`; T:146 `0xff` → `255` | cbdb054, cosmetic | H: Epic's | AC | take |
+
+HP2-only content: `inline BYTE* PushBytes` (harmless); `#if __PSX2_EE__ Align = Max(Align,16);` (H:35-37) → **delete**;
+`Init( INT DefaultChunkSize, const TCHAR* InTag )` + `const TCHAR* Tag` member (H:60, H:88) → **keep** (HP2 callers pass a tag,
+e.g. `GMem.Init( 65536, TEXT("GMem") )` in `Src/UnMisc.cpp` `appInit`; every `FMemStack::Init` call in Engine/Render must
+then pass two args — the template's drivers copied in (NSDLDrv, XOpenGLDrv, UTGLR, SoftDrv) do not call `FMemStack::Init`,
+verify with `grep -rn "\.Init(\s*[0-9A-Z_]*\s*)" Source/*/Src | grep -i mem` after copying them).
+
+**File strategy:** take the CLEAN merge output, delete the PSX2 3-liner.
+
+### 4.17 `Inc/UnTemplate.h` — CONFLICTS=9 (epic→tmpl 74, epic→HP2 679)
+
+**The 433 idiom that changes everything here:** HP2 inverted Epic's array hierarchy. Epic: `class FArray` (untyped
+`void* Data; INT ArrayNum, ArrayMax;`) ← `template<T> class TArray : public FArray`. HP2 433:
+`template<T> class TRefArray { protected: T* Data; INT ArrayNum; }` (H:206-352, "static array, cannot grow")
+← `template<T> class TArray : public TRefArray<T>` (H:353, adds `INT ArrayMax`) ← `class FArray : public TArray<BYTE>`
+(H:682, exposes only the `ElementSize` overloads). Memory layout is unchanged (`Data, ArrayNum, ArrayMax` = 12 bytes,
+same as Epic and as the serialized/`UArrayProperty` view — `(FArray*)` casts still work), **but `TArray<T>` now has a
+*dependent* base**, so every unqualified `ArrayNum`/`Data` inside `TArray<T>` members is a two-phase-lookup error under
+GCC/clang. The template's `this->` hunks were written against Epic's non-dependent `FArray` base and do not cover this.
+
+Evidence (reproduced 2026-09-26, `tcore-private/syn`): the 3-way-resolved HP2 `UnTemplate.h` included from the template's
+headers gives **28 errors** under `g++ -m32 -fsyntax-only` (`'ArrayNum' was not declared in this scope` at H:373, 379,
+384, 394-404, 456-556, 595-649 and `'Pairs'` at H:1639); adding the two using-declarations below makes the whole Core
+header set compile with **0 errors** under g++ -m32, clang i686 and clang wasm32.
+
+| # | Template hunk (T lines) | Commit / why | HP2 site | Class | ACTION |
+|---|---|---|---|---|---|
+| 1 | T:230-236, 257-263 `#ifdef PLATFORM_LOW_MEMORY` array growth `ArrayNum/8+8` in `FArray::Add/Insert` | 17b0864 (DC) | H: `TArray<T>::Add/Insert` at ~H:479/499 (moved by 433) | N/A | skip (it is part of 2 of the 9 conflicts: resolve to HP2's text) |
+| 2 | T:683, 720, 729-733, 753 `TTransArray::Empty/AddUniqueItem/RemoveItem/ModifyAllItems` use `this->ArrayNum`, `this->Num()` | cbdb054 — dependent base `TArray<T>` | H:799, 829-841, 856 | AC (in conflicts) | take (resolved text shown in the diff below) |
+| 3 | T:944 `TLazyArray::Unload` → `this->Empty()` | cbdb054 | H:1034 | AC | take |
+| 4 | T:1100-1110 `FString::Left/LeftChop/Right` use `Clamp<INT>(…)` | cbdb054 — `Clamp(INT,int,INT)` deduction conflict on targets where `INT` is `int32_t` ≠ `int` (DC); harmless elsewhere | H:1208-1218 | AC | take |
+| 5 | **T:1112-1116 `FString::Mid`: `DWORD End = (DWORD)Start + (DWORD)Count;`** | **1f744b8** — "`Mid(Start)` defaults `Count=MAXINT`; signed `Start+Count` overflows (UB); clang -O2 turned it into a 2 GB allocation" | H:1220 `DWORD End = Start+Count;` — identical bug | AC | **take**, with the comment |
+| 6 | T:1358, 1400, 1463, 1472 `typename TTypeInfo<TK>::ConstInitType` in `TMapBase::TPair` ctor, `Add`, `Set`, `Remove` | cbdb054 — dependent type names need `typename` | H:1466, 1502, 1553, 1560 | AC (in conflicts: HP2 removed adjacent `guard` lines) | take |
+| 7 | T:1566-1604 `TMultiMap::MultiFind/Add/AddUnique/RemovePair/FindPair` use `this->Hash/HashCount/Pairs/Relax` + `typename` | cbdb054 | H:1653-1685 | AC (in conflicts) | take |
+
+HP2-only fixes the template never needed (**required**, GCC/clang blockers):
+
+```cpp
+// Inc/UnTemplate.h, inside template<class T> class TArray : public TRefArray<T>  (right after "public:", H:355)
+	using TRefArray<T>::Data;
+	using TRefArray<T>::ArrayNum;
+// Inc/UnTemplate.h, inside template<class TK,class TI> class TMap : public TMapBase<TK,TI>  (after "public:", H:1628)
+	using TMapBase<TK,TI>::Pairs;      // HP2 added TMap::Num() { return Pairs.Num(); }
+```
+The resulting file is saved at `…/scratchpad/tcore-private/syn/UnTemplate.fixed.h` (resolved merge + these 3 lines);
+its diff against HP2's current file is exactly hunks 2-7 above plus the using-declarations.
+
+Latent instantiation-time hazards (`-fsyntax-only` does not instantiate templates; check at the first real compile):
+- `TTransArray<T>::Insert` (H:785-790) calls `FArray::Insert( Index, Count, sizeof(T) )`, but `TTransArray<T>` derives
+  from `TArray<T>`, **not** from `FArray` → ill-formed if instantiated. Engine instantiates `TTransArray<AActor*>`,
+  `<FPoly>`, `<FBspNode>`, `<FVert>`, `<FVector>`… (Engine `UnLevel.h`, `UnModel.h`); the Editor's BSP code may call
+  `.Insert(` on them. ACTION: change to `TArray<T>::Insert( Index, Count )` (same semantics, `sizeof(T)` implied).
+- Everything else in `TTransArray` casts `(FArray*)this` for `GUndo->SaveArray` — a reinterpret between unrelated
+  classes of identical layout; fine with `-fno-strict-aliasing`, keep.
+- Any other member of `TArray<T>`/`TLazyArray<T>`/`TTransArray<T>` calling a base member function unqualified
+  (e.g. `Realloc`, `Num`, `Remove`) resolves at instantiation only if the name is also visible as a member of the
+  class itself; the first Engine compile will list them — fix with `this->` one by one.
+
+**File strategy:** 3-way merge (`git merge-file`, base=epic, ours=HP2, theirs=template), resolve the 9 conflicts toward
+"HP2 text + template's `this->`/`typename`/`Clamp<INT>`/`Mid` tokens" (i.e. take `syn/UnTemplate.fixed.h` wholesale),
+then compile.
+
+### 4.18 `Inc/UnUnix.h` — OURS-UNCHANGED → take the template's file verbatim
+
+| # | Template hunk (T lines) | Commit / why | HP2 site | Class | ACTION |
+|---|---|---|---|---|---|
+| 1 | T:9 `#include <cstring>` | cbdb054 — `strcasecmp` etc. used by the UnGnuG.h shims when this header is included first | HP2 == Epic | AC | take |
+| 2 | T:25-31 `#ifdef PLATFORM_WIN32 CORE_API void appWinSockInit(); #endif` | 301a9ca (2.33) — defined in `Src/UnMinGW.cpp` (already in HP2), called from `appComputerName`/`appGetLocalIP` (UnUnix.cpp) and IpDrv | absent | AC | take |
+
+`appGetGUID( void* )` (T/H:22-24) is identical in both. **File strategy:** copy the template's file.
+
 ## 5. Per-file hunk analysis: Src/ (pending)
 
 ## 6. HP2-only Core files and what to do with each (pending)

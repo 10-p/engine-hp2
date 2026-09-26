@@ -352,7 +352,180 @@ same four families as E (and zero on T). No HP2-only additions.
 
 ## 3. SoftDrv
 
-_pending (run 2 in progress)_
+Retail HP2 shipped SoftDrv: `Assets/System/SoftDrv.dll` + `SoftDrv.int`, and `Config/System/Default.ini:31`
+`WindowedRenderDevice=SoftDrv.SoftwareRenderDevice` (section `[SoftDrv.SoftwareRenderDevice]` at `:213-221`).
+So SoftDrv is a real HP2 device, not a template extra.
+
+### 3.0 File inventory and diff sizes (re-measured this run)
+
+`diff --strip-trailing-cr -w -a`, counting `<`/`>` lines. E = `epic-sources/ut99-v400/SoftDrv/Src`.
+
+| File | E lines | T lines | H lines | T vs E | H vs E | T vs H |
+|------|--------:|--------:|--------:|-------:|-------:|-------:|
+| `DrawPoly.cpp` | 4614 | 4739 | 4603 | 189 | 87 | 276 |
+| `DrawSurf.cpp` | 21548 | 22317 | 21547 | 795 | 25 | 820 |
+| `DrawTile.cpp` | 3610 | 3615 | 3610 | 11 | **0** | 11 |
+| `Line2D.cpp` | 217 | 222 | 217 | 5 | 2 | 7 |
+| `SoftDrv.cpp` | 234 | 239 | 234 | 7 | **0** | 7 |
+| `SoftDrvPrivate.h` | 238 | 301 | 239 | 71 | 11 | 80 |
+| `Hit.cpp`, `Line.h`, `Line1.h` | 123/172/32 | = | = | 0 | 0 | 0 |
+| total | | | | **1 078** | **125** | 1 201 |
+
+(Correction to run 1: it said "1 612" T-vs-E lines and "127" H-vs-E lines; the re-count is 1 078 and 125.
+The conclusion is the same.) `__asm` counts are identical in T and H (`DrawPoly` 32, `DrawSurf` 104,
+`DrawTile` 19; `SoftDrvPrivate.h` T 2 = 1 code + 1 comment, H 1). H also has `Src/SoftDrv.dsp` (sources
+`DrawPoly DrawSurf DrawTile Hit Line.h Line1.h Line2D SoftDrv SoftDrvPrivate.h`, lines 93-126) = the six
+`.cpp` of the CMake list.
+
+### 3.1 Template vs epic — what engine-ut99 did to SoftDrv, hunk by hunk
+
+| # | T file:line | Change | Kind | Needed to **compile** at ASM=0 on GCC/clang? |
+|---|-------------|--------|------|------|
+| S1 | `SoftDrvPrivate.h:10` | `#include "..\..\Render\Src\RenderPrivate.h"` → `#include "RenderPrivate.h"` (path from CMake) | portability | **yes** — backslash paths do not resolve on Linux/wasm |
+| S2 | `SoftDrvPrivate.h:12-24` | `#ifdef PLATFORM_WIN32 #undef IN #undef OUT` (ufront 2.33) | MinGW | yes on MinGW (`DrawSurf.cpp` bilinear filter has a local `IN`) |
+| S3 | `SoftDrvPrivate.h:27-33` | `#if !ASM && __INTEL__ #define GIsMMX false #endif` | behaviour | yes in practice: otherwise native x86 picks `MMX*` ColorModes whose bodies are `#if ASM`'d out (S9) → black screen |
+| S4 | `SoftDrvPrivate.h:35-54` | `SOFTDRV_MAX_SCREEN` (default 4096) → `MaximumX/YScreenSize` (were 2048/1200) | web robustness (2.12, 2.19f, 2.71) | no, but mandatory for the web (canvas = device pixels) |
+| S5 | `SoftDrvPrivate.h:62-82` | `_rotl/_rotr`: `<stdlib.h>` on `PLATFORM_WIN32`, `<x86intrin.h>` on `PLATFORM_X86`, inline fallback (s==0 guarded) elsewhere (wasm) | portability | **yes** |
+| S6 | `SoftDrvPrivate.h:185-189`, `SoftDrv.cpp:25` | `BITFIELD BilinearFiltering` + its `UBoolProperty` | feature (true bilinear vs knight's-move dither) | no |
+| S7 | `SoftDrv.cpp:45-49` | `SupportsFogMaps = 1` instead of `= GIsMMX` | feature (portable fog) | no — but without it the portable path renders no fog at all |
+| S8 | `DrawPoly.cpp:62` | `static SavedEBP,SavedESP;` → `static int …` | C++ (no implicit int) | **yes** |
+| S9 | `DrawPoly.cpp:1476/2419`, `2426/3370`, `3414/3967` | `#if ASM … #endif` around the whole bodies of `InnerGouraudMMX15`, `InnerGouraudMMX16`, `MMXFlashTriangle` (pure `__asm`; `InnerGouraudMMX32` already had `#if ASM` at 725/1470 in epic) | portability | **yes** |
+| S10 | `DrawPoly.cpp:4663-4665` | `TriangleFunc = &USoftwareRenderDevice::MMXFlashTriangle` / `PentiumFlashTriangle` | C++ (pointer-to-member needs `&Class::`) | **yes** |
+| S11 | `DrawPoly.cpp:56, 91, 125, 142-681` | per-vertex **mesh volumetric fog** on the Pentium Gouraud path: `FTexSetup::FR/FG/FB`, `FPolyCSetup::FogR/G/B, DFogR/G/B`, `static UBOOL GMeshFog`, `+ GPolyC.FogR/G/B` in all nine span kernels | feature | no |
+| S12 | `DrawPoly.cpp:4135-4164, 4221-4242, 4393-4416, 4442-4466` | fog edge/pixel setup in `PentiumFlashTriangle` (`TriVertex[v].Fog`, `dFRdX…`, `FogScaleR/G/B` per colour depth; zero for `PF_Translucent\|PF_Modulated`) | feature | no |
+| S13 | `DrawPoly.cpp:4205-4217` | **`DR/DG/DB` edge-gradient fix** (green was stepped by blue's gradient on the Pentium path) | bug fix | no — but visible at ASM=0 under coloured light |
+| S14 | `DrawPoly.cpp:4491-4494` | `GMeshFog = VolumetricLighting && VolumetricLightingMeshes && SupportsFogMaps;` at the top of `DrawGouraudPolygon` | feature | no — **but it does not compile on HP2** (§3.3 S14) |
+| S15 | `DrawSurf.cpp` (≈770 lines) | portable **fog maps** (`FogPhoton[MaximumXScreenSize]`, `FogShade`, `LightPassPentiumFog`, 12 `MergePass*Fog` twins, post-pass swap at T:21308-21323 gated on `Surface.FogMap && Surface.LightMap`); `TexturePassFiltered` + `InitTexPentiumFiltered` + `TexFilterMode/KnightRow/KnightU/V`; `InitBilinearKernel(UBits, iMip)` | feature | no |
+| S16 | `DrawSurf.cpp:905-913` | `+0x010101` rounding bias in the C `LightPentium` fallback (every non-x86 build was 1 LSB dark; verified bit-exact vs the asm by `tools/asmport`) | bug fix | no |
+| S17 | `DrawSurf.cpp` `@@ -498`, `@@ -607` | `for( INT i=0,j=3; …)`, `for( INT i=0; i<512; …)`, `for (INT i = 0; i<16; …)` | for-scope | **yes** |
+| S18 | `DrawSurf.cpp` `@@ -2152` (T:2855-2900) | extra empty MMX stubs (`MMX15MaskedRender8A/B`, `MMX15Fog…`, `MMX16…`, `MMX32Render8Unrolled[Faster]`, `MMX32FogStippledRender8`) in the `!ASM` stub block | link | **yes** (the dispatch tables name them) |
+| S19 | `DrawSurf.cpp:22195` | `InitLightPentiumDelta( appRound(DUF*…), appRound(DVF*…) )` | narrowing float→INT | warning / correctness |
+| S20 | `DrawTile.cpp:3075-3092` | `SpanIndex[1200]` → `[MaximumYScreenSize]` + `SpanY = Min( SizeY, (INT)MaximumYScreenSize )` clamp (the >1200-tall-viewport self-loop hang) | web robustness | no, but mandatory for the web |
+| S21 | `Line2D.cpp:63-66, 144` | `#ifdef PLATFORM_MSVC` around the depth-cued line rasteriser (`Line.h`/`Line1.h` need MSVC-only token pasting) → no 2D lines on GCC/wasm | portability | **yes** |
+| S22 | `CMakeLists.txt`, `WEB-NOTES.md` | `ASM=0`, `SOFTDRV_MAX_SCREEN` cache var (wasm preset 8192), include `../Render/Src`; the web-vs-native notes | build | — |
+
+Hit.cpp, Line.h, Line1.h: untouched.
+
+### 3.2 HP2 vs epic — the 433 delta (all of it)
+
+| # | H file:line | Change | Needed in the merged file? |
+|---|-------------|--------|----------------------------|
+| H1 | `SoftDrvPrivate.h:10` | `#include "..\..\Render\Inc\Render.h"` (HP2 renamed `RenderPrivate.h` → `Render/Inc/Render.h`) | yes, as `#include "Render.h"` (forward slashes / include path) |
+| H2 | `SoftDrvPrivate.h:~83` | `DOUBLE D;` removed from `union FMMX` | **no** — it was removed only because HP2's Loki `Core/Inc/UnGnuG.h` has **no `DOUBLE` typedef** (typedef list `:124-152`; `DOUBLE` exists only in `UnVcWin32.h:86`). The template's `UnGnuG.h:179` has `typedef double DOUBLE;`, and T's `DrawSurf.cpp:419,566` and the template's `Game/Src/Launch.cpp` (already in HP2: `:74,478,637`) use `DOUBLE`. Nothing reads `FMMX::D` (grep). Harmless either way; keep T's text |
+| H3 | `SoftDrvPrivate.h:117` | `DECLARE_CLASS(USoftwareRenderDevice,URenderDevice,CLASS_Config,SoftDrv)` | **yes** (433 4-arg macro) |
+| H4 | `SoftDrvPrivate.h:155-158` | `DrawComplexSurface(…, DWORD PolyFlags, BYTE cAlpha)`, `INT MaxVertices()`, `DrawTriangles(Frame, Info, Pts, NumPts, _WORD* Indices, INT NumIndices, PolyFlags, Span)`; **no `DrawGouraudPolygon`** | **yes** — these are pure virtuals in H `Engine/Inc/UnRenDev.h:75-77` |
+| H5 | `DrawPoly.cpp:3682-3683` | MMX edge setup: `DFG = …Fog.Y`, `DFB = …Fog.Z` (epic had them swapped) | cosmetic for us — the site is inside `MMXFlashTriangle`, which is `#if ASM`'d out (T:3414-3967; the site is **T:3719-3720**, correction to run 1's "T:3679") |
+| H6 | `DrawPoly.cpp:4366-4596` | `DrawGouraudPolygon` → `MaxVertices(){ return 256; }` + `DrawTriangles(…)`: same body, plus (a) `if( (PolyFlags & (PF_Highlighted\|PF_Translucent)) == (PF_Highlighted\|PF_Translucent) && (PolyFlags & PF_Masked) ) PolyFlags &= ~(PF_Highlighted\|PF_Translucent);`, (b) three draw loops replacing epic's hard-coded 3..7-point fan (quoted below) | **yes** |
+| H7 | `DrawSurf.cpp:20373` | `DrawComplexSurface( …, DWORD PolyFlags, BYTE cAlpha )` | **yes** |
+| H8 | `DrawSurf.cpp:20384-86, 20402, 20864, 21484` | `Surface.PolyFlags` → `PolyFlags` (IsModulated/IsTranslucent/IsMasked, `PF_FlatShaded`, `PF_NoSmooth`, `PF_Selected`) | **yes — functionally load-bearing**, see below |
+| H9 | `DrawSurf.cpp:361-367`, `20846`; `Line2D.cpp:40` | `DOUBLE`→`double`, dropped parentheses, `0.67f`, `0.56f` | no (cosmetic; `DOUBLE` exists with the template `UnGnuG.h`) |
+
+H6's loops, verbatim (H `DrawPoly.cpp:4546-4593`, indentation compressed):
+
+```cpp
+	// Allow indexed or non-indexed drawing.
+	if( Indices )
+		// Indexed tri-list.
+		for( INT i=0; i<NumIndices; i+=3 )
+		{ Point0 = Pts[ Indices[i] ]; Point1 = Pts[ Indices[i+1] ]; Point2 = Pts[ Indices[i+2] ];
+		  (this->*TriangleFunc)( Frame, Texture, PolyFlags, SpanBuffer ); }
+	else if( NumIndices != NumPts )
+		// Non-indexed tri list.
+		for( INT i=0; i<NumPts; i+=3 )
+		{ Point0 = Pts[i]; Point1 = Pts[i+1]; Point2 = Pts[i+2];
+		  (this->*TriangleFunc)( Frame, Texture, PolyFlags, SpanBuffer ); }
+	else
+	{	// Tri fan.
+		Point0 = Pts[0];
+		for( INT i=0; i<NumPts-2; i++ )
+		{ Point1 = Pts[i+1]; Point2 = Pts[i+2];
+		  (this->*TriangleFunc)( Frame, Texture, PolyFlags, SpanBuffer ); }
+	}
+```
+
+Who calls which case (so the three branches are all live):
+
+| Caller (H) | Indices / NumIndices | Branch |
+|------------|---------------------|--------|
+| `Render/Src/UnMeshRn.cpp:129-134` (`#if INDEX`, `INDEX`=1 at `:81`) — meshes, batched up to `MaxVertices()` verts / `VBSize*6` indices | index buffer | indexed tri-list |
+| `Render/Src/UnMeshRn.cpp:138-143` (`#else`, dead) | `NULL, 0` | non-indexed tri-list |
+| `Render/Src/UnParticleRn.cpp:503, 552` — particle systems | index buffer | indexed tri-list |
+| `Render/Src/UnRender.cpp:3598` — decals (`// NumIndices=NumPoints => single polygon`) | `NULL, DecalNumPoints` | fan |
+| `Engine/Src/UnCamera.cpp:199-203` — the base `URenderDevice::DrawGouraudPolygon` (`DrawTriangles( Frame, Info, Pts, NumPts, NULL, NumPts, PolyFlags, SpanBuffer )`) | `NULL, NumPts` | fan |
+
+So SoftDrv **must not** declare its own `DrawGouraudPolygon`: the non-pure base (`UnRenDev.h:78`, note its
+`int NumPts`) already forwards to `DrawTriangles`' fan branch, and HP2's own SoftDrv omits it.
+
+**Why H8 is load-bearing, not cosmetic:** Render passes flags that differ from `Surface.PolyFlags` for HP2
+**Lumos** surfaces. `PF_LumosAffected = PF_HighShadowDetail | PF_Modulated`, `PF_LumosAppear = PF_Gouraud`,
+`PF_LumosAlwaysOn = PF_DirtyShadows` (`Engine/Inc/UnObj.h:277-280`). On a span-based device
+(`UnRender.cpp:3469-3485`) Render ORs in `PF_Translucent` for always-on Lumos surfaces and **strips the three
+Lumos bits — including `PF_Modulated`** — before calling
+`DrawComplexSurface( Frame, Surface, Facet, LumosPolyFlags, (char)iAlpha )` (`:3541`); non-Lumos surfaces get
+`Surface.PolyFlags, 255` (`:3550`). A SoftDrv that kept reading `Surface.PolyFlags` would draw every Lumos
+surface as *modulated* (and never translucent). Note the side effect this has in retail too: the gate is
+`(PolyFlags & PF_LumosAffected)` (`:3456`), which is non-zero for any plain `PF_Modulated` surface, so in
+software mode HP2 draws ordinary modulated BSP surfaces unmodulated — that is retail behaviour and must be
+**preserved, not fixed** (screenshot comparisons against XOpenGL will differ there). `cAlpha` on this path is
+only ever 0 or 255 (`iAlpha = (LumosPolyFlags & PF_LumosAppear) ? 255 : 0`, `:3465`; the graded alpha is the
+hardware branch only), and HP2's SoftDrv ignores it; the merged file ignores it too (never treat `cAlpha==0`
+as "invisible" here).
+
+### 3.3 Merge analysis — base on the template's files, re-apply HP2's 433 face
+
+Direction: T is +1 078 lines of mostly-tested ufront work over epic; H is +125 lines of interface over epic,
+and the two sets touch disjoint regions except `DrawGouraudPolygon`→`DrawTriangles`. **Take T's nine files,
+re-apply H1, H3, H4, H6, H7, H8.** (The reverse — H as base, re-applying S1-S22 — is ~9× more text and
+would re-open the four ufront bugs S13/S16/S20/S4.)
+
+Three things in T's text do not fit HP2 and need a decision:
+
+| # | T site | Problem on HP2 | ACTION |
+|---|--------|----------------|--------|
+| S14 | `DrawPoly.cpp:4494` `GMeshFog = VolumetricLighting && VolumetricLightingMeshes && SupportsFogMaps;` | **`VolumetricLightingMeshes` does not exist in HP2's `URenderDevice`** (H `Engine/Inc/UnRenDev.h:40-60`: `…VolumetricLighting; ShinySurfaces; …`; the template added it to Engine at T `UnRenDev.h:48` + `UnCamera.cpp:27`). Compile error | Do **not** add it to Engine's `URenderDevice` (that changes the layout every in-tree and forked driver compiles against). Make it a **SoftDrv-local** config bool: `BITFIELD VolumetricLightingMeshes;` in `USoftwareRenderDevice` next to `BilinearFiltering`, plus `new(GetClass(),TEXT("VolumetricLightingMeshes"),RF_Public)UBoolProperty(CPP_PROPERTY(VolumetricLightingMeshes),TEXT("Options"),CPF_Config);` in `SoftDrv.cpp:StaticConstructor`, default 1 (set in `Init` or via `Default.ini [SoftDrv.SoftwareRenderDevice] VolumetricLightingMeshes=True`) |
+| S14b | same statement | **uninitialised `Fog` on HP2 particles.** T's mesh fog reads `P->Fog` of every triangle. HP2 feeds `DrawTriangles` from three producers; meshes get `Vert.Fog` from `FLightManager::LightAndFog` (H `UnLight.cpp:538` `Vert.Fog = FPlane(0)`, filled under `PF_RenderFog` at `:635`), decals set `DecalPoints[i]->Fog = FPlane(0,0,0,0)` (`UnRender.cpp:3857`), but **particles never write `.Fog`** (`grep -c Fog UnParticleRn.cpp` = 0; the verts come from `New<FTransTexture>(GMem, MaxVerts)`, `:475`, uninitialised; `SetupColors` writes `.Light` only, `:425-428`, `:773-786`). Particle PolyFlags are `PF_Unlit` + `PF_Masked` for `STY_Masked` (`GetPolyFlags`, `:361-372`) — not translucent/modulated, so T's `FogScale*` is **not** zeroed and garbage (possibly NaN; NaN×0 is NaN anyway) fog would be added to masked particles | gate on the flag Render uses to mean "this batch carries fog": `GMeshFog = VolumetricLighting && VolumetricLightingMeshes && SupportsFogMaps && (PolyFlags & PF_RenderFog);`. Meshes in a fog zone get `PF_RenderFog` (`UnLight.cpp:2565` `Result \|= PF_RenderFog`, returned into the mesh `PolyFlags`), particles do not, decals only with `STY_Modulated` (zero fog, zeroed scale). Identical behaviour for meshes, safe for particles |
+| S3 | `SoftDrvPrivate.h:31` `#if !ASM && __INTEL__` | `__INTEL__` comes from the template `UnGnuG.h:16`; HP2's own `UnGnuG.h` spells its platform macros differently | none once the template `UnGnuG.h` lands (prerequisite, `template-core.md`). On wasm `__INTEL__` is undefined, so `GIsMMX` is the Core global: the Unix core must leave `GIsMMX=0` there (it does in the template) |
+
+### 3.4 File-by-file plan (exact edits)
+
+Start: `cp /home/ion/engines/engine-ut99/Source/SoftDrv/Src/{DrawPoly.cpp,DrawSurf.cpp,DrawTile.cpp,Hit.cpp,Line.h,Line1.h,Line2D.cpp,SoftDrv.cpp,SoftDrvPrivate.h} Source/SoftDrv/Src/`
+and `cp …/engine-ut99/Source/SoftDrv/WEB-NOTES.md Source/SoftDrv/`. Keep `Src/SoftDrv.dsp` for reference.
+Then:
+
+| File | Edits on top of T's text | Verify |
+|------|--------------------------|--------|
+| `Src/SoftDrvPrivate.h` | (1) `:10` `#include "RenderPrivate.h"` → `#include "Render.h"` (resolves to `Render/Inc/Render.h` through the Render target's `PUBLIC Inc` and SoftDrv's own `PRIVATE ../Render/Inc`). (2) `:176` → `DECLARE_CLASS(USoftwareRenderDevice,URenderDevice,CLASS_Config,SoftDrv)`. (3) `:219-220` replace `void DrawComplexSurface( FSceneNode* Frame, FSurfaceInfo& Surface, FSurfaceFacet& Facet );` and `void DrawGouraudPolygon( … );` by HP2's three lines (`H:156-158`, quoted in H4). (4) add `BITFIELD VolumetricLightingMeshes;` after `BilinearFiltering` (`:189`) (S14). Keep everything else of T (IN/OUT undef, `GIsMMX false`, `SOFTDRV_MAX_SCREEN`, `_rotl` shim, `DOUBLE D`) | `grep -n 'DrawGouraudPolygon' Src/*.h` → only comments; the class has no pure virtual left unimplemented (link error `undefined reference to vtable for USoftwareRenderDevice` otherwise) |
+| `Src/SoftDrv.cpp` | add the `VolumetricLightingMeshes` `UBoolProperty` after T:25 (`BilinearFiltering`) and `VolumetricLightingMeshes = 1;` in the constructor/`Init` defaults (T sets its flags at `:43-50`); nothing else — H's `SoftDrv.cpp` is byte-identical to epic, so T's file carries no HP2 loss. `IMPLEMENT_PACKAGE(SoftDrv)`/`IMPLEMENT_CLASS` (T:12-13) stay | `diff E/SoftDrv.cpp H/SoftDrv.cpp` = empty (confirmed) |
+| `Src/DrawSurf.cpp` | (1) T:21098 signature → `void USoftwareRenderDevice::DrawComplexSurface( FSceneNode* Frame, FSurfaceInfo& Surface, FSurfaceFacet& Facet, DWORD PolyFlags, BYTE cAlpha )`. (2) the **six** `Surface.PolyFlags` → `PolyFlags` inside that function: T:21109, 21110, 21111, 21127, 21627, 22254 (`grep -n 'Surface\.PolyFlags'` lists exactly these six and nothing outside the function). Leave `Surface.FogMap`/`Surface.LightMap` (T:20664, 20846, 20998, 21308, 21467-21468, 21516) alone — they are pointers, not flags. (3) optional cosmetic `0.67f` (T:21608-ish, `MipMult *= 0.67`) | after the edit `grep -c 'Surface\.PolyFlags' Src/DrawSurf.cpp` = 0; `diff -w E/DrawSurf.cpp new/DrawSurf.cpp` must contain every H hunk of §3.2 H7/H8 |
+| `Src/DrawPoly.cpp` | (1) T:4484-4488: rename `void USoftwareRenderDevice::DrawGouraudPolygon(FSceneNode* Frame, FTextureInfo& Texture, FTransTexture** Pts, INT NumPts, DWORD PolyFlags, FSpanBuffer* SpanBuffer )` → `DrawTriangles( FSceneNode* Frame, FTextureInfo& Texture, FTransTexture** Pts, INT NumPts, _WORD* Indices, INT NumIndices, DWORD PolyFlags, FSpanBuffer* SpanBuffer )`, `guard(USoftwareRenderDevice::DrawTriangles)`, and insert before it `INT USoftwareRenderDevice::MaxVertices() { return 256; }` (H:4366-4370). (2) T:4494 → `GMeshFog = VolumetricLighting && VolumetricLightingMeshes && SupportsFogMaps && (PolyFlags & PF_RenderFog);` (S14b). (3) replace T's commented-out `//#debug /* if (PolyFlags & PF_Translucent) … */` block right after the `SizeY` check with HP2's `PF_Highlighted\|PF_Translucent` masked-preference block (H:4379-4385). (4) T:4667-4731 (`Point0 = Pts[0]; … if (NumPts == 7) …`) → HP2's three loops (H:4546-4593, quoted in §3.2), keeping T's `TriangleFunc = &USoftwareRenderDevice::…` lines (T:4662-4665) above them. (5) optional: H5 swap at T:3719-3720 (dead code at ASM=0). Leave T's S13 fix (T:4205-4217) — a different site | `grep -n 'DrawGouraudPolygon' Src/DrawPoly.cpp` → none; the only `DFG`/`DFB` lines read `Fog.Y`→DFG, `Fog.Z`→DFB |
+| `Src/Line2D.cpp` | none (T's `#ifdef PLATFORM_MSVC` gate is required; `0.56f` optional) | — |
+| `Src/DrawTile.cpp`, `Hit.cpp`, `Line.h`, `Line1.h` | none (H = E) | — |
+| `CMakeLists.txt` (H, existing) | already right: six `.cpp`, `ASM=0`, `SOFTDRV_MAX_SCREEN` cache var, `PRIVATE ../Render/Inc ../Render/Src`, links `Render Engine Core`. Only nit: `../Render/Src` is unnecessary once `Src/UnSpan.h`/`Src/Amd3d.h` are deleted (§1.4) — keep or drop, harmless | the wasm preset already sets `"SOFTDRV_MAX_SCREEN": "8192"` (H `Source/CMakePresets.json:36`, = T `CMakePresets.json:30`) — keep it |
+| `WEB-NOTES.md` | copy T's verbatim; it refers to `NSDLViewport.cpp`'s `SoftFB` and `softdrv-matrix.cjs`, which are template/NSDLDrv/frontend facts that apply unchanged (HP2 takes NSDLDrv from the template). Change `DM-Codex` in the §6 example to an HP2 map (e.g. `Adv1Willow`, which also exercises the Darklight fix of §1.3) | — |
+| `Config/System/Default.ini` `[SoftDrv.SoftwareRenderDevice]` (`:213-221`) | add `BilinearFiltering=False`, `VolumetricLightingMeshes=True` (optional — `CPF_Config` defaults from the constructor otherwise); the web ini set is `hp2-web-config`'s | — |
+
+Resulting ASM picture (identical to how T builds today): `DrawPoly.cpp` — `InnerGouraudMMX32/15/16` and
+`MMXFlashTriangle` bodies behind `#if ASM`, the `#if !ASM` Pentium kernels compiled; `DrawSurf.cpp` — the
+104 `__asm` all inside `#if ASM` or the MSVC-only stubs, `!ASM` stub block (with S18's extra names) compiled;
+`DrawTile.cpp` — 19 `__asm` inside `#if ASM`; `SoftDrvPrivate.h` — `FastSqrt` `__asm` inside `#if ASM`.
+
+Dependencies from other reports: template `Core/Inc/UnGnuG.h` (`ASM 0`, `__INTEL__`, `DOUBLE`, empty
+`DLL_EXPORT` — with HP2's `UnGnuG.h:97` `DLL_EXPORT` = `extern "C"`, T's `class DLL_EXPORT
+USoftwareRenderDevice` would not parse); `PLATFORM_X86` (H top `CMakeLists.txt:156`) / `PLATFORM_WIN32`
+(`:161`) / `PLATFORM_MSVC` (`:188`) — present; the template NSDLDrv's `SoftFB` path (`NSDLViewport.cpp`) for
+the web present; Render's `Inc/Render.h` (this report §1).
+
+### 3.5 SoftDrv acceptance / verification
+
+- [ ] `--target SoftDrv` builds clean on native, web and MinGW with only the known unused-variable warnings.
+- [ ] `nm -C libSoftDrv.a | grep 'USoftwareRenderDevice::\(DrawTriangles\|MaxVertices\|DrawComplexSurface\)'` — all three defined; no `DrawGouraudPolygon` symbol from SoftDrv.
+- [ ] Native `./Game -SOFTWARERENDERER -log`: menu, then a level at 640×480, 1920×1080 and a >1200-tall
+      size (WEB-NOTES §6) — the `SizeY`-indexed tables are the classic overrun.
+- [ ] Lumos: in a level with Lumos surfaces (grep `bLumosOn` users in `HGame/Classes`), cast Lumos in
+      software mode — appearing surfaces must appear, always-on ones draw translucent (tests H8).
+- [ ] Particles (any `HPParticle` effect, e.g. spell FX) in a **fog zone** show no colour garbage (tests S14b).
+- [ ] Meshes in a fog zone are fogged (S11/S12 through HP2's `LightAndFog`).
+- [ ] `Adv1Willow` tree shadows dark (depends on the Render `Merge` fix, §1.3).
 
 ## 4. Editor
 

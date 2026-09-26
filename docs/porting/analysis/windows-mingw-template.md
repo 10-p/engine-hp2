@@ -287,19 +287,246 @@ One HP2 wrinkle: the 433 net headers use `FTime` for `UNetConnection::LastReceiv
 `-fpack-struct=4` → another reason the flag must stay global. [LATER]
 
 ## 8. Template: UnTex.cpp DXT/S3TC guard and Editor UnParams.cpp duplicate guard
-_(pending)_
+### 8.1 Template `Engine/Src/UnTex.cpp` (commit `301a9ca`)
+| Template line | Guard | Content | Status |
+|---|---|---|---|
+| L12-16 | `#ifdef WIN32` (**left as is**) | `#include "UnDDraw.h"`, `"Palette.h"`, `"S3tc.h"` | headers exist in `Engine/Inc` and parse under MinGW (MinGW accepts `__declspec`), so the template did not rekey them |
+| L752-758 | comment | "ufront 2.33: was `#ifdef WIN32`. These implementations call into Epic's S3TC encoder and Heckbert quantiser (Engine/Lib/s3tc.lib plus the `__declspec(dllexport)` declarations in Palette.h), which NO CMake target links … "WIN32" quietly meant "MSVC". Under MinGW it compiled and then failed at link with undefined S3TCencode/S3TCdecode/HeckbertQuantize." | — |
+| L759 | `#if _MSC_VER` | real `UTexture::Compress` (`S3TCgetEncodeSize`/`S3TCencode`) and `UTexture::Decompress` (`S3TCgetDecodeSize`/`S3TCdecode`/`HeckbertQuantize`) | MSVC only |
+| `#else` | — | `Compress(...) { return 0; }` / `Decompress(...) { return 0; }` | **every** template build (Linux, web, Windows) takes the stubs; no open DXT codec was added |
+
+The template's `Engine/CMakeLists.txt` does **not** list `palette.cpp` (`grep -rln palette.cpp /home/ion/engines/engine-ut99/Source` → nothing), although
+Epic's `Engine.dsp` L111 does (`SOURCE=.\palette.cpp`). So `HeckbertQuantize` has no definition in any template binary — consistent with
+the stubbed caller.
+
+### 8.2 HP2 `Engine/Src/UnTex.cpp` — the same structure, un-rekeyed
+| HP2 line | Content | Consequence per target | ACTION |
+|---|---|---|---|
+| L12-16 | `#ifdef WIN32` → `UnDDraw.h`, `Palette.h`, `S3tc.h` (all three present in `Source/Engine/Inc/`) | Linux/web: skipped (nothing defines `WIN32`). MinGW: included; `Palette.h` L18 `__declspec( dllexport ) int HeckbertQuantize(...)` is accepted by MinGW g++ | rekey to `#if _MSC_VER` together with L747 (cleaner than the template, which left L12 alone; either is correct) — **LATER** |
+| L745 | `typedef struct {BYTE rgba[4];} COLOR;` | shared | none |
+| **L747** | `#ifdef WIN32` around `Compress` (L752-848) and `Decompress` (L850-954) | Linux/web: stub (correct by accident). **MinGW: the windows preset passes `-DWIN32` (`Source/CMakeLists.txt` L162) → compiles the real block → undefined `S3TCencode`, `S3TCgetEncodeSize`, `S3TCdecode`, `S3TCgetDecodeSize` at link** (`HeckbertQuantize` would resolve only because HP2 still compiles `palette.cpp`, see W3) | `#ifdef WIN32` → `#if _MSC_VER` + the template's comment — **LATER** (but do it in Phase A while the file is open; it is inert for native/web) |
+| L956-966 | `#else` stubs `return 0;` | what every GCC target runs | none |
+
+### 8.3 HP2 `Engine/Src/palette.cpp` (2101 lines) is in the build and must leave it
+`Source/Engine/CMakeLists.txt` L10 lists `"Src/palette.cpp"`. It `#include "Palette.h"` (L21), whose L18 declares
+`__declspec( dllexport ) int HeckbertQuantize(...)`. Neither HP2's `UnGnuG.h` nor the template's defines `__declspec` (`grep -rn declspec
+Core/Inc` → only `UnVcWin32.h` L45-47 `DLL_IMPORT/DLL_EXPORT`, MSVC), so on **Linux g++ and emcc/clang the declaration is a hard error**
+(`__declspec` is a Microsoft extension that GCC recognises only on Windows targets / Cygwin / MinGW; clang only with `-fms-extensions` or
+`-fdeclspec`). Its only callers are inside the `#ifdef WIN32` block (`UnTex.cpp` L902, L917). **ACTION (WEB-1, = §20 W3): remove
+`Src/palette.cpp` from `Engine/CMakeLists.txt`** — the template does not compile it either. Verification: `grep -rn 'HeckbertQuantize\|GenerateMipmap\|CopyPalettisedData\|IndexSearch'
+Source --include=*.cpp | grep -v palette.cpp` must list only the `UnTex.cpp` MSVC block.
+
+### 8.4 Template `Editor/Src/UnParams.cpp` duplicate guard (2.7d, rekeyed 2.33)
+Template L22-30:
+```cpp
+// ufront 2.7d: Engine/Src/UnParams.cpp defines these same parse helpers (GetFVECTOR/GetSUBSTRING/
+// GetFROTATOR). In the shared-lib (native) builds each package's copy lives in its own .so — no clash.
+// A STATIC build whole-archives every package into ONE binary, so both copies collide (duplicate symbol).
+// Engine is always linked, so skip Editor's copies there and let callers resolve to Engine's. Editor's
+// UNIQUE helpers (GetBEGIN/GetEND/SetFVECTOR/GetFSCALE, below) stay compiled.
+// ufront 2.33: the guard was `#ifndef __EMSCRIPTEN__` — the web being merely the first static build we
+// shipped, not the reason. The reason is whole-archiving, i.e. UNREAL_STATIC, which equally covers the
+// Dreamcast and Windows builds. Web behaviour is unchanged (it sets BUILD_STATIC too).
+#ifndef UNREAL_STATIC
+```
+…closed by L171 `#endif // !UNREAL_STATIC (ufront 2.7d — Engine provides these shared parse helpers in a static build)`.
+
+### 8.5 HP2 `Editor/Src/UnParams.cpp` — no guard at all
+HP2 Editor defines `GetFVECTOR` (L25), `GetSUBSTRING` (L55), `GetFVECTOR` overload (L86), `GetFROTATOR` (L105, L145) — the **same five**
+that HP2 `Engine/Src/UnParams.cpp` defines at L25/L55/L86/L105/L145 (`ENGINE_API` there, `EDITOR_API` here; both expand to nothing under
+`UnGnuG.h`, so the mangled names are identical). Every HP2 preset sets `BUILD_STATIC=ON` + `--whole-archive` → duplicate-symbol link error
+on native, web and Windows alike. **ACTION (WEB-1, = §20 W2):** insert the template's L22-30 comment + `#ifndef UNREAL_STATIC` before HP2 L20
+("Get a floating-point vector" block) and `#endif // !UNREAL_STATIC` after the second `GetFROTATOR` (before `GetBEGIN`, HP2 L166). Keep
+`GetBEGIN` (L166), `GetEND` (L183), `SetFVECTOR` (L198), `GetFSCALE` (L209) compiled. Verify: `diff <(sed -n 20,160p Editor/Src/UnParams.cpp)
+<(sed -n 20,160p Engine/Src/UnParams.cpp)` shows the two copies are functionally the same (so resolving Editor's callers to Engine's copy
+changes nothing).
 
 ## 9. Template: git history of the MinGW work (2.33 / 2.34)
-_(pending)_
+Command (run against a scratch clone of the template's `.git`, `scratchpad/ut99.git`, so no git ran inside `/home/ion/engines/*`):
+`git log --oneline --grep=2.33 --grep=2.34 --grep=MinGW --grep=Windows -i | head -40` → 19 commits. Classified:
+
+| Commit | Subject | What matters for HP2 |
+|--------|---------|------|
+| `301a9ca` | build(2.33): Windows binaries via MinGW-w64 (cmake --preset windows) | **The port.** 23 files, +496/-32: `.gitignore`, `BUILD.md`, `Source/CMakeLists.txt`, `CMakePresets.json`, `Core/CMakeLists.txt`, `Core/Inc/{Core.h,FFileManagerLinux.h,UnGnuG.h,UnUnix.h}`, `Core/Src/{UnMinGW.cpp (new),UnUnix.cpp}`, `Editor/Src/UnParams.cpp`, `Engine/Inc/EngineClasses.h` (bColoredPad `#ifndef __MINGW32__`), `Engine/Src/UnTex.cpp`, `Fire/Src/FractalPrivate.h`, `IpDrv/Src/{IpDrvPrivate.h,TcpLink.cpp,UdpLink.cpp,UnSocket.cpp}`, `SoftDrv/Src/SoftDrvPrivate.h`, `UnrealTournament/Src/Launch.cpp`, `cmake/{SDL2Mingw,toolchain-mingw-w64}.cmake`. Every one of these has an HP2 row in §5/§16. Verified: web 29/29, Linux boot, Windows boot to CityIntro with 0 layout warnings + the 2.32 mover fixture under wine |
+| `b725899` | docs(2.33): record what a Windows hardware renderer actually needs | UTGLR needs **no gl4es** on Windows; the blockers were utglr's SDL types being gated off-WIN32 and `#undef VOID` in `UnGnuG.h` |
+| `76df82e` | build(2.34): hardware GL on Windows, all five renderers in one static binary | 10 files: `CMakeLists.txt`, `CMakePresets.json` (XOpenGL/UTGLR/NOpenAL ON), `UnGnuG.h` (keep `VOID` on Windows), `NOpenALDrv/CMakeLists.txt` + `cmake/OpenALMingw.cmake`, launcher CMake (POST_BUILD `OpenAL32.dll`, `UT_HAS_NOPENALDRV`) and `Launch.cpp` (`NormalizeSubsystem` for every non-web target), NOpenGLES glad symbol prefix (HP2: n/a). Fork-side fixes (utglr `_WIN32` asm/`__try` → `_MSC_VER`, WGL paths → SDL-owned context, SDL shims off `__UNIX__`) are already on the HP2 fork branches (§20 D9) |
+| `e7f442d` | ci(2.34): build every push + PR on linux/windows/web, upload artifacts | the DLL import allow-list assertion (§18) |
+| `a930e9b`, `6b3704b`, `0d623ca` | ci(2.34) fixes (cold emsdk cache, artifact names by `ENGINE_VERSION`, bash) | CI-only; `6b3704b`'s naming scheme → HP2 artifact `hp2-433-windows` |
+| `7d3ed39` | fix(build): the Editor package is a RUNTIME dependency — build it natively too | why `BUILD_EDITOR=ON` in the windows preset |
+| `4e78c02` | build(ucc): a static build links the headless package set whole-archive | UCC static link; `ucc.exe` on Windows still not a goal |
+| `5674fc7` | Engine: fix savegame load on Unix (PATH_SEPARATOR vs FURL URL syntax) | not Windows-specific, but HP2 hard-codes `TEXT("..\\Save")` (`Core/Src/UnMisc.cpp` L2011, fallback when `appUserDir()` is empty) — a backslash path that only Windows accepts; relevant to every GCC target (§16 row C8) |
+| `b548e28`, `a2f0ec7`, `520e08f`, `2074fe0`, `1d3dfa5`, `3703f35`, `7164de7`, `1fb5f26`, `7c31a53` | matched the grep on unrelated words ("windows" in comments etc.) | none |
+
+Cross-engine record, `/home/ion/ufrontend/docs/migration/steps/2.33-windows-builds.md` and `2.34-build-matrix-and-ci.md` (read only). Lessons HP2 imports:
+| Lesson | Source | HP2 status / ACTION |
+|---|---|---|
+| **`O_BINARY`**: MinGW `open()` defaults to text mode → CRLF/Ctrl-Z translation → short reads (the ut2004 crash) | 2.33 L145-148; 2.34 L204 | HP2's `FFileManagerLinux` uses `fopen(…,"rb")` (L219) / caller-supplied mode (L238, callers pass `"wb"`/`"ab"`); no raw `open()` in Core/Engine/drivers. **But** the launcher's `SimpleCopy` (`Game/Src/Launch.cpp` L747-765) uses `fopen(…,"r")`/`"w"` — text mode on MinGW: CR stripped then re-added, Ctrl-Z (0x1A) truncates. For an `.ini` copy that is harmless; change to `"rb"`/`"wb"` anyway (LATER, one line). Rule for Phase E: any new `open()`/`fopen()` in NOpenALDrv/Ogg/FFileStream code must be binary |
+| **Error path swallows its own message**: `FOutputDeviceAnsiError::HandleError` calls `StaticShutdownAfterError()` before printing → early errors appear as a bare exit | 2.34 L309-325 | debug with `printf 'c\nbt\nq\n' \| winedbg ./Game.exe` and `i686-w64-mingw32-addr2line -f -C -s -e Game.exe 0x…` (PE ImageBase `0x400000`, so raw fault addresses resolve directly) |
+| **`FOutputDeviceFile` prefixing `appBaseDir()` `#if WIN32`** made a directory literally named `Z:` in ut2004 | 2.33 | HP2 `Core/Inc/FOutputDeviceFile.h` L42 prefixes **`appUserDir()`** (433 change), not `appBaseDir()`. `UnUnix.cpp` today has **no `appUserDir`** (only `UnVcWin32.cpp` L1048-1070 defines it) → Phase A must add one (§15.3) |
+| **`cp -rL`**, never `cp -r`, for run trees; copy (not symlink) the exe | 2.34 L301 | §19 |
+| **Grab frames while the process is alive** (`ffmpeg -f x11grab` after `timeout` gives black); GL under Xvfb is Mesa llvmpipe | 2.34 L297, L331 | §19 step 6 |
 
 ## 10. Template: wine + Xvfb verification recipe
-_(pending)_
+Template `BUILD.md` L138-153 (verbatim):
+```bash
+Xvfb :99 -screen 0 1024x768x24 &
+DISPLAY=:99 WINEPREFIX=~/.wine-u1 wine UnrealTournament.exe -SOFTWARERENDERER   # or -NULLRENDERER
+WINEPREFIX=~/.wine-u1 wineserver -k          # ⚠ always; wine leaves processes behind
+```
+Rules stated alongside it:
+- needs `wine32` (32-bit exe); SoftDrv/NullDrv are CPU-only, so no GPU/GLX involvement.
+- "Assert on **milestones in `System/UnrealTournament.log`**, not on a window appearing."
+- "copy the `.exe` in (the engine derives its base dir from the real binary path) and dereference asset symlinks (`cp -rL`), or every
+  package becomes a silent `FileNotFound`."
+- "⚠ wine is not Windows — a regression net, not a substitute for a real-hardware pass."
+- Verified at 2.33: boots to `CityIntro` on SoftDrv with zero layout warnings; the 2.32 multi-keyframe mover fixture reproduces the web
+  oracle (red 100 % through t=5 s, green from t=6 s, stable 53.6 % vs web 53.2 %). The mover fixture was the functional gate for the
+  ABrush/AMover layout.
+- 2.34 extension (`2.34-build-matrix-and-ci.done.md` L35, L211-214): hardware GL under wine+Xvfb works through Mesa llvmpipe; grab the
+  frame while the process runs (`sleep N && ffmpeg -f x11grab -video_size 1024x768 -i :99.0 -frames:v 1 -y shot.png`).
+
+Box facts (dpkg/`command -v`, 2026-09-26): `wine 10.0` with `wine32:i386`, `xvfb`, `xvfb-run` installed; several other agents' prefixes
+exist (`~/.wine-u1`, `~/.wine-u1-w32`, `~/.wine-ufront`, `~/.wine-ut2004-w32`, …). **HP2 must use its own prefix** (`~/.wine-hp2`) and
+its own display number so it never kills or reconfigures another agent's wineserver (§19). The template's `wineserver -k` line assumes
+`wineserver` on PATH; **on this box it is not** (`command -v wineserver` → nothing). Ubuntu's wine 10.0~repack-12ubuntu1 installs it at
+`/usr/lib/i386-linux-gnu/wine/wineserver` and `/usr/lib/x86_64-linux-gnu/wine/wineserver` (found with `find / -name 'wineserver*'`).
+Use the full path (§19). Also present: `wine32`, `wine64`, `wineboot`, `winedbg`, `Xvfb`, `xvfb-run`, `ffmpeg`,
+`libgl1-mesa-dri:i386` 26.0.8 (the 32-bit Mesa that hardware-GL-under-wine needs).
 
 ## 11. HP2: current state of the same places
-_(pending)_
+Snapshot of `/home/ion/hp2-ufrontend/HarryPotter2/Source` on 2026-09-26 against every place §1-§10 named. "Built" = reached by
+`Source/CMakeLists.txt` L283-383 (`Core Engine Render IpDrv Fire UCC WebRTCDrv NSDLDrv OpenGLDrv XOpenGLDrv SoftDrv NullDrv SoundDrv
+NOpenALDrv Editor Game`); the Windows-only originals (`WinDrv Window D3DDrv UnrealEd Launch ALAudio …`) are reference-only.
+
+### 11.1 Build system (already Windows-ready)
+| Place | HP2 state | Verdict |
+|---|---|---|
+| `CMakePresets.json` windows preset | L58-80 / build preset L84-90, = template 2.34 shape | done (§2); shares the sibling-path defect (§21 Q1) |
+| `cmake/toolchain-mingw-w64.cmake`, `SDL2Mingw.cmake`, `OpenALMingw.cmake` | byte-identical to template | done (§3) |
+| Top-level Windows block | L141-148 `TARGET_IS_WINDOWS`; L160-177 `-DPLATFORM_WIN32 -DWIN32 -DWINDOWS_IGNORE_PACKING_MISMATCH`, `-static-libgcc -static-libstdc++`, `-fpack-struct=4 -Wno-address-of-packed-member`, `link_libraries(ws2_32 ole32)`; L237-238 `include(SDL2Mingw)`; web `-fpack-struct=4` at L79; MSVC `/Zp4` at L189 | done (§5, §6) |
+| `Core/CMakeLists.txt` platform selection | L26-43: `if(MSVC) UnVcWin32.cpp else (TARGET_IS_WINDOWS ? UnMinGW.cpp : UnGUID.cpp) + UnUnix.cpp`; `UnStaticExports.cpp` under `BUILD_STATIC` | done (§15) |
+| `IpDrv/` | present — the template's IpDrv copied verbatim (not in the retail drop), `ws2_32` at `IpDrv/CMakeLists.txt` L30-32 | done for Windows (§7); the 433 net-header adaptation is PLAN §4 step 6 |
+| `NOpenALDrv/CMakeLists.txt` L57-61 `include(OpenALMingw)`; `Game/CMakeLists.txt` L44-57 `HP2_HAS_NOPENALDRV` + POST_BUILD `OpenAL32.dll` copy | present | done (§18) |
+| `Game/CMakeLists.txt` | console-subsystem exe (no `-mwindows`, no `WIN32_EXECUTABLE`), no `.rc` — same as the template. `Game/Src/Res/LaunchRes.rc` + `Unreal.ico` exist; `afxres.h` exists in mingw-w64 (`/usr/i686-w64-mingw32/include/afxres.h`), so `windres` could compile it | parity with template; icon/`-mwindows` is an optional LATER nicety (§14.4) |
+
+### 11.2 Core platform layer (the files Windows depends on and HP2 has not merged yet)
+| File | HP2 state | What MinGW would hit |
+|---|---|---|
+| `Core/Src/UnVcWin32.cpp` (1519 lines) | Epic/HP2 Win32 core, whole body `#if _MSC_VER` (L8); **not compiled** on any of our targets (MSVC-only in `Core/CMakeLists.txt`). HP2 433 content inside it that the portable layer must re-provide: `appUserDir()` (L1048-1070: `SHGetFolderPathW(CSIDL_PERSONAL)` + `"\\Harry Potter and the Chamber of Secrets\\"`), the file-streaming thread for `FFileStream` (`CreateThread(FileStreamingThread)` L1488-1492, vorbis/coda includes under `#pragma pack(push,8)` L654-662), the `CODASetNew/CODASetDelete` init (L1479-1486) | nothing (not compiled) — but every function above is a **gap in `UnUnix.cpp`** on all GCC targets (§15.3) |
+| `Core/Inc/UnVcWin32.h` (353 lines) | included by `Core.h` L62-63 only `#if _MSC_VER` | nothing on MinGW (MinGW is `__GNUG__` → `UnGnuG.h`) |
+| `Core/Src/UnUnix.cpp` (897 lines) | HP2's Loki-era file, body `#if __GNUG__` (L12), `__STATIC_LINK` at L214; **none** of the template's seven `PLATFORM_WIN32` hunks; no `appUserDir` | `<netdb.h>`/`fork`/`getlogin`/`dlopen` → compile errors on MinGW |
+| `Core/Inc/UnUnix.h` (31 lines) | byte-identical to Epic v400; no `appWinSockInit` declaration; included from `Core.h` L77-80 only `#if __UNIX__` | fine once the template file replaces it |
+| `Core/Src/UnMinGW.cpp` | byte-identical to template | done |
+| `Core/Inc/UnGnuG.h` (338 lines) | Loki file: `#ifdef __LINUX_X86__ … #else #error Unsupported platform` (L10-32), `#define HANDLE DWORD` (L79), `#undef VOID` (L75), `typedef unsigned int size_t;` (L152), `#if __UNIX__` path/line-terminator block (L160-168) | cannot compile on any target as-is (§20 W7) |
+| `Core/Inc/Core.h` | L28 `FTime` `long long` under `__GNUG__`; L55 `SUPPORTS_PRAGMA_PACK` keyed `_MSC_VER \|\| __ICC \|\| __LINUX__` (evaluated **before** `UnGnuG.h` is included at L64, so `__LINUX__` must come from the command line — the template's CMake never defines it); L77 `#if __UNIX__ #include "UnUnix.h"`; L107-111 TCHAR block without the `PLATFORM_WIN32` `TCHARU` branch | `SUPPORTS_PRAGMA_PACK`=0 on MinGW and web (harmless today: only `UnVcWin32.cpp` L654 and `ALAudio` L15 read it, neither built); `TCHARU` undefined on MinGW (§16 C1) |
+| `Core/Inc/FFileManagerLinux.h` | `chmod(..., __S_IREAD\|__S_IWRITE)` L234/L254, `mkdir(path, __S_IREAD && __S_IWRITE && __S_IEXEC)` L263 | glibc-private `__S_I*` → compile error on MinGW; mode-1 dirs on Linux (§20 W6) |
+| `Core/Src/UnMisc.cpp` L1629 | `FFileStream::Destroy` waits `while (Destroyed == 1) appSleep(1);` `#if !__UNIX__` | with the template `UnGnuG.h` (no `__UNIX__`) the loop compiles on every GCC target and **spins forever** — the streaming thread that clears `Destroyed` exists only in `UnVcWin32.cpp`. Rekey onto "a streaming thread exists" (§16 C7) |
+| `Core/Src/UnMisc.cpp` L2011 | `GSys->SavePath = TEXT("..\\Save")` when `appUserDir()` is empty | Windows accepts it; POSIX/web would create a file literally named `..\Save` (§16 C8) |
+
+### 11.3 Engine / Editor / Fire / SoftDrv / launcher
+| Place | HP2 state | Target impact |
+|---|---|---|
+| `Engine/Src/UnTex.cpp` L12, L747 | `#ifdef WIN32` (not rekeyed) | MinGW link failure (§8.2) |
+| `Engine/CMakeLists.txt` L10 | compiles `Src/palette.cpp` | Linux/web compile failure (`__declspec`), §8.3 |
+| `Editor/Src/UnParams.cpp` | no `UNREAL_STATIC` guard | duplicate symbols on every static link (§8.5) |
+| `Engine/Inc/EngineClasses.h` L2276 | `BITFIELD bColored:1 GCC_PACK(4);` — **same trailing lone bitfield as v400**, no pad | AMover shifted on native + web; correct on MinGW (§17) |
+| `Engine/Inc/EngineClasses.h` L6-8, L3953-3955 | `#pragma pack(push,4)` only `#if _MSC_VER` — same as template | global `-fpack-struct=4` covers MinGW/web |
+| `Core/Src/UnClass.cpp` L381 | the template's `[layout] native %s: C++ sizeof=%i but script layout=%i` guard is already in HP2 | ready for the wine acceptance check (§19) |
+| `Fire/Inc/UnFractal.h` L19-20 | `#if !_MSC_VER typedef SQWORD __int64;` | MinGW: `__int64` is a builtin keyword → syntax error (§16 F1) |
+| `Fire/Inc/UnFractal.h` L174, L179, L292 | `BYTE SparkType;` / `BYTE FX_Heat GCC_PACK(4);` / `BYTE DropType;` — no `GCC_ALIGN(4)` (template `FractalPrivate.h` L197/L202/L315 has it) | Itanium tail-padding reuse on **all** GCC targets incl. MinGW: `UFractalTexture` ends in `BYTE DrawPhase, AuxPhase`, so `UFireTexture::SparkType` / `UWaterTexture::DropType` move into its tail padding. Owned by `template-render-fire-softdrv-editor.md`; the Windows angle is only "MinGW is not exempt" |
+| `SoftDrv/Src/SoftDrvPrivate.h` L10 | backslash include `"..\..\Render\Inc\Render.h"` | MinGW tolerates it; Linux/emcc do not (§20 W9) |
+| `Game/Src/Launch.cpp` | template's launcher, copied unadapted: **no** `PLATFORM_WIN32` site left (2.34 generalised it to `#ifndef __EMSCRIPTEN__` `NormalizeSubsystem`, L324/L528); `SimpleCopy` L747-765 uses text-mode `fopen("r"/"w")` | fine; `SimpleCopy` → binary mode (§9) |
+| `UCC/Src/UCC.cpp` | HP2's own: `#if WIN32` (L9, L73, L181) selects `FFileManagerWindows`/`FMallocWindows`/`<windows.h>`; `#elif __LINUX_X86__` (L31, L83, L148) | under MinGW `WIN32` is defined → the Windows file manager branch, never compiled by GCC before (§21 Q3). LATER |
+
+### 11.4 Grep census (built dirs only)
+`grep -rn -E '_MSC_VER|__GNUG__|\bWIN32\b|_WIN32|__WIN32__|__LINUX_X86__|__LINUX__|__UNIX__|PLATFORM_WIN32|__MINGW32__|__STATIC_LINK|_XBOX'`
+over `Core Engine Render Fire UCC NSDLDrv SoftDrv NullDrv SoundDrv NOpenALDrv Editor Game`: 43 files. Beyond the rows above, every
+remaining `_MSC_VER` site means "the MSVC compiler" and is **correct as-is for MinGW** (MinGW takes the GCC branch exactly like Linux):
+`UnFile.h` L111 (guard/unguard `try`/`catch(TCHAR*)` form), L328 (`appGetVarArgs`); `UnScript.h` L23 and `UnObjBas.h` L349/L425
+(`IMPLEMENT_FUNCTION`/`IMPLEMENT_CLASS`/`IMPLEMENT_PACKAGE` DLL-export forms); `UnTemplate.h` L972/L1026; `UnAnsi.cpp` L42/L142/L284/L292
+(`appTimestamp`, `_isnan`, `appSprintf`); `UnAnsi.cpp` L29 `#ifdef _WIN32 <io.h>` (MinGW has `io.h`); `UnMisc.cpp` L1864 (command-line quote
+stripping — the SDL launcher builds the command line from `argv`, so no quotes reach it); `UnObj.cpp` L1833 (diagnostic); `UnLinker.cpp`
+L299, `UnGame.cpp` L961, `UnLevel.h` L122/L214, `UnLevel.cpp` L1127 (`TCHAR*` vs `char*` — identical types when `TCHAR==char`);
+`AStatLog.cpp` L338; `UnURL.cpp` L71; `UnLight.cpp` L661; `UnCamera.cpp` L370/L482/L507/L534/L824/L849/L914/L939 (screenshot BMP
+headers use `GCC_PACK(1)` on the GCC side, so packing is right). `__STATIC_LINK` sites (`Core.h` L496, `UnObj.cpp`, `UnObjBas.h`,
+`UnCoreNative.cpp`, `UnEngineNative.cpp`, `UnRenderNative.h`, `UnFireNative.h`, `UCC.cpp`) are the 433 native-table mechanism, owned by the
+Core analysis — platform-neutral.
+
+One inherited bug worth knowing (not Windows-specific, present in the template too): `UnCamera.cpp` L537-541, the `#else` (GCC) branch of
+the screenshot writer loops `for( INT i=SizeY; i>0; i-- ) … &Buf[i*SizeX+j]` — reads one row past the `ReadPixels` buffer and never writes
+row 0. MinGW takes this branch too. ACTION (LATER, optional): use the MSVC loop (`i=SizeY-1; i>=0`) unconditionally, after checking that
+the GCC render devices' `ReadPixels` returns rows in the same order as D3D's.
 
 ## 12. HP2: S3TC decision (does the runtime need s3tc decode for shipped textures?)
-_(pending)_
+**Decision: the HP2 runtime does NOT need S3TC decode (or encode) on any target, Windows included. Stub both, exactly like the
+template; never link `Thirdparty/s3tc/s3tc.lib`.**
+
+About the library itself (`i686-w64-mingw32-nm`/`objdump -f`): a 43,920-byte `ar` archive of two `pe-i386` MSVC objects
+(`Release/s3tc.obj`, `Release/S3_quant.obj`) exporting plain-C `_S3TCencode`, `_S3TCdecode`, `_S3TCgetEncodeSize`,
+`_S3TCgetDecodeSize`, `_S3TCsetAlphaReference` (`S3tc.h` L21 wraps them in `extern "C"`), and importing the MSVC CRT helpers `__ftol`,
+`__fltused`, `_floor` plus `_CodeAlphaBlock`/`_CodeRGBBlock`. So MinGW's ld *could* probably be made to link it (C ABI, i386 COFF; `__ftol`
+and `__fltused` would need shims) — but it would be a Windows-only closed binary for a code path the runtime never takes (below), it cannot
+exist on Linux or the web, and `HeckbertQuantize` (the other half of `Decompress`) lives in `palette.cpp`, which leaves the build (§8.3).
+Not worth it.
+
+### 12.1 Who calls `Compress`/`Decompress` (the only S3TC users)
+`grep -rn 'Compress(\|Decompress(' Source --include=*.cpp --include=*.h`:
+| Caller | Path | Runtime? |
+|---|---|---|
+| `Engine/Src/UnTex.cpp` L459-461 | `UTexture::CreateMips`: `if( Format == TEXF_RGBA8 ) { Compress( TEXF_DXT1, FullMips ); bHasComp = 1; Decompress( TEXF_P8 ); }` | `CreateMips` is called only by `Editor/Src/UnEdSrv.cpp` L467 (`TEXTURE IMPORT … MIPS=`) → **editor/import** |
+| `Engine/Src/UnTex.cpp` L1414-1415 | `UEngineTextureFactory::FactoryCreateBinary`: `if( ParseParam(appCmdLine(),TEXT("COMPRESSDXT")) ) Texture->Compress(TEXF_DXT1,1);` | texture **import** only |
+| `Editor/Src/UnEdFact.cpp` L1302, L1352, L1433 | texture factories (`Compress(TEXF_DXT1,1)`, `Decompress(Format)`) | **editor** |
+| `Editor/Src/UMergeDXTCommandlet.cpp` L116 | `mergedxt` commandlet | **commandlet** |
+| `Editor/Src/UMasterCommandlet.cpp` L63-186 | a *different*, local `Decompress(TArray<BYTE>…)` (delta patcher) | unrelated |
+
+No render device, no `UTexture::Lock`/`Serialize`/`PostLoad`, and nothing in `Render/`, `SoftDrv/`, `NullDrv/`, `NSDLDrv/` calls either
+function (`grep -rn 'S3TC\|s3tc' Source/{Render,SoftDrv,NullDrv,NSDLDrv}` → nothing).
+
+### 12.2 How compressed mips are used at load/draw time
+- `UTexture::Serialize` (`UnTex.cpp` L339-366): `SerializeMips( this, Ar, Mips ); if( bHasComp ) SerializeMips( this, Ar, CompMips );`
+  — both sets are **stored** in the package; loading is plain byte copy, no decode.
+- `UTexture::Lock` (`UnTex.cpp` L80-86):
+  ```cpp
+  UBOOL UseComp = bHasComp && RenDev && RenDev->SupportsTC && CompFormat==TEXF_DXT1;
+  TArray<FMipmap>& WhichMips = UseComp ? CompMips : Mips;
+  ```
+  and L121 `TextureInfo.Format = UseComp ? CompFormat : Format`. So a device **with** `SupportsTC` receives the raw DXT1 blocks (uploaded as
+  `GL_COMPRESSED_RGB_S3TC_DXT1_EXT` by the GL drivers — the GPU decodes); a device **without** it receives `Mips` in `Format`. The engine
+  never converts one into the other at runtime.
+
+### 12.3 What the shipped content actually contains (byte evidence)
+Parsed every `Assets/{Textures/*.utx, Maps/*.unr, System/*.u}` export of class `Texture` (package reader in the scratch dir:
+`scan_comp.py`, then `wm_mips.py` to walk `Mips`/`CompMips` after the tagged properties; each walk ended exactly at the export's
+`SerialOffset+SerialSize`, `end_ok=True`). **3,988 textures, 9 with `bHasComp=1`, all `CompFormat=DXT1`, and every one of the 9 also
+ships a complete `P8` `Mips` chain of the same depth:**
+
+| Package | Texture | `Format` | `Mips` (count, top) | `CompMips` DXT1 (count, top bytes) |
+|---|---|---|---|---|
+| `System/HGame.u` | `QuidMatchBoxTexture` | P8 | 1, 128×128 | 1, 8192 |
+| `System/HGame.u` | `FEOptionTickCheckedOverTex` | P8 | 1, 32×32 | 1, 512 |
+| `System/HGame.u` | `FEOptionTickCheckedTex` | P8 | 1, 32×32 | 1, 512 |
+| `System/HGame.u` | `LumosLightIcon` | P8 | 1, 64×64 | 1, 2048 |
+| `System/HProps.u` | `skChairsRedComfyTex0` | P8 | 8, 128×128 | 8, 8192 |
+| `System/HProps.u` | `skChairsRedCouchTex0` | P8 | 8, 128×128 | 8, 8192 |
+| `System/HProps.u` | `skhanginglampGSTex0` | P8 | 9, 256×256 | 9, 32768 |
+| `System/HProps.u` | `skTableWoodRectangle2Tex0` | P8 | 8, 128×128 | 8, 8192 |
+| `System/HProps.u` | `skWoodFirewoodContainerTex0` | P8 | 8, 128×128 | 8, 8192 |
+
+No `.utx` and no map carries a compressed texture. Every other texture is uncompressed (`bHasComp=0`). So a device without
+`SupportsTC` (SoftDrv, NullDrv, or a GL device on hardware lacking the extension) draws the P8 chain and loses nothing.
+
+### 12.4 Per-target consequence and ACTION
+| Target | Device(s) | S3TC path taken | ACTION |
+|---|---|---|---|
+| all GCC targets (native, web, MinGW) | any | `UTexture::Compress/Decompress` = stubs (`return 0`) | rekey `UnTex.cpp` L747 (and L12) `#ifdef WIN32` → `#if _MSC_VER` so MinGW takes the stub too (§8.2) — **LATER** (inert for native/web); remove `palette.cpp` from the Engine build — **WEB-1** |
+| Windows | XOpenGL / UTGLR over `opengl32.dll` | `SupportsTC=1` → DXT1 blocks to the driver; every desktop GL driver and wine's Mesa expose `GL_EXT_texture_compression_s3tc` | none |
+| Windows / native | SoftDrv, NullDrv | `SupportsTC=0` → P8 | none |
+| Web (WebGL2) | XOpenGL | fork sets `SupportsTC = TRUE` unconditionally; if `WEBGL_compressed_texture_s3tc` is absent the 9 textures fail to upload | fork-side gate (§21 Q2) — owner `renderer-forks.md`. **WEB-1** |
+| Web (WebGL1) | UTGLR + gl4es | `SupportsTC = UseS3TC`, zeroed when the extension is missing | none (verify gl4es reports the extension only when WebGL does) |
+
+Not needed for this port, ever (unless the owner wants an in-browser editor that imports RGBA8 textures): an open DXT1 encoder
+(e.g. stb_dxt) + decoder to replace `s3tc.lib`. If that day comes, implement it behind `UTexture::Compress/Decompress` for all
+targets at once — not a Windows-only branch.
 
 ## 13. HP2: closed libs (MpegLib / coda / s3tc) and the UNICODE question
 _(pending)_

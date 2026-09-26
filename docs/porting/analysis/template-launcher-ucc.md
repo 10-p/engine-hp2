@@ -5,10 +5,44 @@ Scope: (1) the UT99 web-port SDL launcher (engine-ut99/Source/UnrealTournament) 
 launcher `Source/Game/Src/Launch.cpp` (exe `Game`, web artifact `SDLLaunch.js`); (3) UCC template vs HP2 UCC, and
 whether `ucc make` can build v400 IpDrv.u against HP2 Engine.u.
 
-Status: IN PROGRESS (sections are appended as researched). Re-run 2026-09-26 (Opus): §1 re-verified against the sources (errata marked inline), §2-§4 new.
+Status: complete (see the last line). Re-run 2026-09-26 (Opus): §1 re-verified against the sources (errata marked inline), §2-§4 new, §0 filled last.
 
 ## 0. Summary / action checklist
-(filled at the end)
+
+**Bottom line.** `Source/Game/Src/Launch.cpp` is still a byte-identical copy of the UT99 template; the port is a
+*delta* (§2.6.2), not a rewrite. Most "launcher features" actually live in Core/Engine (§1.1 table) and are owned
+by those analysts; the launcher itself needs ~15 small edits. HP2's Win32 boot (SafeDisc, splashes, WFrontEnd slot
+picker, D3D detection, CD check) is **dropped**; its *semantics* survive as argv contracts (`PrivetDr.unr
+-SAVESLOT=N`, `-LOAD=0 -SAVESLOT=N`) that the web frontend must produce (§2.5). UCC: take the template's `UCC.cpp`
+with 3 edits (§3.3). `IpDrv.u` is **not needed** (TcpNetDriver binds without it) but *can* be compiled from the v400
+classes against HP2's Engine.u — the script API is fully present; the risks are in the tool (§3.5 M1-M8).
+
+**Launcher (`Source/Game/Src/Launch.cpp`) — ACTION checklist** (details §2.6.2)
+- [ ] Delete Dreamcast blocks, `SimpleCopy`, `~/.utconf` swap.
+- [ ] Remove `NOPENGLESRENDERER` row + preference; optional SoftDrv fallback when no HW renderer is compiled (Phase B).
+- [ ] Bound the argv join (`appStrncat`); `GModule` = basename(argv[0]) via `appStrncpy` (fixes 32-byte overflow + log name).
+- [ ] `appInit( TEXT("Game"), … )`; keep `GIsClient=1; GIsGuarded=0`.
+- [ ] Native chdir to the exe dir (or Core adopts template `appBaseDir`) — the exe lives in `System/`.
+- [ ] Web driver block: NSDLDrv; audio = NOpenALDrv if `HP2_HAS_NOPENALDRV` else `SoundDrv.NullAudioSubsystem`; WebRTCDrv; CaptureMouse; bWorldLog/bLocalLog; **delete** the IpServer line.
+- [ ] Native `NormalizeSubsystem` lists: viewport NSDLDrv; audio NOpenALDrv→SoundDrv; net TcpNetDriver.
+- [ ] `ServerActors.Empty()` on **all** platforms (HP2 ini names IpServer/UWeb which do not exist).
+- [ ] FirstRun: read-then-stamp 433 with a log line; no dialogs; ignore Reconfig/ForceSoftware; optional RunCount++.
+- [ ] FTime rewrite of `InitEngine` load time, `MainLoop`, pacing ring, `ue_exec_command` printf (§1.8, §2.2.3).
+- [ ] `CleanUpOnExit(ErrorLevel, Engine)`: `Engine->Audio->SetViewport(NULL)` before `appPreExit` (HP2 retail).
+- [ ] `HandleError`: skip the SDL message box when headless (`-NOMSGBOX` / dummy video driver).
+- [ ] Write `Config/System/web/{Default,DefUser}.ini` before the first wasm link (`LINK_DEPENDS`).
+- [ ] `emit-artifact-meta.mjs`: HP2 provenance strings.
+
+**Owned elsewhere but launcher-blocking** (hand-offs)
+- Core: `appApplyIniOverrides` (call **after** the gk Language block), `appIsGlobalOptionToken` (+ Engine `UnGame.cpp:180-185`), `appUserDir()` = `""` on Unix, `FFileManagerLinux` from the template (mkdir mode, GetGlobalTime=0), `FindFiles` flag handling (§3.5 M3), `appRequestExit` web branch, GLog→stdout echo, layout guard, SavePath `..\Save` literal (A5), `Save Slot Path` FString-varargs trap (§2.6.4 item 4).
+- Engine: AutoFOV port, web-mouse block, web startup-map fallback, `Received` debugf in `UDownload::DownloadDone`.
+- Frontend: slot picker → argv; `userFiles` per-slot globs; `conversions: []`; restart to change slot.
+
+**UCC — ACTION checklist** (§3)
+- [ ] Replace `Source/UCC/Src/UCC.cpp` with the template file; edits: `appInit(TEXT("HP"))` (retail, Q-UCC1), GModule basename, bounded join.
+- [ ] Keep `Source/UCC/CMakeLists.txt` (already template minus UWeb); decide MinGW gating (Q-UCC2).
+- [ ] Acceptance §3.7: `help`, `Core.SimpleCommandlet` golden output, `batchexport HGame.u` as a headless load check.
+- [ ] Optional: `IpDrv.u` via `make -NOHEADER` in a scratch tree with a dedicated ini (M3-M6).
 
 ## 1. UT99 template launcher (engine-ut99/Source/UnrealTournament)
 
@@ -808,3 +842,212 @@ Native (`cd run/System && ./Game -SOFTWARERENDERER -log`, and again as `/abs/pat
 7. In-game Esc → Quit → Yes: `Closing by request`, `appRequestExit(0)`, clean `Exit` in the log, exit code 0.
 
 Web: the same log lines in the browser console; Quit returns to the launcher page (`[SHELL] Engine exit requested, returning to launcher`); a key binding changed in-game survives a reload (A2).
+
+## 3. UCC — template vs HP2, and `ucc make` for `IpDrv.u`
+
+### 3.1 Files
+
+| File | Lines | What it is |
+|------|-------|------------|
+| `/home/ion/epic-sources/ut99-v400/UCC/Src/UCC.cpp` | 274 | Epic stock (Win32 + Loki Linux) |
+| `engine-ut99/Source/UCC/Src/UCC.cpp` | 277 | stock + **two** ufront 2.12 edits (below) |
+| `engine-ut99/Source/UCC/CMakeLists.txt` | 51 | ufront 2.12 Part B + 2.79 static link |
+| `HarryPotter2/Source/UCC/Src/UCC.cpp` | 370 | **HP2/PS2-branch** UCC: stock + the Brandon Reinhart `__STATIC_LINK` native-lookup table, `__PSX2_EE__` file manager, `NullNetDriver`, `appInit("HP")` |
+| `HarryPotter2/Source/UCC/Src/{UCC.dsp,makefile}` | — | retail MSVC project (`/D UNICODE /D WIN32 /D ThisPackage=UCC`, links only `Core.lib`, output `System\UCC.exe`) and the Loki/PS2 makefile (`TARGETTYPE=psx2` → `NullNetDriver.a Engine.a Core.a`). Reference only. |
+| `HarryPotter2/Source/UCC/CMakeLists.txt` | 51 | **already the template's**, minus `UWeb` in `UCC_LINK_PACKAGES` (HP2 has no UWeb) |
+| `HarryPotter2/Assets/System/UCC.exe` | 122,880 B (2002-09-06) | retail binary |
+
+### 3.2 Template vs epic (`diff --strip-trailing-cr -w`): the complete delta
+
+| Template line | Change | Why |
+|---------------|--------|-----|
+| `UCC.cpp:85-89` | `#if !_MSC_VER && defined(UE_LEGACY_CONTEXT)` around `__Context::StaticInit();` (stock: `#if !_MSC_VER`) | the modern Core has no `__Context` (the setjmp/signal context of the Loki port) |
+| `UCC.cpp:185-186` | `INT i;` hoisted out of the `for` | stock relied on MSVC 6 for-scope (`i` is used after the loop at `:194`) |
+| `CMakeLists.txt` | `add_executable`, `OUTPUT_NAME ucc-bin`; `BUILD_STATIC` → `-Wl,--whole-archive Core Engine Render IpDrv UWeb Fire [Editor] -Wl,--no-whole-archive`; else `Engine Core`; defines `UPACKAGE_NAME=UCC __LINUX__` | 2.79: in a static build a package is only "loadable" if its objects are in the binary (`appGetDllHandle` answers from the `STATIC_EXPORT` registry, `Core/Inc/UnStaticExports.h`); ordinary archive linking kept only what `UCC.cpp` referenced → "Commandlet server not found". `__LINUX__` selects `FFileManagerLinux` + `FMallocAnsi` in `UCC.cpp:47-51`. |
+
+Everything else is stock. In particular:
+- **`GIsClient`**: *not* changed by ufront. `UCC.cpp:131` sets `GIsClient = GIsServer = GIsEditor = GIsScriptable = 1`
+  (needed so `help` can load every commandlet class), then **per commandlet** `GIsClient = Default->IsClient;
+  GIsServer = Default->IsServer; GIsEditor = Default->IsEditor; GLazyLoad = Default->LazyLoad;` (`:235-238`). The
+  CMake comment "UCC.cpp sets GIsClient off" means exactly this (e.g. `ServerCommandlet` has `IsClient=0`). The
+  static link simply omits NSDLDrv/renderers/audio because no headless commandlet opens them.
+- **`GIsGuarded = 1`** (`:97`) — UCC keeps stock guarding: it is **native-only** (`if(NOT EMSCRIPTEN)`,
+  template `Source/CMakeLists.txt:488`; HP2 `Source/CMakeLists.txt:289`), built with exceptions on, and the script
+  compiler *needs* them (`FScriptCompiler` uses `appThrowf` + `try/catch`, HP2 `Editor/Src/UnScrCom.cpp:5641-5700`).
+  Do **not** carry the launcher's `GIsGuarded=0` over to UCC.
+- **Command-line / dispatch** (`:104-123`, `:128-257`): `argv[1]` is the commandlet token, `argv[2..]` joined with
+  spaces is `appCmdLine()` (unbounded `appStrcat`, same 1024-char hazard as the launcher §1.2 #1). Lookup order:
+  `StaticLoadClass(UCommandlet, NULL, Token)` → `Token+"Commandlet"` → scan of the `.int` registry
+  (`GetRegistryObjects(List, UClass, UCommandlet)`, i.e. `[Public] Object=(Name=Pkg.XCommandlet,Class=Class,
+  MetaClass=Core.Commandlet)` lines) comparing the short name. `Token=="Make"` (case-insensitive `FString==`) adds
+  `LOAD_DisallowFiles` so `Editor.MakeCommandlet` is taken from the **in-memory native class**, never from a stale
+  `Editor.u`. `LogToStdout` redirects `GLog` to the console for the run.
+- **`appStrcpy( GModule, argv[0] )`** (`:101`): same `GModule[32]` overflow as the launcher (§1.2 #2/E2). The log is
+  `appBaseDir()+argv[0]+".log"` → `./ucc-bin` gives `System/./ucc-bin.log`.
+
+### 3.3 HP2 `UCC.cpp` vs template — what changes, line by line
+
+`diff --strip-trailing-cr -w engine-ut99/Source/UCC/Src/UCC.cpp HarryPotter2/Source/UCC/Src/UCC.cpp`:
+
+| HP2 lines | HP2 code | Status in the port | ACTION |
+|-----------|----------|--------------------|--------|
+| 18 | `#include "Engine.h"` (template: `Core.h`) | only needed for the `__STATIC_LINK` block | use `Core.h` (template) |
+| 20-46 | `#if __STATIC_LINK` → `UnEngineNative.h`, `UnCon.h`, `UnRender.h`, `UnNet.h`, `NullNetDriver.h`; `#ifdef __LINUX_X86__` commented-out Fire/IpDrv/UWeb includes | **dead**: the port defines `UNREAL_STATIC` (HP2 `Source/CMakeLists.txt:92`), never `__STATIC_LINK`; `NullNetDriver.h` does not exist in this drop | delete |
+| 48 | `INT GFilesOpen, GFilesOpened;` | referenced nowhere else in `Source/` (PS2 file manager bookkeeping) | delete |
+| 76-77 | `#if WIN32 … FMallocWindows Malloc;` (template: `FMallocAnsi`) | MinGW: `FMallocWindows` is the MSVC pool allocator | take template (`FMallocAnsi` everywhere) |
+| 78-82 | `#elif __PSX2_EE__ … FFileManagerPSX2` | PS2 | delete |
+| 83 | `#elif __LINUX_X86__` (template: `#elif __LINUX__`) | **compile break**: CMake defines `__LINUX__` (`UCC/CMakeLists.txt` last line), not `__LINUX_X86__` → falls to `FFileManagerAnsi` and **no `Malloc` object** → `appInit(…, &Malloc, …)` fails to compile. (HP2's *current* `Core/Inc/UnGnuG.h:10-32` even `#error`s without `__LINUX_X86__`/`__PSX2_EE__`; the Core port replaces that header with the template's.) | take template |
+| 121-159 | `#if __STATIC_LINK` fill `GNativeLookupFuncs[0..15]` with `FindCoreUObjectNative`, `FindEngineAActorNative`, … (IpDrv/UWeb entries commented out) | dead (see 20-46). This is HP2's PS2-era static-link mechanism (`Core/Inc/UnCoreNative.h:12-45`, `Core/Src/UnCoreNative.cpp:272`, `Engine/Inc/UnEngineNative.h:28`); the port uses the template's `STATIC_EXPORT` registry + `--whole-archive` instead | delete. (Core/Engine analysts: decide whether `UnCoreNative.*`/`UnEngineNative.*` are compiled at all under `UNREAL_STATIC`; if they are, they must not clash with the template's registration.) |
+| 161-163 | `#if !_MSC_VER  __Context::StaticInit();` | compile break against the template Core (no `__Context`); and if HP2's `UnUnix.cpp:767ff` `__Context` survives the Core port, it installs `SA_ONESHOT` signal handlers that `longjmp` — incompatible with the exceptions-based guard model | take template guard (`&& defined(UE_LEGACY_CONTEXT)`) |
+| 191 | `for( INT i=2; …)` join | — | take template; **bound it** (`appStrncat`, as the launcher) |
+| 200 | **`appInit( TEXT("HP"), … )`** | retail value, **verified in the binary**: the UTF-16 string `"HP"` sits right after `"int"` at offset 103,660 of `Assets/System/UCC.exe` (the `SetLanguage(TEXT("int"))` literal), and there is no `"Game"` literal. So retail `ucc` read/wrote **`HP.ini`** (in `appUserDir()`), a *separate* copy of `Default.ini`, not `Game.ini`. | **Decision needed (Q-UCC1).** Recommended: **keep `"HP"`** — it isolates the tool's config (`EditPackages` edits for `make`, §3.5) from the game's `Game.ini`, which HP2's `appInit` flushes on every start (§2.2.4 A9) and which the web frontend persists. Template parity would be `"Game"`. Either way `INI=<file>` overrides. |
+| 203-218 | `AUTO_INITIALIZE_REGISTRANTS_ENGINE; …_NULLNETDRIVER;` + commented PS2 meta-archive readers | dead | delete |
+| 279 | `for( INT i=0; …)` then `i` used at 287 | gcc: `i` out of scope → compile error | take template hoist |
+
+**Net ACTION:** replace `HarryPotter2/Source/UCC/Src/UCC.cpp` with the template's file and apply three edits:
+(1) `appInit( TEXT("HP"), … )` (or `"Game"`, per Q-UCC1); (2) `GModule` = basename of `argv[0]` via `appStrncpy`
+(fixes the overflow and gives `ucc-bin.log` for absolute invocations); (3) bounded argv join. Delete `UCC.dsp` and
+`makefile` from the build (they are not referenced by CMake; keep on disk as reference, like `Source/Launch`).
+`CMakeLists.txt`: keep as is (already template-with-UWeb-removed). Keep `__LINUX__` in its defines.
+
+**MinGW:** `add_subdirectory(UCC)` is gated only on `NOT EMSCRIPTEN`, so the `windows` preset also builds `UCC`; on
+MinGW `UCC.cpp:9-10,42-46,107-115` takes the `WIN32` branch (`windows.h`, `FFileManagerWindows`, `GetCommandLineA`).
+The template's BUILD.md:155 lists `ucc.exe` as "out of scope" on Windows, i.e. it is **unverified** there. ACTION:
+either verify the MinGW build of `ucc-bin.exe` once, or gate with `if(NOT EMSCRIPTEN AND NOT MINGW)` in HP2's
+`Source/CMakeLists.txt:289` (recommended until someone needs it — native Linux `ucc` is enough to produce `IpDrv.u`,
+which is platform-independent).
+
+### 3.4 Commandlets available to an HP2 `ucc-bin` (static build)
+
+Registry (what `ucc help` lists) = `[Public] Object=` lines of the `.int` files in `System/`:
+`Core.int:7` HelloWorld; `Engine.int:3-4` Server, CheckSum; `Editor.int:2-12` Master, Make, Conform, BatchExport,
+MergeDXT, PackageFlag, DataRip, PS2Convert, UpdateUMod, ChecksumPackage, Pkg. C++ classes present in `Source/`
+(`grep IMPLEMENT_CLASS(U*Commandlet)`):
+
+| Commandlet | C++ | In HP2 `Editor/CMakeLists.txt`? | Use for the port |
+|------------|-----|------------------------------|------------------|
+| `Core.HelloWorldCommandlet` | script only (Core.u) | — | smoke test: `ucc-bin Core.HelloWorldCommandlet` |
+| **`Core.SimpleCommandlet`** | script only — **HP2-only**, not in epic v400 `Core/Classes` (which has only `HelloWorldCommandlet`) and **not registered in `Core.int`** | — | VM smoke test (§3.6); must be called by **full name** `ucc-bin Core.SimpleCommandlet` (the short name fails: no registry entry, and `StaticLoadClass("Simple")` resolves "Simple" as a package) |
+| `Engine.ServerCommandlet` | `Engine/Src/UnEngine.cpp:395` | — | dedicated server; HP2 has no MP game mode → not a goal |
+| `Engine.CheckSumCommandlet` | `Engine/Src/AStatLog.cpp:436` | — | ngStats checksum; irrelevant |
+| `Editor.MakeCommandlet` | `Editor/Src/UMakeCommandlet.cpp:239` | yes | **`IpDrv.u` build** (§3.5) |
+| `Editor.BatchExportCommandlet` | `UBatchExportCommandlet.cpp:66` | yes | **recommended Phase B pre-check**: `ucc-bin batchexport HGame.u class uc /tmp/x` loads HGame.u + all its imports headlessly (no renderer, no SDL) — a faster way to find `Can't find file for package` / `[layout]` / `Can't bind to native` problems than booting the client |
+| `Editor.ConformCommandlet`, `PackageFlag`, `DataRip`, `CheckUnicode` | `UConformCommandlet.cpp:55,125,222,299` | yes | tooling |
+| `Editor.MasterCommandlet`, `UpdateUMod`, `ChecksumPackage` | `UMasterCommandlet.cpp:459,600,636` | yes | UMOD tooling |
+| `Editor.MergeDXTCommandlet`, `Editor.PkgCommandlet` | yes | yes | tooling |
+| `Editor.PS2ConvertCommandlet` | `UPS2ConvertCommandlet.cpp` | **no** (stripped) | `help` silently skips it (`LOAD_NoWarn|LOAD_Quiet` → NULL) — expected |
+| `IpDrv.MasterServerCommandlet`, `UpdateServerCommandlet` | `IpDrv/Src/*.cpp` | IpDrv linked | not in any `.int` (no `IpDrv.int` in HP2) → only by full name; irrelevant |
+
+### 3.5 Can `ucc make` build `IpDrv.u` from the v400 `IpDrv/Classes` against HP2's `Engine.u`?
+
+**Inputs.** `HarryPotter2/Source/IpDrv/Classes/*.uc` are byte-identical (modulo CR/whitespace) to both
+`engine-ut99/Source/IpDrv/Classes` and epic `ut99-v400/IpDrv/Classes` (5 classes, 393 lines + `IpDrv.upkg`:
+`AllowDownload=False ClientOptional=False ServerSideOnly=True`); `Source/IpDrv/Src` is identical to the template's.
+HP2 ships **no** `IpDrv.u` (`ls Assets/System` → no `IpDrv.*`). The template never needed `make` (retail UT99
+ships `IpDrv.u`), so this is new ground for the family.
+
+**Script API check — every external symbol the 5 classes use, against HP2's `Engine.u`/`Core.u` sources:**
+
+| Used by IpDrv | HP2 definition | OK? |
+|---------------|----------------|-----|
+| `class InternetInfo extends Info native transient` + `GetBeaconAddress(int)`, `GetBeaconText(int)` | `Engine/Classes/InternetInfo.uc` — **identical** to v400 (`diff` → same); present with script text in `Assets/System/Engine.u`; C++ `AInternetInfo` at `Engine/Inc/EngineClasses.h:2592` | yes |
+| `Info`, `Actor.bAlwaysTick` (set in TcpLink/UdpLink defaults) | `Engine/Classes/Actor.uc:39` `var Const bool bAlwaysTick;` (v400 `:220`, same decl) | yes |
+| `RemoteRole`, `ROLE_None` | `Actor.uc:76,83` | yes |
+| `SetTimer`, `event Timer`, `event BeginPlay`, `event Destroyed` | `Actor.uc:1268` (`native(280)`), `:1175`, `:1366`, `:1158` | yes |
+| `Level.TimeSeconds`, `Level.GetAddressURL()`, `Level.Game` | `LevelInfo.uc:29`, `:164` (native, `ALevelInfo::execGetAddressURL` `Engine/Src/UnScript.cpp:431`), `:116` | yes |
+| `Level.Game.GetBeaconText()` | `GameInfo.uc:635` `event string GetBeaconText()` | yes |
+| `Log`, `Len`, `Left`, `Mid`, `InStr`, `$`, `@`, `~=`, `int()` | `Core/Classes/Object.uc:339,318,321,320,319,307,308,315` — HP2's native table equals v400's **plus** `native(1033) RandRange` (diff of all `native(N)` decls) | yes |
+| `var const Array<byte> SendFIFO` (TcpLink) | compiler: `Editor/Src/UnScrCom.cpp:3354-3361` parses `Array<…>` (`NAME_Array`, `Core/Inc/UnNames.h:182`); C++ side `TArray<BYTE>` in `IpDrvClasses.h` | yes |
+| inline `var struct BeaconInfo {…} Beacons[32]`, struct `==` (`Beacons[i].Addr==Addr`), `arraycount`, `optional`/`coerce`, `byte B[255]` params | stock v400 language features, same compiler lineage | yes (low risk) |
+| `defaultproperties { BroadcastAddr=-1; }` (trailing `;`) | v400 accepted it; HP2's `ImportProperties` is the same code lineage | probably; verify in the make log |
+| Name collisions: IpDrv's functions/vars/enums (`Open`, `Close`, `Listen`, `Resolve`, `Validate`, `Accepted`, `Opened`, `Port`, `STATE_*`, `MODE_*`, `IpAddr`, …) vs HP2's `Object`/`Actor`/`Info` | `grep -w` over `Core/Classes`, `Engine/Classes`: the hits are in **sibling** classes only (Mover `Open/Close`, GameInfo `Listen/Port`, Inventory `Validate/Accepted`) — nothing in the `Object→Actor→Info→InternetInfo` chain (only a comment in `Actor.uc:1680`) | yes |
+
+**Conclusion: the script side compiles as is.** The v400 IpDrv classes use nothing HP2's Engine lacks. The risks are
+in the *tool*, not the language:
+
+| # | Risk | Evidence | Mitigation (ACTION) |
+|---|------|----------|---------------------|
+| M1 | `make` needs the Editor + script compiler ported and linked into `ucc-bin` | `UCC/CMakeLists.txt` adds `Editor` only `if(BUILD_EDITOR)` (default ON, HP2 `Source/CMakeLists.txt:35`); `LOAD_DisallowFiles` means the native `Editor.MakeCommandlet` must be in the binary | Phase B: build `ucc-bin` with `BUILD_EDITOR=ON` |
+| M2 | `UEditorEngine::InitEditor` → `VERIFY_CLASS_OFFSET(A,Actor,Owner)` / `(A,PlayerPawn,Player)` (`Editor/Src/UnEditor.cpp:52-89`) | an EngineClasses.h layout mismatch aborts `make` before anything compiles | same gate as Phase B's zero-`[layout]` rule; run `make` only after `Game` boots cleanly (PLAN step 6 already orders it so) |
+| M3 | **`FFileManagerLinux::FindFiles` ignores the `Files`/`Directories` flags** (template `Core/Inc/FFileManagerLinux.h:304-413`: every matching `dirent` is returned, incl. `.`, `..` and plain files). HP2's make is the incremental 432+ version and **`Editor/Inc/Editor.h:14` defines `USE_SUB_DIRECTORIES`**, so `UMakeCommandlet.cpp:137-171` enumerates `../IpDrv/Classes\*` as *directories* → gets `.`, `..`, every `.uc` and `IpDrv.upkg`; the `.` entry imports all 5 classes via `../IpDrv/Classes/./X.uc`, and the extra `""` entry imports them a **second time** (`!PkgOrig` is true for a new package, `:161`) | re-import of the same class is probably benign, but untested | Core analyst: make `FindFiles` honour the flags (skip `.`/`..`; `stat()`/`d_type` → file vs dir), as Win32 `FindFirstFile` did. Cheap, and HGame's sub-folder layout (`HGame/Classes/{Menu,Spells,…}`) needs it if anyone ever re-makes HGame. |
+| M4 | **Header export** — `bHeader` defaults on (`UMakeCommandlet.cpp:50,208-214`): after compiling a native package it writes `../IpDrv/Inc/IpDrvClasses.h` and **`appErrorf("Failed to export")` if that directory does not exist** | the template's `IpDrvClasses.h` is hand-maintained (differs from epic's) — an auto-generated one would overwrite it if the run tree links `Source/IpDrv` | always pass **`-NOHEADER`** |
+| M5 | **Collateral rebuild of retail packages.** For each already-existing EditPackage the currency check (`:85-130`) re-imports a class when `GetGlobalTime(../Pkg/Classes/X.uc) > GetGlobalTime(Pkg.u)`, and `CheckScripts` (`UnScrCom.cpp:5939-5990`) can mark classes dirty via dependency CRCs; a dirty package is **re-saved over `System/<Pkg>.u`** (`:228`). The shipped `.u` files carry their script text (Engine.u: 127 `class … extends` headers = all 127 source files; HGame.u 713), so a recompile is possible — and would replace EA's binaries with ours. | With the template's `GetGlobalTime(){return 0;}` (kept for §2.2.4 A2) and no `../<Pkg>/Classes` directories in the run tree, `FileTime<=0` → the class is only flagged `RF_TagGarbage` (a GC scratch flag) and skipped; nothing re-imports. | Run `make` in a **scratch copy** of `run/System` whose parent has **only** `IpDrv/Classes` (symlink to `Source/IpDrv/Classes`); never pass `-ALL`; after the run, `grep -E "Updating\.\.\.|Building\.\.\." ucc-bin.log` must name **only** `IpDrv`; copy out only `IpDrv.u`. |
+| M6 | `EditPackages` must contain `IpDrv` (after `Engine`, before anything that could depend on it — nothing in HP2 does) | HP2 `Default.ini:327-337` lists Core, Engine, Editor, UWindow, Fire, UnrealShare, HPSounds, HPModels, HPParticle, HProps, HGame — no IpDrv | Do **not** use `-ini:System:[Editor.EditorEngine]:EditPackages=IpDrv`: `SetString` on a multi-valued key replaces the *first* `EditPackages=` (Core) — breaks the list. Use a dedicated ini: with Q-UCC1 = `"HP"`, the tool's own `HP.ini` (seeded from `Default.ini` + one inserted `EditPackages=IpDrv` line after `EditPackages=Engine`), or `ucc-bin make -NOHEADER INI=MakeIpDrv.ini` (the `INI=` token lands in `appCmdLine()`, which `appInit` parses). A `tools/dev/make-ipdrv.sh` should generate it. |
+| M7 | UCC's `appInit` side effects (HP2 §2.2.4): creates `SavePath`/`Slot` dirs, flushes the ini; with the unfixed A5 bug a literal `System/..\Save` directory appears | cosmetic in a scratch tree | fix A5 in Core first, or ignore in the scratch tree |
+| M8 | The compiled package's imports reference `Engine`/`Core` by the **shipped** GUIDs | fine as long as the same retail `Engine.u`/`Core.u` are used at runtime (they are — never rebuilt, M5) | — |
+
+**Is `IpDrv.u` actually needed?** For the **net driver: no**. `StaticLoadClass("IpDrv.TcpNetDriver")` → `UPackage`
+ctor → `BindPackage` (`Core/Src/UnObj.cpp:1574-1593`) sets `DllHandle` from the in-binary export registry; then
+`GetPackageLinker` finds no `IpDrv.u` but returns NULL instead of throwing because of `LOAD_AllowDll && DllHandle`
+(`UnObj.cpp:2199-2203` region), and `StaticFindObject` returns the native `UTcpNetDriver`. So TcpNetDriver (a
+C++-only class, no `.uc`) works without `IpDrv.u` — **PLAN step 6's fallback is sound**. What *does* need `IpDrv.u`:
+the script classes `UdpBeacon`, `ClientBeaconReceiver`, `TcpLink`, `UdpLink`, `InternetLink` — i.e.
+`ServerActors=IpDrv.UdpBeacon` (`Default.ini:69`, removed by §2.6's all-platform `ServerActors.Empty()`) and any LAN
+server browser (HP2 has none). Also note `Default.ini:173` `DownloadManagers=IpDrv.HTTPDownload`: there is **no
+`HTTPDownload.cpp` in `Source/IpDrv/Src`** (template identical) → a P2P client that needs to download a package will
+try to load a class that does not exist; `UChannelDownload` is the fallback in the 432+ architecture — IpDrv analyst
+to confirm; the launcher is unaffected.
+**Recommendation:** ship **without** `IpDrv.u` (nothing in HP2 needs the script classes); keep `ucc make` for
+`IpDrv.u` as an optional Phase F nicety, done with M3-M6 in place. If it is ever built, add `IpDrv.u` + an `IpDrv.int`
+(empty registry) to the run tree and the web manifest together.
+
+### 3.6 `Core/Classes/SimpleCommandlet.uc` (HP2-only)
+
+```unrealscript
+class SimpleCommandlet expands Commandlet;
+function int TestFunction() { return 666; }
+function int Main( string Parms ) { … log(...) … }          // no 'return' — returns 0
+defaultproperties { HelpCmd=Simple  HelpOneLiner=Simple test commandlet  HelpUsage=Simple (no parameters)
+                    HelpWebLink=  LogToStdout=true }
+```
+- Origin: not in epic v400 (`ut99-v400/Core/Classes` has `HelloWorldCommandlet.uc` only); it arrived with the
+  PS2/Loki static-link branch HP2's UCC also comes from (a UnrealScript VM bring-up test). It **is compiled into the
+  shipped `Core.u`** (the name occurs in `Assets/System/Core.u`), but it has **no `Core.int` registry line**, so it
+  is invisible to `ucc help` and must be invoked as `ucc-bin Core.SimpleCommandlet`.
+- It exercises only Core natives: a script function call, float→int conversion, `Min`, `Left`, `Mid`+`InStr`, `$`/`@`
+  concatenation, `Log` — i.e. it runs with **no Engine** state, which makes it the ideal **first UCC acceptance test**
+  (proves Core + the script VM + `FOutputDeviceFile`/`LogToStdout` on the new platform layer before anything else).
+- Expected output (UE1 float→string is `%.2f`):
+  ```
+  Simple commandlet says hi.
+  Testing function calling.
+  Function call returned 666
+  Testing cast to int.
+  Temp is cast from 3.00 to 3
+  Testing min()
+  Temp is min(32, 666): 32
+  3 is a woo
+  otherstring: alker
+  ```
+  ACTION: add this as the Phase B UCC smoke test (a 9-line golden file); a mismatch in `3.00` or `alker` points at
+  `appSprintf`/`FString` porting bugs (e.g. the `FString`-through-varargs class of bug noted in §2.6.4 item 4).
+
+### 3.7 UCC acceptance (Phase B)
+
+1. `./ucc-bin` → banner + `Use "ucc help" for help`; `./ucc-bin help` lists HelloWorld, Server, CheckSum, Master,
+   Make, Conform, BatchExport, MergeDXT, PackageFlag, DataRip, UpdateUMod, ChecksumPackage, Pkg (no PS2Convert).
+2. `./ucc-bin Core.SimpleCommandlet` → the 9 golden lines (§3.6); `./ucc-bin Core.HelloWorldCommandlet` → its lines.
+3. `./ucc-bin batchexport HGame.u class uc <scratch>` → loads HGame and all imports with **no** `[layout]`, no
+   `Can't find file for package`; exports 700+ `.uc` files.
+4. (optional) `make -NOHEADER` in the scratch tree (§3.5 M5/M6) → log shows `IpDrv - Release`, `Building...`,
+   `Success - 0 error(s)`, `Saving...` for IpDrv **only**; the resulting `IpDrv.u` loads in `Game` (`obj list
+   class=UdpBeacon` finds it).
+5. `/abs/path/run/System/ucc-bin help` (absolute argv[0]) → no crash, `ucc-bin.log` written (GModule fix).
+
+## 4. Open questions (with how to verify)
+
+| # | Question | How to verify / who decides |
+|---|----------|-----------------------------|
+| Q1 | Native `appBaseDir()`: adopt the template's `SDL_GetBasePath()` version in Core, or keep HP2's `getcwd()` and `chdir` in the launcher? (§1.11, §2.6.2) | Core analyst; either satisfies A7. Test: launch `/abs/run/System/Game` from `/`. |
+| Q2 | `appUserDir()` on Unix returns `""` (proposed E3) — confirm the frontend's `iniPath`/`userFiles` contract (`System/Game.ini`, `Save/…`) with the ufrontend-target analyst. | `targets/hp2/target.json` review |
+| Q3 | Does NSDLDrv tolerate `SDL_VIDEODRIVER=dummy` with `-NULLRENDERER`/`-SOFTWARERENDERER` (headless CI without Xvfb)? | one native run each; otherwise Xvfb (§1.10) |
+| Q4 | Is `HandleError`'s `SDL_ShowSimpleMessageBox` suppression (`-NOMSGBOX` / dummy driver) wanted, and should it go upstream to the template? | owner |
+| Q5 | `ue_exec_command` runs on the browser main thread (JS `ccall`) while the engine runs on the `PROXY_TO_PTHREAD` pthread — how does the template avoid the data race? | read `ufrontend/packages/frontend/src/shell/*` for how `_ue_exec_command` is called (proxied via a worker message?) — web-layer analyst |
+| Q6 | `-MEMSTAT`/`TMallocLog`: port as an optional allocator wrapper over `FMallocAnsi`? Only useful with a Unix `MEMSTAT` exec answer (`Core/Src/UnUnix.cpp:83-88` says "not available"). | owner; default no |
+| Q-UCC1 | `ucc` ini name: retail `"HP"` (→ `HP.ini`, isolated from the game) vs template-style `"Game"` (one ini). Recommendation `"HP"` (§3.3). | owner |
+| Q-UCC2 | Is `ucc-bin.exe` on MinGW wanted? If not, gate `add_subdirectory(UCC)` with `NOT MINGW` (§3.3). | owner; verify one MinGW build if yes |
+| Q-UCC3 | Does the double import of each IpDrv class (M3) matter if `FindFiles` is left unfixed? | run `make` once with `-SHOWDEP` and look for duplicate "Parsing"/"Compiling" lines or class-redefinition errors |
+| Q-UCC4 | `DownloadManagers=IpDrv.HTTPDownload` names a class that does not exist in this source tree (no `HTTPDownload.cpp`) — what does a P2P client do when it must download a package? | IpDrv / WebRTC analyst; P2P test with a package missing on the client |
+| Q7 | ~~Are HP2's `.int` files UTF-16 (retail was a `/D UNICODE` build)?~~ **Resolved:** `file Assets/System/*.int Assets/SystemLocalized/*` → 0 of 208+ files are UTF-16 (ASCII / extended-ASCII CRLF). The ANSI Unix `FConfigCacheIni` reads them; the extended-ASCII one (one `.int`, Latin-1 umlauts etc.) needs no conversion in an ANSI build. | done |
+
+## Status: complete

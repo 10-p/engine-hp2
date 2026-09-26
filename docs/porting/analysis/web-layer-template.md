@@ -7,7 +7,30 @@
 _Status: in progress — sections are appended as they are researched._
 
 ## 0. State of the HP2 repo today (web layer only)
-_pending_
+
+Snapshot taken 2026-09-26 (HP2 `main` = `306b4f0`, 4 commits). What of the web layer exists and in what state:
+
+| Piece | HP2 path | State vs template (`diff -rq --strip-trailing-cr`) | Consequence |
+|---|---|---|---|
+| Top-level CMake `if(EMSCRIPTEN)` + presets | `Source/CMakeLists.txt`, `Source/CMakePresets.json` | hand-adapted (renames `UT_WEB_*`→`HP2_WEB_*`, no Dreamcast/NOpenGLES) | §1 — mostly done |
+| Launcher CMake (web link) | `Source/Game/CMakeLists.txt` | template minus Dreamcast, `--target=hp2` | §2 — done except the inis it preloads |
+| `cmake/*.cmake`, `emit-artifact-meta.mjs`, `offscreen-depth24.sh` | `Source/cmake/`, `Source/Game/cmake/`, `Source/Game/` | **byte-identical** | §3 — emitter strings still say UT99 |
+| Launcher source | `Source/Game/Src/Launch.cpp` | **byte-identical** (md5 `9de4607c…`) | §4 — not adapted; several compile/link blockers on 433 |
+| NSDLDrv | `Source/NSDLDrv/{Inc,Src}` | **0 diffs** | §6 — must be adapted to HP2's `UViewport`/`UClient` |
+| NOpenALDrv | `Source/NOpenALDrv/` | **0 diffs** (UT99 v400 `UAudioSubsystem` face, libxmp/.umx music) | §7.1 — will not compile against HP2 `UnAudio.h`; rewrite from HP2 `ALAudio` using it as the pattern |
+| WebRTCDrv | `Source/WebRTCDrv/` | **0 diffs** | §7.2 — adapt to HP2 `UNetDriver`/`UNetConnection` (433 face) |
+| IpDrv | `Source/IpDrv/` | only `CMakeLists.txt` differs | needed as base of WebRTCDrv auto-switch |
+| XOpenGLDrv / OpenGLDrv wrappers | `Source/XOpenGLDrv/`, `Source/OpenGLDrv/` | 0 / 1 (`CMakeLists.txt`) diffs; the renderer code is fetched from the forks | §7.4/§7.5 |
+| SoftDrv | `Source/SoftDrv/` | **HP2's own 433 SoftDrv**, 6 source files differ, no `WEB-NOTES.md` | §7.3 — port the template's web fixes by analogy |
+| `vendor/glue/{ue_abi.h,webrtc-shim.js,wasmfs-shim.js}` | `vendor/glue/` | **identical** to template (ABI 1) | §8 — keep verbatim |
+| `tools/web-smoke.mjs` | `tools/web-smoke.mjs` | **identical** (still UT99 paths/asserts) | §12 — adapt |
+| Web inis | `Config/System/web/` | **only `README-ut99.md`** — no `Default.ini`/`DefUser.ini` | §9 — BLOCKER for first web link (LINK_DEPENDS on missing files) and boot (`MisingIni`) |
+| Renderer forks | expected at `/home/ion/hp2-ufrontend/{XOpenGLDrv,utglr-copy,gl4es}` | **still inside `/home/ion/hp2-ufrontend/ufrontend/`** as untracked `??` dirs (re-checked 2026-09-26: `git -C ufrontend status --short` → `?? XOpenGLDrv/ ?? gl4es/ ?? utglr-copy/`; tips `87f6e89` / `e60807b` / `98441ed5`) | §1.4.2 — `mv` them one level up before the first configure; PLAN.md §0 describes them as siblings, which is not true on disk |
+| Build trees | `build-native/` exists (native configure was run); no `build-wasm*` | no web configure has been attempted yet | — |
+
+Bottom line: the web **build scaffolding** (CMake, presets, emitter, depth patch, glue shims) is in place and
+faithful; **every web source path** (Launch.cpp, NSDLDrv, NOpenALDrv, WebRTCDrv, Core/Engine `__EMSCRIPTEN__` sites)
+is still the template's code, unadapted to 433, and the web ini set does not exist.
 
 ## 1. Build system: top-level `Source/CMakeLists.txt` (`if(EMSCRIPTEN)` + three web build modes)
 
@@ -344,16 +367,268 @@ HP2 ACTIONS (both are Core/Engine ports, listed here because the launcher contra
 - 4.6.3 `-benchmark` (HP2 `UEngine`?) — verify HP2 parses `-benchmark`/`SECONDS=`; if not, the host's `?benchmark=` is inert (not a blocker).
 
 ## 5. Core/Engine patch sites (`__EMSCRIPTEN__` and "exceptions off → return NULL")
-_pending_
+
+**Why this section exists.** The web build compiles every engine object with Emscripten's default
+`-fignore-exceptions` (§1.2.13): `throw` compiles to `__cxa_throw` → `abort()`, every `catch` block is dead code,
+and every UE1 `guard/unguard` is inert. So *every* code path where the engine relies on "a loader throws, a caller
+catches" must be rewritten to "resolve to NULL, caller checks NULL". The template did that site by site
+("2.6f/2.6g/2.12/2.79o"), always behind `#ifdef __EMSCRIPTEN__` so native keeps the retail throw semantics.
+HP2 today has **zero** `__EMSCRIPTEN__` sites in `Source/{Core,Engine,Render,Fire,Editor}`
+(`grep -rn __EMSCRIPTEN__` → nothing), so all of the below are open actions.
+
+Guard pattern (use exactly this shape everywhere so a grep finds them):
+```cpp
+#ifdef __EMSCRIPTEN__
+	return NULL; // ufront (2.6f): <why> (catching off — a throw aborts across Asyncify frames)
+#else
+	appThrowf( LocalizeError("..."), ... );
+#endif
+```
+`engine-unreal1` carries the same set (`Core/Src/UnObj.cpp:1588,1634,1644,1655,1821`, `Engine/Src/UnGame.cpp:163,367,547`),
+confirming these are the "mirrors engine-unreal1" sites and there are no extra unreal1-only loader sites to pick up.
+
+### 5.1 Core: diagnostics and logging (make every abort *named*)
+
+| # | Template site | Code (template) | HP2 site | ACTION |
+|---|---|---|---|---|
+| C1 | `Core/Inc/FOutputDeviceFile.h:84-100` (ufront 2.8, **not** `#ifdef`'d) | after the file write: `if( Event != NAME_Title ) { fputs(FName::SafeString(Event),stdout); fputs(": ",stdout); fputs(Data,stdout); fputc('\n',stdout); }` | `Core/Inc/FOutputDeviceFile.h:69-84` (write block ends `:80`, `GLogHook` at `:82-83`) — **absent** | Add the stdout mirror inside the `!FName::SafeSuppressed(Event)` block, after the `LogAr` write. This *is* "GLog to console": the host's `Module.print` → `console.log` and all the frontend/smoke log taps (`Bringing … up for play`, `appError called`, `[appThrowf]`) depend on it. HP2's block is gated by `if( !GIsCriticalError \|\| Entry )` (`:33`) exactly like the template's — keep. |
+| C2 | `Core/Src/UnMisc.cpp:688-697` (`appThrowf`, 2.7b/2.7c) | `#ifdef __EMSCRIPTEN__ printf("[appThrowf] %s\n", TempStr); fflush(stdout); #endif` before `throw( TempStr );` | `Core/Src/UnMisc.cpp:674-679` — absent | Add verbatim. Turns every remaining uncatchable throw into a named `[appThrowf] <reason>` console line — the tool that finds the next site to patch. |
+| C3 | `Core/Src/UnLinker.h:335` and `:1062-1063` (2.35, not web-guarded) | `appThrowf( TEXT("%s: %s"), LocalizeError("OpenFailed"), InFilename );` | `Core/Src/UnLinker.cpp:168` (ULinkerLoad ctor) and `:892` (ULinkerSave ctor) — bare `LocalizeError("OpenFailed")` | Apply both (name the file). Platform-neutral. |
+| C4 | `Core/Src/UnUnix.cpp:23-25` | `#ifdef __EMSCRIPTEN__ #include <emscripten.h> #endif` | HP2 `Core/Src/UnUnix.cpp` is the **Loki-era** Unix port (no SDL, `#include <dlfcn.h> <netdb.h>`), not the template's SDL `UnUnix.cpp` | Carry the include with the `appRequestExit` hunk (C5). HP2's UnUnix is one of the 41 three-way-merge conflicts (PLAN.md §3); the web hunks below must survive that merge. |
+| C5 | `Core/Src/UnUnix.cpp:205-238` (2.12, 2.13.2) | in `appRequestExit` non-force branch: `#ifdef __EMSCRIPTEN_PTHREADS__ MAIN_THREAD_EM_ASM({ #else EM_ASM({ #endif if(typeof window!=='undefined'){ console.log('[SHELL] Engine exit requested, returning to launcher'); setTimeout(function(){ window.location.href = window.location.pathname; },0);} }); ` | `Core/Src/UnUnix.cpp:167-181` — absent | Add verbatim. `MAIN_THREAD_EM_ASM` is mandatory under `PROXY_TO_PTHREAD` (a worker has no `window`; plain `EM_ASM` silently skips and leaves a dead canvas). The frontend's E2E waits on this navigation. **HP2 check:** which HP2 UI paths call `appRequestExit(0)` vs `Force`? HP2's "Quit" in the front-end menu (`HGame`/`UWindow` console `exit`) must go through the non-force path; `Core/Src/UnUnix.cpp:120,888` already call `appRequestExit(0)`. |
+| C6 | `Core/Src/UnUnix.cpp:673-677` (2.7b) | `appBaseDir()`: `#if defined(__EMSCRIPTEN__) if(getcwd(BaseDir,sizeof(BaseDir))) appStrcat(BaseDir,"/");` (SDL_GetBasePath returns "/" under Emscripten) | `Core/Src/UnUnix.cpp:589-601` already uses `getcwd` unconditionally | Nothing to add *if* HP2 keeps its getcwd. If the merge takes the template's SDL `appBaseDir`, keep the `__EMSCRIPTEN__` getcwd branch. Either way `main()` must `chdir("/System")` before `appInit` (§4.5.2). |
+| C7 | *(template has it, not web-guarded)* `appUserDir()` in `UnUnix.cpp` | returns `""` (no home dir; `-nohomedir` accepted as no-op) | **missing on POSIX** (only `UnVcWin32.cpp:1048`) | Define `appUserDir()` in HP2's `UnUnix.cpp`; web must return `""` (§2.3.4). Link blocker, not just web. |
+| C8 | `Core/Src/UnMisc.cpp:1080-1094`, `:1119-1150` (not web-guarded, 2.37c/`2c25d55`) | `appIsGlobalOptionToken`, `appApplyIniOverrides` | absent | Port both (§4.6.1/4.6.2) — the web host passes `CPUSPEED=3000` first and every setting as `-ini:…`. |
+| C9 | `Core/Src/UnMisc.cpp` `appFindPackageFile` per-path case-insensitive resolve (`7164de7`) | each `Paths=` entry is tried exactly **then** case-insensitively before the next | HP2 `appFindPackageFile` (`Core/Src/UnMisc.cpp`, search `appFindPackageFile`) | Port. WasmFS/FetchFS is case-sensitive and HP2's retail tree mixes case (`Maps/`, `Textures/`, `Sounds/`; check `ls Assets/`). A later path's exact hit beating an earlier case-variant is a wrong-package load → `[appThrowf] Can't find … in file` → abort. |
+
+### 5.2 Core: the loader — "exceptions off → return NULL" sites
+
+| # | Function | Template (file:line) | HP2 (file:line) | Patch (web branch) |
+|---|---|---|---|---|
+| L1 | `UObject::SafeLoadError` | `Core/Src/UnObj.cpp:1991-2001` | `Core/Src/UnObj.cpp:2155` | `#ifndef __EMSCRIPTEN__ if( LoadFlags & LOAD_Throw ) appThrowf(TEXT("%s"),Error); #else (void)Error; #endif`. **The single most important site**: every loader catch funnels here with `LOAD_Throw`. HP2 extra: `SafeLoadError` starts with Legend's `if( GIsStrict ) LoadFlags = LOAD_NoFail;` (`:2143-2151`) — on web `-STRICT` would convert every soft failure into a fatal `appErrorf`; never pass `STRICT` from the host. |
+| L2 | `UObject::GetPackageLinker` — `!InOuter` | `UnObj.cpp:2043-2047` | `UnObj.cpp:2196-2197` | `return NULL;` instead of `appThrowf(PackageResolveFailed)` |
+| L3 | `GetPackageLinker` — package not found by name | `UnObj.cpp:2053-2057` | `UnObj.cpp:2203` | `return NULL;` instead of `appThrowf(PackageNotFound)` |
+| L4 | `GetPackageLinker` — file not found by filename | `UnObj.cpp:2064-2068` | `UnObj.cpp:2209-2210` | `return NULL;` instead of `appThrowf(FileNotFound)` |
+| L5 | `GetPackageLinker` — GUID mismatch (`PackageVersion`, 2.79o) | `UnObj.cpp:2116-2129`: `FString Why = FString::Printf( LocalizeError("PackageVersion"), InOuter->GetName() ); SafeLoadError( LoadFlags, *Why, LocalizeError("FailedLoad"), InOuter->GetName(), *Why ); return NULL;` | `UnObj.cpp:2253-2254` | Port — only reachable in a net join (`CompatibleGuid` non-NULL). One `Localize` per statement (shared static buffer). |
+| — | `GetPackageLinker` — `FilenameToPackage` | `UnObj.cpp:2092` (left as throw) | `UnObj.cpp:2234` | leave (unreachable: `CreatePackage` never returns NULL) |
+| — | `GetPackageLinker` — Sandbox | template `:2108` throw (left) | HP2 `:2262-2266` already **debugf + `Result=NULL`** outside the try (436-era) | nothing — HP2 is already soft here |
+| L6 | `UObject::StaticLoadObject` — ObjectNotFound | `UnObj.cpp:2245-2257`: `{ EndLoad(); return NULL; }` | `UnObj.cpp:2376-2377` | Port. Note the web branch skips `GObjPackageRemap` retry (HP2 retail inis have no `[PackageRemap]`? — verify `grep -i remap Config/System/Default.ini`). |
+| L7 | `ULinkerLoad::VerifyImport` — nested import, parent linker NULL | `Core/Src/UnLinker.h:552-564`: `if(!Import.SourceLinker){ if(Cast<UPackage>(LinkerRoot)) Cast<UPackage>(LinkerRoot)->PackageFlags |= PKG_BrokenLinks; return; } #else check(Import.SourceLinker); #endif` | `Core/Src/UnLinker.cpp:400` (`check(Import.SourceLinker);`) | Port verbatim |
+| L8 | `ULinkerLoad::VerifyImport` — top-level import, linker NULL | `UnLinker.h:573-585` (before the `ExportHash[iHash]` walk) | insert after `Core/Src/UnLinker.cpp:407` (end of the `else` branch), before `:409` `UBOOL SafeReplace = 0;` | Port verbatim. HP2's `PackageIndex==0` branch still has `try{ GetPackageLinker(…LOAD_Throw…) } catch → appThrowf(Error)` (`:379-393`); with L1 in place `GetPackageLinker` returns NULL instead of throwing, so the catch is never needed — L8 is what makes it safe. |
+| — | `VerifyImport` `FailedImportPrivate` / `FailedImport` | template leaves as throws | HP2 `UnLinker.cpp:454`, `:527` (both preceded by `LOAD_Forgiving` soft paths) | leave; if a web boot dies with `[appThrowf] Failed import …`, the fix is content (missing package) or `LOAD_Forgiving`, not a guard. |
+| — | `ULinkerLoad::Create` `FailedCreate` (only `Checked`) | leave | HP2 `UnLinker.cpp:583` | leave |
+| — | `ULinkerLoad` ctor `OpenFailed`/`LinkerExists`/`BinaryFormat`/`OldVersion` | leave (fatal on web by design; C3 names the file) | HP2 `UnLinker.cpp:168,176,205,213` | leave. **HP2 note:** `:212-213` is a `GWarn->YesNof("OldVersion")` prompt — `FFeedbackContextAnsi::YesNof` on web returns …? verify it returns 1 (non-interactive) or this aborts on any pre-`PACKAGE_MIN_VERSION` file. |
+| L9 | `UObject::StaticLoadClass` `LoadClassMismatch` | template **leaves** `:2294` | HP2 `UnObj.cpp:2413` | leave (programming error, not content) |
+| L10 | `UObject::LoadPackage` — **template gap** | `UnObj.cpp:2319-2324`: `ULinkerLoad* Linker = GetPackageLinker(…); if(!(LoadFlags & LOAD_Verify)) Linker->LoadAllObjects(); Result = Linker->LinkerRoot;` — with L1-L4, `Linker` can be NULL on web and this NULL-derefs | HP2 `UnObj.cpp:2438-2441`, identical | **Add (HP2 improvement over the template):** `#ifdef __EMSCRIPTEN__ if( !Linker ) { EndLoad(); return NULL; } #endif` right after the `GetPackageLinker` call. HP2 calls `LoadPackage` for things the template never does (verify: `grep -rn 'LoadPackage(' Source/Engine Source/HGame Source/*/Src` — HP2's save/load and `HPDialog`/`HGame` natives may). A NULL-deref shows as `memory access out of bounds`, which is harder to diagnose than the named `appErrorf`. |
+
+### 5.3 Engine: `UGameEngine` (Init / Browse / LoadMap / SetProgress)
+
+| # | Function | Template (file:line) | HP2 (file:line) | ACTION |
+|---|---|---|---|---|
+| E1 | `UGameEngine::Init` — startup map failure → fall back to Entry (2.6g) | `Engine/Src/UnGame.cpp:202-215`: `#ifdef __EMSCRIPTEN__ { debugf(NAME_Warning, TEXT("Startup map '%s' failed to load (%s) — falling back to the menu"), Parm, *Error); if(!GLevel) GLevel = GEntry; } #else appErrorf(FailedBrowse…) #endif` | `Engine/Src/UnGame.cpp:212-214` | Port. **HP2 semantic check:** HP2's `FURL::DefaultLocalMap` (retail `[URL] LocalMap=`, check `Config/System/Default.ini`) is HP2's start map (likely `Startup.unr`, which plays the intro/front-end). Falling back to `GEntry` (`Entry.unr`) leaves the player in HP2's Entry map — verify Entry has a usable HP2 menu (HP2 front-end is a UWindow `HPConsole`/`FEBook`? — owned by the boot report). If not, fall back to `DefaultLocalMap` instead. |
+| E2 | `UGameEngine::Init` — first-token test (`1d3dfa5`) | `UnGame.cpp:~180` uses `appIsGlobalOptionToken(Parm)` | `UnGame.cpp:181-185` `Parm[0]=='-'` only | Port (C8). |
+| E3 | `UGameEngine::SetProgress` — NULL Actor (2.12) | `UnGame.cpp:288-293`: `if( Client && Client->Viewports.Num() && Client->Viewports(0)->Actor )` | `UnGame.cpp:303-305` (`if( Client && Client->Viewports.Num() )` then derefs `Actor`) | Port (not web-guarded in template). Reached from every web failure path in E5/E6 before the player pawn exists. |
+| E4 | `UGameEngine::Browse` — `<host>?connect` promotion (2.7d) | `UnGame.cpp:509-520`: `if( URL.HasOption(TEXT("connect")) && URL.Host.Len()<=0 && URL.Map.Len()>0 ) { URL.Host = URL.Map; debugf(TEXT("[ufront] connect URL: promoted map '%s' to host"), *URL.Host); }` | insert after `UnGame.cpp:651` (`debugf( TEXT("Browse: %s"), … )`) | Port **only if** HP2 ships multiplayer on web (WebRTC P2P). HP2 retail is single-player; the frontend's `targets/hp2` descriptor decides (`network` section). If `network` is disabled for hp2, skip E4 and E5 and note it. |
+| E5 | `UGameEngine::LoadMap` — net join: NULL linker in the PackageMap (2.79o) | `UnGame.cpp:734-750` (loop over `PackageMap->List`, `appFindPackageFile` to pick `PackageVersion` vs `PackageNotFound`, `EndLoad(); SetProgress(...); return NULL;`) | after `UnGame.cpp:903` (the GetPackageLinker loop), before `:905-906` `VerifyLinker` | Port with E4 (same condition). HP2 detail: HP2's loop declares `INT i` inside the first `for` and reuses `i` in the second (MSVC6 scoping, `:896,905`) — gcc rejects this; the template hoisted `INT i;` (`:731`) — do the same. |
+| E6 | `UGameEngine::LoadMap` — verify-load returned NULL (2.12) | `UnGame.cpp:757-772`: `ULevel* Verified = LoadObject<ULevel>(…LOAD_Verify|LOAD_Throw|LOAD_NoWarn…); EndLoad(); #ifdef __EMSCRIPTEN__ if(!Verified){ Error = FString(TEXT("Could not load map ")) + URL.Map; SetProgress(LocalizeError(TEXT("UrlFailed"),TEXT("Core")), *URL.Map, 6.0); return NULL; } #else (void)Verified; #endif` | `UnGame.cpp:910-911` (result discarded) | Port: capture the result into `Verified` and add the bail **before** `DissociateViewports`/`ExitLevel` (HP2's order: check that HP2's `LoadMap` tears down the old level *after* `:911`, as v400 does). The `SetProgress` 3rd arg is `6.f` in HP2 style. |
+| E7 | `UGameEngine::LoadMap` — real load returned NULL (2.6g) | `UnGame.cpp:871-881`: `#ifdef __EMSCRIPTEN__ if(!GLevel){ Error = …; SetProgress(…); return NULL; } #endif` | after `UnGame.cpp:1066-1067` (`GLevel = LoadObject<ULevel>(… LOAD_NoFail …); unguard;`) and before `:1092 check(GLevel)` | Port verbatim. |
+| E8 | `UGameEngine::Init` — Entry load failure | template leaves `appErrorf(FailedBrowse, "Entry")` | HP2 `UnGame.cpp:169-170` | leave (no Entry = broken install; a named fatal is right). |
+| E9 | `UGameEngine::SaveGame` / save dir creation (`1546db7`) | `MakeDirectory( *GSys->SavePath, 1 )` (Tree=1) | HP2 `UnGame.cpp:250-251,445-446,470-471,486-487`: `MakeDirectory(SavePath,0)` and **`SaveSlotPath`** (HP2-only) with Tree=0 | Pass `1` at all 8 calls. HP2 has a second-level `SaveSlotPath` (`UnMisc.cpp:2019-2026`, `SAVESLOT=`), i.e. exactly the two-level case that aborted Spatial Fear on the web: `ULinkerSave` → `OpenFailed` → throw → abort mid-game. |
+| E10 | savegame path through FURL on Unix (`5674fc7`) | Browse `?load` and hub-pop branches set `FURL.Map` directly from the `PATH_SEPARATOR` path | HP2 `Browse` — HP2 uses `SAVESLOT`/`-LOAD=` (`UnGame.cpp:246-256`) | Verify HP2's load path builds `"../Save/…usa?load"` via `FURL( …, TEXT("..") PATH_SEPARATOR …)`; if so port the fix (on Unix/web `/` is parsed as URL host syntax → loads the default map). |
+| E11 | `Received '<pkg>'` debugf (`3ff2ed5`, comment `7c31a53`) | `Engine/Src/UnChan.cpp:1322-1326` (UT99 downloads in `UFileChannel`) | HP2 downloads live in **`Engine/Src/UnDownload.cpp:176`** (`appSprintf( Msg, TEXT("Received '%s'"), Info->Parent->GetName() );`, 436-era `UDownload`) | Only with multiplayer: add `debugf( TEXT("%s"), Msg );` next to it. Not needed for the host (it flushes on `Bringing … up for play`, which HP2 already logs at `UnGame.cpp:1272`). |
+
+### 5.4 Engine: `UnLevel.cpp`, `UnLevTic.cpp`, other
+
+| # | Site | Template | HP2 | ACTION |
+|---|---|---|---|---|
+| X1 | `Engine/Src/UnLevel.cpp` | **no web patches** (`diff` vs epic = only gcc scoping/`Min<INT>`/`!(a==b)` fixes, lines 310-692) | HP2 `UnLevel.cpp` | nothing web-specific; the gcc fixes are the compile report's. |
+| X2 | `ULevel::Tick` tick floor 0.005 → 0.001 (`e2e724b`) | `Engine/Src/UnLevTic.cpp` | HP2 `Engine/Src/UnLevTic.cpp` (search `DeltaSeconds` floor) | Port; together with the launcher's `FrameRateCap` (§4.4.3) it stops the world running fps/200× fast on web. |
+| X3 | GC reachability walk iterative (`ec74328`) | `Core/Src/UnObj.cpp` `FArchiveTagUsed` drain | HP2 `UnObj.cpp` `FArchiveTagUsed` | Port. On web the JS/wasm call stack is the limit (`RangeError: Maximum call stack size exceeded` at 5,547 wasm frames on a -O0 build). HP2 levels with many actors + HP2's larger class graph (HGame) make this *more* likely. |
+| X4 | `UT_REPLACEMENT_ALLOC` `always_inline` on global `operator new/delete` (`ec74328`) | `Core/Inc/UnGnuG.h`/`Core.h` | HP2 `Core/Inc/Core.h` operator new/delete | Port. Otherwise the `-O0` `wasm-debug` build hands WasmFS's static initialiser the engine allocator before `appInit` → NULL. |
+| X5 | `FString::Mid` DWORD sum (`1f744b8`) | `Core/Inc/UnTemplate.h` | HP2 `Core/Inc/UnTemplate.h` `Mid` | Port (UB under clang -O2; general). |
+| X6 | `DECLARE_CLASS` no value-init (`a680288`) + layout guard (`bb90b47`) | `Core/Inc/UnObjBas.h` | HP2 433 `DECLARE_CLASS` | Owned by the core report; listed because a wiped UObject header crashes the web build at the first GC. |
+
+### 5.5 Core: POSIX file manager (web compile + case/separator traps)
+
+| # | Site | Template | HP2 | ACTION |
+|---|---|---|---|---|
+| F1 | `FFileManagerLinux::MakeDirectory` mode | `Core/Inc/FFileManagerLinux.h:287-293`: `mkdir(Path, S_IRUSR \| S_IWUSR \| S_IXUSR)` (+ `PLATFORM_WIN32` no-mode branch, 2.33) | `Core/Inc/FFileManagerLinux.h:263`: `mkdir(Path, __S_IREAD && __S_IWRITE && __S_IEXEC)` — **logical AND = mode 1**, and `__S_IREAD` is a glibc-internal macro | Take the template's line. The `&&` bug makes native save dirs mode `0001` (unwritable: saving fails); on Emscripten's musl `__S_IREAD`/`__S_IWRITE` are not public API — expect a web compile error at `:234,254,263`. Replace with `S_IRUSR\|S_IWUSR` in the two `chmod` calls too (template `:234-238,258-262`, which also adds `#include <sys/stat.h>`, `<cerrno>`). |
+| F2 | `FFileManagerLinux::CreateFileReader` | `fopen(Filename,"rb")` **verbatim** — no `\`→`/` conversion, no case folding (only `FindFiles` converts `\`, `:319-323`) | same | Any HP2 path built with `"..\\"` literals fails on WasmFS and Linux. Known HP2 instance: `ALAudio/Src/ALAudioSubsystem.cpp:1136` `TEXT("..\\music\\")` (and the lowercase `music` vs `Assets/Music/`). Grep all HP2 packages for `TEXT("..\\\\` and fix each to `PATH_SEPARATOR` or `/` with the on-disk case. `GSys->SavePath` default `"..\\Save"` (§2.3.4) is the other one. |
+| F3 | `FFileManagerLinux::GetGlobalTime/SetGlobalTime` | stubs present (`:266-281`) | absent | Needed only if HP2's `FFileManager` base declares them pure (check `Core/Inc/UnFile.h`); the core merge decides. |
 
 ## 6. NSDLDrv web paths
-_pending_
+
+HP2 `Source/NSDLDrv/` is byte-identical to the template (0 diffs). The **433 interface adaptation**
+(`DECLARE_CLASS(…,NSDLDrv)` 4th arg, `FTime` for `LastUpdateTime`/`InputUpdateTime`, `bWindowsMouseAvailable = !Capture`
+in `SetMouseCapture`) is owned by `template-drivers.md` §1-§2. This section lists the **web** sites that must survive
+that adaptation unchanged. Every web branch is guarded `#if defined(__EMSCRIPTEN__) && defined(__EMSCRIPTEN_PTHREADS__)`
+(call it **G3**). `__EMSCRIPTEN_PTHREADS__` only exists when `-pthread` is passed at **compile** time, so HP2's global
+`add_compile_options(-pthread)` (`Source/CMakeLists.txt:76`, §1.2.10) is what switches all of them on. If it is
+missing, every row below silently compiles its *non-web* branch, and the first `SDL_GL_CreateContext` fails with
+`InvalidStateError`.
+
+### 6.1 Site table (template line numbers = HP2 line numbers today)
+
+| # | Site (`Source/NSDLDrv/…`) | What it does (template's reason) | ACTION for HP2 |
+|---|---|---|---|
+| N1 | `Inc/NSDLDrv.h:75-81` (G3) `BYTE* SoftFB; INT SoftFBBytes;` | a worker has no usable SDL renderer (the GLES-backed `SDL_CreateRenderer` → proxied `eglCreateContext` deadlocks), so SoftDrv renders into this buffer | keep |
+| N2 | `Src/NSDLViewport.cpp:4-9` (G3) `#include <emscripten/html5.h>`, `<emscripten/html5_webgl.h>` | | keep |
+| N3 | `Src/NSDLViewport.cpp:14-38` (G3) `ufrontCanvasDevicePixelSize()` (2.71): `emscripten_get_element_css_size("#canvas")` × `emscripten_get_device_pixel_ratio()`, `lround`, returns 0 for a 0×0 box | the backing store must be the canvas's **device-pixel** size or the browser resamples it (glyphs measured 1.25× wide on a 125 % desktop) | keep verbatim. Consequence for HP2: viewport sizes of 2560-5120 px wide are normal on the web → §7.3 SoftDrv bound |
+| N4 | `Src/NSDLViewport.cpp:206-209` (G3) ctor zeroes `SoftFB`/`SoftFBBytes` | | keep |
+| N5 | `Src/NSDLViewport.cpp:317-322`, `:366-386`: `INT WebGLESMajor = 2;` then `if( DoOpenGL && Temp.InStr(TEXT("XOPENGL")) != INDEX_NONE ) WebGLESMajor = 3;` (2.9); `DoOpenGL` = the device name contains `OPENGL` (`:366,372`) | the render-device **class path string** picks WebGL2 vs WebGL1 vs no GL | keep. HP2 must keep the class paths `XOpenGLDrv.XOpenGLRenderDevice` (→ WebGL2) and `OpenGLDrv.OpenGLRenderDevice` (→ WebGL1); `SoftDrv.SoftwareRenderDevice` and `NullDrv.NullRenderDevice` contain no `OPENGL` → SoftFB path. Update the comment at `:319` to drop NOpenGLES. |
+| N6 | `Src/NSDLViewport.cpp:421-428` (G3): do **not** add `SDL_WINDOW_OPENGL` | SDL's EGL path would be proxied to a main thread that no longer owns the canvas (Emscripten #24792) | keep |
+| N7 | `Src/NSDLViewport.cpp:435-441` (`#ifdef __EMSCRIPTEN__`) `SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, WebGLESMajor)` + `SDL_GL_CONTEXT_PROFILE_ES` | harmless under G3 (no GL window), keeps the non-pthread build honest | keep |
+| N8 | `Src/NSDLViewport.cpp:503-549` (G3) "hatch (c)": `emscripten_webgl_init_context_attributes(&Attrs); Attrs.majorVersion = WebGLESMajor-1; minorVersion=0; alpha=0; depth=1; stencil=1; antialias=0; explicitSwapControl=1; renderViaOffscreenBackBuffer=1; WebGLCtx = emscripten_webgl_create_context("#canvas",&Attrs); … emscripten_webgl_make_context_current(WebGLCtx); GLCtx = (SDL_GLContext)(intptr_t)WebGLCtx;` + `appErrorf` on failure | **the direct WebGL context on the worker** (on the canvas that `-sOFFSCREENCANVASES_TO_PTHREAD=#canvas` transferred). XOpenGL adopts it via `emscripten_webgl_get_current_context()`; gl4es/UTGLR use whatever context is current | keep verbatim. The `explicitSwapControl`+`renderViaOffscreenBackBuffer` pair needs `-sOFFSCREEN_FRAMEBUFFER` at link (§2.2.17) and gets the 24-bit depth from `offscreen-depth24.sh` (§3.4). The `debugf(NAME_Init, "Created WebGL %i.0 context on the worker (handle %i)")` line is a useful smoke assert (§12). |
+| N9 | `Src/NSDLViewport.cpp:551-555` (G3) `emscripten_webgl_make_context_current` instead of `SDL_GL_MakeCurrent` | | keep |
+| N10 | `Src/NSDLViewport.cpp:557-570` (G3) SoftFB path: `SDLTexFormat = SDL_PIXELFORMAT_ARGB8888; ColorBytes = 4; Caps = 0;` | no SDL renderer/texture on the worker | keep. HP2's SoftDrv must accept `ColorBytes=4` (retail HP2 SoftDrv supports 32-bit? check `SoftDrv.cpp` `SetRes` for `ColorBytes==4` — v400's does) |
+| N11 | `Src/NSDLViewport.cpp:612-631` (2.12 + G3 2.71): adopt `SDL_GetWindowSize` then override with the device-pixel size, **unaligned** on web (`WantX = RealW`) vs `Align(RealW,4)` natively | dynamic resolution: the game resolution is the browser window | keep. HP2 has no "fixed 640×480 menu" assumption? — verify HP2's front-end (`HPConsole`/`FEBook` UWindow pages) scales with `Canvas.ClipX/ClipY`; if a page assumes 640×480 it will be tiny on a 4K canvas (AutoFOVUI-style HUD scaling is a later feature, not a boot blocker). |
+| N12 | `Src/NSDLViewport.cpp:690-694` (G3) `emscripten_webgl_destroy_context` in `CloseWindow` | SDL never made the context | keep |
+| N13 | `Src/NSDLViewport.cpp:729-760` (G3) `Lock`: (re)size `SoftFB` lazily **here**, `if( SoftFBBytes != Needed )` (2.19f) | the only point where `SizeX/SizeY` are final and the buffer is about to be written; sizing elsewhere was a per-frame heap overrun above ~4 MB | keep; read `SoftDrv/WEB-NOTES.md` §2 |
+| N14 | `Src/NSDLViewport.cpp:885-889` (G3) `emscripten_webgl_commit_frame();` in `Unlock` | **the present** under `explicitSwapControl` (`SDL_GL_SwapWindow` would go through EGL emulation). A stub without `-sOFFSCREEN_FRAMEBUFFER` (the ~1 fps D3D11 Chromium bug, `2074fe0`) | keep |
+| N15 | `Src/NSDLViewport.cpp:894-931` (G3) SoftFB present: `EM_ASM` → 2D context of `Module['canvas']`, `Module.__ufrontSoftImg` `ImageData`, BGRA→RGBA swizzle 32 bits at a time, `ctx.putImageData(...)` (`:929`); "one declaration per statement — EM_ASM is a macro and the preprocessor splits on top-level commas" | CPU present for SoftDrv/NullDrv | keep |
+| N16 | `Src/NSDLViewport.cpp:967-968` (G3) `MakeCurrent` → `emscripten_webgl_make_context_current` | | keep |
+| N17 | `Src/NSDLViewport.cpp:1114-1121` (`#ifndef __EMSCRIPTEN__` / `#else (void)OnlyFocus`) `SetMouseCapture` skips the `SDL_GetMouseFocus()` gate | SDL2's Emscripten port defers pointer lock to the next click; a stale focus on the transition frame would drop the lock | keep. Combine with template-drivers' `bWindowsMouseAvailable = !Capture;` addition (HP2 retail WinViewport semantics; HP2 menus read absolute `WindowsMouseX/Y`) |
+| N18 | `Src/NSDLViewport.cpp:1276-1290` (G3) `WINDOWEVENT_RESIZED/SIZE_CHANGED`: re-apply the device-pixel size whenever SDL's CSS size differs → `SetClientSize(NewX,NewY,false)` | resize/zoom/DPR change handling | keep |
+| N19 | `Src/NSDLClient.cpp:16-60` `StaticConstructor` registers the client config properties **and** assigns compiled defaults mirroring the web ini's `[NSDLDrv.NSDLClient]` (2.19/2.35: "registration only makes an option ADDRESSABLE; it assigns no value … decals were off by accident", `3703f35`) | | keep; HP2's `UClient` adds `NoFractalAnim` and `ParticleDensity` (`Engine/Inc/UnCamera.h:383,394`) — give them compiled defaults too and put them in §9's `[NSDLDrv.NSDLClient]`. Keep the compiled defaults and the web ini in sync. |
+| N20 | `Src/NSDLViewport.cpp:212-222` `InitKeyMap()` from the ctor (2.12) | v400/433 never call the v200 `InternalClassInitializer`, so the keymap stayed zero → dead keyboard | keep |
+| N21 | `Src/NSDLViewport.cpp:853` `bWindowsMouseAvailable = !(NewBlitFlags & BLIT_Fullscreen);` (`1d3dfa5`: absolute UWindow cursor) | | keep (+ N17 note) |
+
+### 6.2 HP2-specific viewport virtuals the NSDLDrv does not implement (and whether the web needs them)
+
+HP2's `UViewport` adds virtuals with default bodies (`Engine/Inc/UnCamera.h:286-293`):
+
+| Virtual | Default | Who calls it in HP2 | Web consequence / ACTION |
+|---|---|---|---|
+| `TryRenderDevice(const TCHAR*,INT,INT,INT,UBOOL)` | `{}` | nothing outside WinDrv | none (NSDLDrv's `UNSDLClient::TryRenderDevice(UViewport*,…)` is a different class; no clash) |
+| `DrawString(DWORD,UFont*,INT&,INT&,const TCHAR*,const FPlane&)` | `{}` | Editor only (`Editor/Src/UnEdCam.cpp:2314-2445`) | none |
+| `CreateNativeFont(const TCHAR*,int)` | `return NULL` | `UConsole::execCreateNativeFont` (`Engine/Src/UnCon.cpp:88-98`) ← `HGame/Classes/Menu/HPConsole.uc:934-937,964-967`, **only for `TRA/KOR/THA/JAP` languages** | INT/Western languages are unaffected. Asian-language web builds would get NULL fonts (GDI TTF fonts in the retail driver) → out of scope; record it in `Config/System/web/README.md`. |
+| `LoadSmackerMovie/BlitNextSmackerFrame/ShutdownSmacker` | `false/true/true` | nothing in HP2 source or `.uc` (`grep -rni smacker` → only the declaration) | none |
+| `ScreenShot(const TCHAR*)` + `snapBuff/snapU/snapV` | implemented in Engine (`UBOOL ScreenShot`) | HP2 save-game thumbnails? (verify: `grep -rn ScreenShot Source/Engine/Src Source/HGame`) | if save thumbnails read back the framebuffer, the WebGL path needs `glReadPixels` on the worker context — works, but `preserveDrawingBuffer` is not set; do the read inside the frame before `commit_frame`. Verify when saving is tested. |
 
 ## 7. Audio (NOpenALDrv / Module.alsoftConfig), WebRTCDrv, SoftDrv, XOpenGLDrv, OpenGLDrv web notes
-_pending_
+
+### 7.1 Audio: NOpenALDrv, openal-soft web backend, `Module.alsoftConfig`
+
+HP2 `Source/NOpenALDrv/` is the template's driver verbatim — written against **v400's** `UAudioSubsystem` and
+libxmp/`.umx` music. HP2's `UAudioSubsystem` (`Engine/Inc/UnAudio.h`) is HP2's own (Ogg streaming, `PlayMusic(FString,
+FLOAT)`, lip-sync, fades). PLAN.md §2 decides: first `SoundDrv.NullAudioSubsystem`, then a NOpenALDrv that is **HP2's
+`ALAudio` ported to OpenAL 1.1/openal-soft**, using the template driver as the pattern. The web-specific pattern
+elements to carry over:
+
+| # | Template element | Where | Why (web) | ACTION for HP2's driver |
+|---|---|---|---|---|
+| A1 | openal-soft from `10-p/openal-soft-web@ufront/web`, `ufront_openal_soft(PLATFORM WEB EAX OFF)` | `Source/cmake/OpenALSoft.cmake`, `Source/CMakeLists.txt:614-615` (HP2 `:367-368`) | Web Audio **AudioWorklet** backend, mixer on its own pthread (hence `PTHREAD_POOL_SIZE=4`), HRTF + EFX available | keep; `EAX ON` only if the port keeps `EAXSet/EAXGet` calls (§3.2.1) — the template's route is EFX `AL_EFFECT_EAXREVERB` resolved at run time (`b35069a`, `d118e23`) |
+| A2 | `OPENAL_LIBRARY OpenAL` target (gives `<AL/alext.h>`, `<AL/efx.h>`) | `NOpenALDrv/CMakeLists.txt:49-56` | the fork's headers, not Emscripten's `-lopenal` | keep |
+| A3 | libxmp FetchContent + `BUILD_STATIC` save/restore | `NOpenALDrv/CMakeLists.txt:14-47` | `.umx` tracker music | **delete** (HP2 has no `.umx`: 111 files in `Assets/Music/*.ogg`). Add a Vorbis decoder instead: either FetchContent `xiph/ogg` + `xiph/vorbis` (native parity; watch for option-name collisions like libxmp's `BUILD_STATIC` — Vorbis/Ogg define `BUILD_SHARED_LIBS`/`INSTALL_*`, scope them) or Emscripten's `-sUSE_OGG=1 -sUSE_VORBIS=1` ports on web + distro/fetched on native. Record the choice in `meta.json` (`ufront_artifact_dep` if fetched, `buildFlags` if a port). `Thirdparty/Vorbis*` holds Win32 `.lib`s only — unusable. |
+| A4 | Music pumped from `Update()` on the engine thread — "no background thread" | `NOpenALDrv.cpp:5-8` | **hard web constraint**: WasmFS JSImpl hooks only work on the thread that got the host's bootstrap message (`wasmfs-shim.js`: a hook on another pthread throws `WasmFS hook fired on the worker before the host handed over the sync channel`) | HP2's `FFileStream` pump thread (`FileStreamingThread`, created only in `Core/Src/UnVcWin32.cpp:665-690,1489`; the Ogg open is `ov_open(fopen(...))` at `UnVcWin32.cpp:866-869`, also Win32-only) must **not** become a pthread on web. Implement the POSIX `FFileStream` pump as a call from `UAudioSubsystem::Update()` (or from the engine tick) and keep `PTHREAD_POOL_SIZE=4`. |
+| A5 | Music path | — | FetchFS serves by exact path + case | HP2 `ALAudio/Src/ALAudioSubsystem.cpp:1136-1140` builds `TEXT("..\\music\\") + Song + ".ogg"` and opens it **directly** — HP2's music loader does **not** go through `Paths=`. Rewrite as `TEXT("../Music/")` (on-disk case; §5.5 F2). `Paths=../Music/*.ogg` in the web ini is therefore **not required** for playback; it would only matter if something calls `appFindPackageFile` on a song (nothing does). The frontend manifest must still include `Music/*.ogg` (it does via the asset-tree manifest + `mods.extToFolder` `.ogg→Music` — `ufrontend-target-contract.md`). |
+| A6 | `StaticConstructor` registers config keys as `CPF_Config` with compiled defaults: `OutputRate`, `UseHRTF` (default **false**), reverb, etc. | `NOpenALDrv.cpp:112-142` | the launcher's HRTF toggle writes `-ini:System:[NOpenALDrv.NOpenALAudioSubsystem]:UseHRTF=…` (`target.json audioHrtf`) | register the same key names in HP2's driver (`UseHRTF`, `OutputRate`) so the frontend switches work unchanged; HP2-specific keys (`[ALAudio.ALAudioSubsystem]` retail: `UseEAX`, `Use3dHardware`, `UseSpatial`, `MusicVolume`, `SoundVolume`, `Channels`…) keep their HP2 names under the new section. |
+| A7 | device attrs `ALC_FREQUENCY, OutputRate, ALC_HRTF_SOFT, UseHRTF?…, ALC_OUTPUT_MODE_SOFT, UseHRTF ? ALC_STEREO_HRTF_SOFT : ALC_ANY_SOFT` (2.61 fix: the wrong key had made HRTF a no-op) | `NOpenALDrv.cpp:185-193` | | copy verbatim |
+| A8 | `Module.alsoftConfig` | **not in the engine** — the host writes `window.Module['alsoftConfig'] = alsoftConfigText(buffer)` just before `callMain` (`ufrontend/packages/frontend/src/shell/boot.ts:349-355`) when the target declares `audioBuffer`; text is `[general]\nperiods=N\n\n[web]\nperiod-ms=M\n` (`shell/audioConfig.ts`); the fork's `alc/alconfig.cpp` reads it | latency tuning (default 10 ms × 3) | **engine: nothing to do** (it is library-side). Frontend: give `targets/hp2/target.json` an `audioBuffer {periodMs:10, periods:3}` only once HP2's NOpenALDrv links openal-soft; omit it while the web build runs `SoundDrv.NullAudioSubsystem` (the host then skips the line). |
+| A9 | link flags `-sPTHREAD_POOL_SIZE=4`, `-sNO_DISABLE_EXCEPTION_CATCHING` | `Game/CMakeLists.txt` (§2.2.18-19) | openal-soft threads + its C++ exceptions | already present |
+| A10 | Launcher web override `AudioDevice=NOpenALDrv.NOpenALAudioSubsystem` | `Launch.cpp:495` (unconditional under `__EMSCRIPTEN__`) | | While HP2's driver is the Null one: guard on `HP2_HAS_NOPENALDRV` and fall back to `SoundDrv.NullAudioSubsystem`; otherwise `InitAudio`'s `LOAD_NoFail` class load → `appErrorf` → abort before frame 1. Note `BUILD_NOPENALDRV` is **forced ON** on web (`Source/CMakeLists.txt:70`): while HP2's NOpenALDrv does not compile, temporarily force it OFF on web too (and drop `-sPTHREAD_POOL_SIZE` pressure only if nothing else spawns threads). |
+
+### 7.2 WebRTCDrv (+ IpDrv web guards)
+
+HP2 `Source/WebRTCDrv/` = template (0 diffs). The `UNetDriver`/`UNetConnection` face it uses exists in HP2 433
+(`Engine/Inc/UnNetDrv.h:72-80` `LowLevelDestroy/LowLevelGetNetworkNumber/InitConnect/InitListen/TickFlush/TickDispatch/Exec`;
+`Engine/Inc/UnConn.h:149-169` `UNetConnection(UNetDriver*, const FURL&)`, `LowLevelGetRemoteAddress/LowLevelDescribe/LowLevelSend/InitOut`),
+so the 433 adaptation is small (`DECLARE_CLASS` 4th arg; `template-drivers.md`).
+
+| # | Site | Code | ACTION |
+|---|---|---|---|
+| W1 | `WebRTCDrv/WebRTCDrv.cpp:36` | `#define WEBRTC_PEER_PREFIX "ut99"` ("MUST match `targets/ut99/target.json network.peerPrefix`"); used at `:225` `"%s-%s-srv"` | → `"hp2"` (PLAN.md §2: `network.peerPrefix = "hp2"`) |
+| W2 | `WebRTCDrv.cpp:~429` | listen-status fallback `SName = TEXT("UT Server");` | → `TEXT("HP2 Server")`, equal to `targets/hp2/target.json network.defaultServerName` |
+| W3 | `WebRTCDrv.cpp` `InitListen` reads `[Engine.GameReplicationInfo] ServerName` when the URL has none (2.40, `629992d`) | | keep; HP2 retail `Default.ini` has the section (stock `ServerName=Another UT Server` — change it in the web ini to an HP2 name and mirror as `network.serverName.stock`) |
+| W4 | `WebRTCDrv.cpp:48-70` 9 transport imports under `#ifdef __EMSCRIPTEN__` (native inline no-op stubs); `WebRTCLan.cpp:43-56` 9 discovery imports; + `webrtc_set_listen_status` | | keep; names are ABI (§8) |
+| W5 | `WebRTCDrv.cpp:445-447` `emscripten_sleep(50)` while a handshake is pending (never in the data phase) | needs `-sASYNCIFY` and `emscripten_sleep` in `ASYNCIFY_IMPORTS` | keep |
+| W6 | `WebRTCLan.cpp` synthetic LAN (UdpLink bind → WebRTC discovery), reads `[UBrowser.UBrowserLocalFact] BeaconProduct` / `[IpDrv.UdpBeacon] BeaconProduct` | HP2 ships no UBrowser / server browser | keep compiled (inert; IpDrv's `UdpLink.cpp` calls into it); do not invest. |
+| W7 | IpDrv web guards: `IpDrv/Src/UdpLink.cpp:38-40,56-70,138-145,178-182,207-215` (`WebRTCLan_*`), `IpDrv/Src/UnSocket.cpp:226-235` (`#ifndef __EMSCRIPTEN__` around `HOST_NOT_FOUND/TRY_AGAIN/NO_RECOVERY` — duplicate `case` under musl) | | keep through the 433 adaptation. `IpDrv.u` script package: HP2 has none (PLAN Phase B step 6); without `IpDrv.u` the `UdpLink` natives are never reached, but `IpDrv.TcpNetDriver` (C++-only class) still resolves — that is all the web needs (the launcher overrides `NetworkDevice` to WebRTCDrv anyway). |
+| W8 | `Launch.cpp:54` `UEngine* GWebRTCEngine` defined by the launcher, `extern` in the driver | | keep in HP2 `Launch.cpp` |
+| W9 | Whole feature | — | **Decision needed:** HP2 is single-player. If `targets/hp2/target.json` disables `network`, WebRTCDrv still links (the `NetworkDevice` override needs a class) but E4/E5/E11 (§5.3) and W1-W3 are cosmetic. Keep it linked either way — `UGameEngine::Init` loads `ini:Engine.Engine.NetworkDevice` lazily only on listen/connect, but a missing class there is a `LOAD_NoFail` abort. |
+
+### 7.3 SoftDrv (`Source/SoftDrv/WEB-NOTES.md`)
+
+HP2's SoftDrv is **its own 433 device** (6 source files differ from the template's v400 one) and has no `WEB-NOTES.md`.
+
+| # | Template web lesson | HP2 state | ACTION |
+|---|---|---|---|
+| S1 | §4 of WEB-NOTES + `SoftDrvPrivate.h:39-53`: `MaximumXScreenSize/MaximumYScreenSize = SOFTDRV_MAX_SCREEN` (default 4096; the `wasm` preset passes 8192) — the static span/coord tables are bounded by it | HP2 `SoftDrv/Src/SoftDrvPrivate.h:17-18`: **`MaximumYScreenSize 1200`, `MaximumXScreenSize 2048`**; `SOFTDRV_MAX_SCREEN` is defined by `SoftDrv/CMakeLists.txt:37-38` but never read | **BLOCKER for `-SOFTWARERENDERER` on web**: the NSDLDrv hands SoftDrv the device-pixel canvas (N3/N11; 2560×1440 at DPR 1, 5120×2160 on a 4K panel). Port the template's `#ifndef SOFTDRV_MAX_SCREEN … #define MaximumYScreenSize SOFTDRV_MAX_SCREEN` block, then check every HP2 SoftDrv table indexed by `SizeX/SizeY` (template 2.12 list: `Setup`, `MMXSetup`, `SpanIndex`, `UCoordTable`, `Photon`) and the `SetRes` clamp + `DrawPoly` skip + `DrawTile` span-fill clamp. |
+| S2 | §1: `ASM=0` on web → the portable C rasteriser; `#if !ASM && __INTEL__ #define GIsMMX false` (`SoftDrvPrivate.h:32`) | HP2 `SoftDrv.cpp:44` `SupportsFogMaps = GIsMMX;`, `:101 if(GIsMMX)` | port the `GIsMMX` force-off (native `-m32`); on wasm `__INTEL__` is undefined and `GIsMMX` is the Core global (false) — verify HP2's C fallbacks exist for every `#if ASM` block (compile will say). Template also un-gated fog maps from MMX (`SoftDrv.cpp:45`) — port it or HP2 loses volumetric fog on web. |
+| S3 | §2: web draws into `SoftFB` (ARGB8888, 4 bytes) sized in `Lock`; §3 the size changes at runtime (`WINDOWEVENT_RESIZED`) | — | HP2 SoftDrv must handle `ColorBytes=4` and a `SetRes` on every resize without leaking/stale tables |
+| S4 | §5: a clean `-O2` run does not clear a memory bug (an overrun faulted only at `-O3`); §6: test across RESOLUTIONS with `ufrontend/packages/e2e/tools/softdrv-matrix.cjs` | | copy `WEB-NOTES.md` into `Source/SoftDrv/` (adapt the file refs), and run the matrix on `wasm-perf` |
+| S5 | `e8198af` FogAvg off-by-one, `b40994b` volumetric fog + texture filtering in the C path | HP2 own code | port by analogy if HP2's C path has the same `FogAvg` loop |
+
+### 7.4 XOpenGLDrv (`Source/XOpenGLDrv/WEB_INTEGRATION.md`)
+
+The doc is **historical**: it describes a `WASM_USE_XOPENGL` option and `-sMIN_WEBGL_VERSION=2 -sFULL_ES3`, both gone
+since 2.9 made XOpenGL and UTGLR coexist in one binary with `MIN_WEBGL_VERSION=1` (§2.2.4). Still true and relevant:
+
+| # | Fact | ACTION for HP2 |
+|---|---|---|
+| X1 | the driver forces `OpenGLVersion=ES_WEBGL` under `__EMSCRIPTEN__` in `Init` and adopts the current WebGL2 context via `emscripten_webgl_get_current_context()` (the one NSDLViewport created, N8) | the `hp2-v433-compat` fork branch equals `ut99-v400-compat` today, so this is present; the 433 face (`DrawComplexSurface(…,PolyFlags,cAlpha)`, `DrawTriangles`, `MaxVertices`, `GetOsSurface`) is the fork's work (`renderer-forks.md`) — keep every `__EMSCRIPTEN__` block intact while adding `ENGINE_VERSION==433` gates |
+| X2 | S3TC via `WEBGL_compressed_texture_s3tc` (desktop extension name absent on ANGLE); non-4-aligned DXT1 mips software-decoded (vendored gl4es decoder) | none; if HP2 textures carry DXT mips they work on web |
+| X3 | the fork's CMake uses `file(GLOB Src/*.cpp)` without `CONFIGURE_DEPENDS` | re-run `cmake --preset wasm` after adding a `.cpp` to the fork |
+| X4 | glad resolves GL through `emscripten_webgl_get_proc_address` → needs `-sGL_ENABLE_GET_PROC_ADDRESS=1` (§2.2.5) | present |
+| X5 | XOpenGL owns its own FBO, so `offscreen-depth24.sh` does not affect it | none |
+
+### 7.5 OpenGLDrv / UTGLR + gl4es (`Source/OpenGLDrv/WEB-INTEGRATION.md`)
+
+| # | Fact | ACTION for HP2 |
+|---|---|---|
+| G1 | "No engine / ABI / glue changes are required"; NSDLDrv opens a GL context only when the device name contains `OPENGL` → keep the class path `OpenGLDrv.OpenGLRenderDevice` | keep |
+| G2 | gl4es emits client-side arrays → `-sFULL_ES2=1` (§2.2.6); 24-bit depth on FBO 0 via `offscreen-depth24.sh` (UTGLR z-fought in bands on 16-bit, `4356c7b`) | present |
+| G3 | web ini: `UseFragmentProgram=0`, `UsePalette=0` (+ the rest of the template's `[OpenGLDrv.OpenGLRenderDevice]` set) | carry the section into HP2's web `Default.ini` (§9) |
+| G4 | `UTGLR_ENGINE_UT99DC` guards every engine-specific deviation in the fork | HP2 adds `UTGLR_ENGINE_HP2` (already in `Source/OpenGLDrv/CMakeLists.txt`); the only diff vs template in `OpenGLDrv/` is that CMake file |
+| G5 | gl4es built `NOX11 NOEGL STATICLIB DEFAULT_ES=2 NO_INIT_CONSTRUCTOR` (`Source/CMakeLists.txt` HP2 `:307-343`) — `NO_INIT_CONSTRUCTOR` means UTGLR must call `initialize_gl4es()` itself (the fork does under `__EMSCRIPTEN__`) | keep; the branch mismatch (`hp2` clone vs `fix/cubemap-bind-active-unit` default) is §1.4.2 |
 
 ## 8. vendor/glue ABI: exports/imports the engine must provide
-_pending_
+
+`vendor/glue/{ue_abi.h (92 lines), webrtc-shim.js (129), wasmfs-shim.js (147)}` are **identical** to the template's
+(`diff -q` clean) and to `@ufront/glue` at `ABI_VERSION 1`. CLAUDE.md: never change them. What the engine side must
+provide / may assume:
+
+### 8.1 Imports (engine calls, JS provides) — `UE_IMPORT`, `ue_abi.h:60-78`
+
+| Symbol(s) | Provided by | Proxy | Called from (HP2 = template) |
+|---|---|---|---|
+| `webrtc_init_listen, webrtc_connect, webrtc_accept_connection, webrtc_close, webrtc_destroy, webrtc_get_connection_state, webrtc_check_pending_connect, webrtc_set_listen_status` | `webrtc-shim.js:50-88` → `Module.UE.net.*` | `__proxy: 'sync'` (runs on main, blocks the engine thread) | `WebRTCDrv/WebRTCDrv.cpp:48-70` (`webrtc_check_pending_connect` is declared, not called by the UE1 driver — dead-stripped, fine) |
+| `webrtc_send, webrtc_recv` | `webrtc-shim.js:59-63` | **not proxied** — shared-memory packet rings (`901db66`, 2.13.6) | `WebRTCDrv.cpp` data path |
+| `webrtc_discover_servers, webrtc_get_server_count, webrtc_is_discovery_done, webrtc_get_server_info/map/gametype/players/maxplayers/ping` | `webrtc-shim.js:92-127` | `sync` | `WebRTCDrv/WebRTCLan.cpp:43-56` (IpDrv `UdpLink` synthetic LAN). Lesson `3a62947`: never poll `webrtc_is_discovery_done` every frame (each is a sync proxy round-trip) |
+
+All forwarders assert `Module.UE.abiVersion === 1` on first use (`webrtc-shim.js:42-44`) — the host (not the engine) injects `Module.UE`.
+**Engine rule:** declare these only under `#ifdef __EMSCRIPTEN__`, provide inline no-op stubs natively (as the template does),
+and **never rename** them (the frontend's ABI parity test keys on `UE_IMPORT`/`UE_EXPORT`).
+
+### 8.2 Exports (engine provides, JS calls) — `UE_EXPORT`, `ue_abi.h:84-85`
+
+| Symbol | Engine obligation | HP2 ACTION |
+|---|---|---|
+| `ue_exec_command(const char*) → char*` | `extern "C" EMSCRIPTEN_KEEPALIVE`, in `-sEXPORTED_FUNCTIONS` as `_ue_exec_command`; returns a pointer valid until the next call | keep `Launch.cpp:121-146` as is (§4.1.5). Under `PROXY_TO_PTHREAD` the host posts `{ufrontExec: cmd}` and the worker calls it **from a JS message event** (`wasmfs-shim.js:99-121`), i.e. while the main loop is Asyncify-suspended inside `emscripten_sleep`/`ufront_yield_frame`. So the command must **not** itself reach an Asyncify import (`emscripten_sleep`, a FetchFS on-demand `__syscall_openat`). HP2's `UGameEngine::Exec` `OPEN`/`START` defer through `SetClientTravel` (`Engine/Src/UnGame.cpp:338-352`) → safe. Avoid exposing HP2 console commands that load synchronously (e.g. an HP2 `LOADGAME`-style native that calls `LoadPackage` inline) to the host; verify each command the E2E uses. All helpers used exist in HP2 (`appStrnicmp`/`appStrfind` `Core/Inc/UnFile.h:318,324`, `FStringOutputDevice` `UnTemplate.h:1343`). |
+| `webrtc_deferred_open()` | **UE1 engines do not define it and must not export it** (ut2004 only). Exporting an undefined symbol is a hard wasm-ld error | keep it out of `EXPORTED_FUNCTIONS` (as HP2's `Game/CMakeLists.txt` already does) |
+
+### 8.3 Emscripten/runtime exports the host needs (link flags, not ABI header)
+
+| Needed by the host for | Symbol / method | Where set |
+|---|---|---|
+| FetchFS JSImpl backend creation (on main) | `_wasmfs_create_jsimpl_backend`, `_wasmfs_create_file` (Emscripten), `_ufront_wasmfs_register`, `_ufront_wasmfs_set_pending` (`wasmfs-shim.js:42-60`) | `EXPORTED_FUNCTIONS` (§2.2.12) |
+| boot + string marshalling | `_main`, `_malloc`, `_free`, `_close`; `callMain`, `stringToUTF8`, `UTF8ToString`, `HEAPU8`, `stackSave`, `stackAlloc`, `stackRestore`, `lengthBytesUTF8` | `EXPORTED_FUNCTIONS` / `EXPORTED_RUNTIME_METHODS` |
+| handing the FS sync channel to the engine worker | `PThread` | `EXPORTED_RUNTIME_METHODS` — omit it and the host's bootstrap is a silent no-op → the worker's first asset read throws |
+| worker bootstrap | `$ueWorkerBoot` (`__postset: 'ueWorkerBoot();'`) | `-sDEFAULT_LIBRARY_FUNCS_TO_INCLUDE=['$ueWorkerBoot']` — otherwise dead-stripped silently |
+| worker-side glue | `importScripts('ufront-glue.js')` on the worker (`wasmfs-shim.js:136`) | the **published folder** must carry `ufront-glue.js` next to `SDLLaunch.js` (frontend's `verify.mjs REQUIRED_IN_FOLDER`; frontend-owned) |
+| async imports | `ASYNCIFY_IMPORTS=['emscripten_sleep','emscripten_set_main_loop','__syscall_openat']` + auto `__asyncjs__*` | §2.2.3 |
+
+### 8.4 JS objects the host injects before `main()` (engine may assume)
+
+`Module.UE = { abiVersion: 1, idb, net, fs }` (`ufrontend/packages/frontend/src/shell/boot.ts` ~`:435-444`), `Module.canvas`
+(`#canvas`, transferred to the worker), `Module.arguments` (§4.6), `Module.alsoftConfig` (§7.1 A8), `Module.print`/`printErr`
+→ console (the log taps). The engine never reads `Module.UE` directly — only the shims do.
+
+### 8.5 Checklist
+
+- [ ] `vendor/glue/*` byte-identical to `ufrontend/packages/glue/src/shim/*` of the `hp2` branch (`diff`); refresh only with an ABI bump decided in ufrontend.
+- [ ] `nm`/`wasm-objdump -x SDLLaunch.wasm | grep -c webrtc_` shows the 19 imports (18 if `check_pending_connect` stripped) and the `ue_exec_command` export.
+- [ ] `grep -c '_webrtc_deferred_open' SDLLaunch.js` = 0.
 
 ## 9. Web ini set to author for HP2 (`Config/System/web/`)
 _pending_

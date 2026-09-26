@@ -596,26 +596,497 @@ The e2e specs are not unit tests (they need a GPU and a served build); §5 cover
 
 ## 5. Local build, serve, E2E boot smoke
 
-(pending)
+### 5.0 Prerequisites (one-time, in `UF`)
+
+| Step | Command / fact | Evidence |
+|---|---|---|
+| deps | `cd /home/ion/hp2-ufrontend/ufrontend && yarn install` (Yarn 4.17, node-modules linker; `node_modules/` already present in the clone) | `UF/package.json` `packageManager` |
+| machine paths | write `.ufront/publish.local.json` (§7) — `yarn build` has **no default target and no default paths** and dies without `--assets`/`assets.hp2` and `--engine-artifact`/`enginesRoot` | `UF/packages/build/src/build-inputs.mjs:73-117`, README "★ yarn build has NO default target" |
+| engine artifact | `HP2/build-wasm-perf/SDLLaunch/{SDLLaunch.js,SDLLaunch.wasm,SDLLaunch.data,meta.json}` must exist (built in the ENGINE repo with `cmake --preset wasm-perf` — not by the frontend). Today **only `HP2/build-native/` exists** (`ls -d HP2/build-*`), so nothing below can run until Phase "web build" lands | `build-inputs.mjs:103-109` (`<enginesRoot>/<repo>/build-wasm-perf/<subpath>`) |
+| meta.json | written POST_BUILD by the engine's emitter with `abiVersion` = glue `ABI_VERSION`, `loaderStyle: "global-module"`, sha256 checksums; `validateArtifactMeta` rejects anything else | `UF/packages/glue/src/artifact/meta.js:14,64-66`, README step 1.5 |
+| wasm limits | no function may declare > 50,000 locals (V8); the build fails naming it, warns from 80 %. Relevant for HP2 because gl4es + ASYNCIFY at `-O0` crossed it on ut2004 — **never ship `wasm-debug` (-O0)** | `UF/packages/build/src/wasm-limits.mjs`, README step 2.19c |
+| debug sibling | optional: `HP2/build-wasm/SDLLaunch/` (`wasm` preset, `-O2 -g`) is copied in as `SDLLaunch-debug.*` when present | `build-inputs.mjs:120-126`, README step 2.54 |
+
+### 5.1 `yarn build --target hp2`
+
+```bash
+cd /home/ion/hp2-ufrontend/ufrontend
+yarn build --help                                  # prints usage, builds nothing
+yarn build --target hp2                            # paths from .ufront/publish.local.json (§7) → serve-web/
+# or, explicit (no local config):
+yarn build --target hp2 \
+     --assets /home/ion/hp2-ufrontend/HarryPotter2/Assets \
+     --engine-artifact /home/ion/hp2-ufrontend/HarryPotter2/build-wasm-perf/SDLLaunch \
+     --out serve-web-hp2                           # side-by-side root (NOT what yarn e2e serves)
+```
+
+What happens, in order (`UF/packages/build/bin/ufront-build.mjs`):
+
+1. `knownTargets` = every `targets/<d>/` holding a `target.json` (`:63-65`) → `hp2` is known as soon as the folder exists. **No code list to edit.**
+2. `resolveBuildInputs` (`build-inputs.mjs:73-129`): assets ← `--assets` | `assets.hp2`; engine repo ← `engines.hp2` | `enginesRoot + "/" + publish.engine.repo` (`HarryPotter2`) | `UFRONT_ENGINES_DIR`; artifact ← `<repo>/build-wasm-perf/<engineArtifactSubpath||'SDLLaunch'>`. Each input printed with its source (`describeInputs`, `:132-145`).
+3. Asset-tree proof (`ufront-build.mjs:91-110`): `sha256(Assets/System/Core.u)` vs `assetMarkers.fingerprint.sha256`; **a hash equal to another target's fingerprint is fatal**; `require` files must exist (case-sensitive — `Maps/startup.unr` lower-case), `forbid` must not.
+4. Frontend build with `UFRONT_TARGET=hp2` (Vite bakes `targets/hp2/target.json` → `__UE_TARGET__` & co., §1.1), stamp `packages/frontend/.ufront-dist-target`; glue + cache-worker bundles.
+5. Assemble `serve-web/`: Vite `dist/`, `SDLLaunch.{js,wasm,data}` + `meta.json` (validated), optional debug sibling, `file-manifest.json` (`:340`), `ufront-target.json` = `{target:"hp2", assets, builtAt}` (`:348-351`), `dependency-manifest.json` if present, `precache-list.json` from `targets/hp2/precache.json`, `theme.css` (**fatal if missing**, `:395-398`), then **symlinks** the manifest's top-level dirs from the asset tree: `Maps Music Sounds System Textures` (`:405-414`).
+6. Refuses an origin-absolute `src=`/`href=` in the assembled `index.html` (`:327-337`) — irrelevant to hp2 data, but it is why a root publish and a subfolder publish are the same bytes (§6).
+
+ACTION: none in code for `yarn build`; only the target folder (§1–§3) and `.ufront/publish.local.json` (§7).
+
+### 5.2 `yarn serve`
+
+```bash
+yarn serve                                         # serve-web/ on :8080, COOP same-origin + COEP require-corp
+yarn serve --root serve-web-hp2 --port 8093        # a side-by-side root
+yarn serve --root serve-web-hp2 --port 8093 --tls --host 0.0.0.0   # from a phone/tablet/LAN IP (mkcert certs in .ufront/certs/)
+yarn serve --content-encoding zstd                 # rehearse the Azure "Content-Encoding: zstd" mode on a publish tree
+```
+
+`UF/packages/build/bin/ufront-serve.mjs` → `src/static-server.mjs` (directory index, `/dir`→`/dir/` redirect that keeps the query, `.wasm` typed `application/wasm`, traversal refused, symlinks followed). ⚠ Plain HTTP only works on `localhost`: on a LAN IP COOP is ignored, `crossOriginIsolated` is false and the threaded engine dies with `DataCloneError: SharedArrayBuffer transfer requires self.crossOriginIsolated` (`yarn serve --help`).
+
+Open `http://localhost:8080/`. Storage lands in `hp2-user-data` / `hp2-mods` / `hp2-network-cache` + OPFS `pkg/hp2/` (§1.2) — isolated from any other target served on the same `localhost:8080` origin earlier.
+
+Hands-on boot check (before any spec): press Start with an empty map field → the engine must log, in order,
+`Init: Name subsystem initialized` (`HP2/Source/Core/Src/UnName.cpp:157`), `Init: Game engine initialized`
+(`HP2/Source/Engine/Src/UnGame.cpp:242`), the renderer's init line (`XOpenGL::SetRes…` for the default renderer —
+TO-VERIFY in the HP2 fork's log), `Log: Bringing Level startup.MyLevel up for play (…)...` (`UnGame.cpp:1272`:
+`debugf(NAME_Log, TEXT("Bringing %s up for play (%i)..."), GLevel->GetFullName(), …)` — GetFullName of a ULevel is
+`Level startup.MyLevel`), `Log: Possessed PlayerPawn: …` (`HP2/Source/Engine/Src/UnActor.cpp:940`). The log file is
+`<appUserDir()><appPackage()>.log` (`HP2/Source/Core/Inc/FOutputDeviceFile.h:40-49`), i.e. `/System/this.program.log`
+on Emscripten exactly like ut99 **once `appUserDir()` returns `""` on web** (§1.4 ACTION).
+
+### 5.3 Which E2E spec proves "the engine booted to the menu" headless
+
+- `yarn e2e --target <id>` → `packages/build/bin/ufront-e2e.mjs` refuses unless `serve-web/ufront-target.json` says the same target (`:35-61`), then runs Playwright with `UFRONT_E2E_TARGET=<id>`; `packages/e2e/playwright.config.js:10,22-27` picks `<id>-wasm-{boot,net,benchmark,proxynet}.spec.js`. **A target with no spec file runs zero tests and passes** — the hp2 spec must be created.
+- The webServer is `ufront-serve.mjs --port 8080` on the **default `serve-web/`** (`playwright.config.js:38-43`, `reuseExistingServer: true`). Build with the default out dir, not `--out serve-web-hp2`.
+- Browser: Chromium `--headless=new --use-gl=angle --use-angle=vulkan …` (`playwright.config.js:44-60`); the specs delete `DISPLAY`/`WAYLAND_DISPLAY` so ANGLE binds the NVIDIA GPU. `lib/gpu.js assertHardwareRenderer` fails on a SwiftShader fallback — a GPU-free smoke must skip it and pick `Software (CPU)` or `Null (no rendering)` in `#render-device`.
+- Closest template: **`packages/e2e/ut99-wasm-boot.spec.js` test 1** ("boots to the intro and renders via WebGL on the GPU (first light)", `:62-82`) with `lib/engines/ut99.profile.js` — same UE1 v400 log lines, same XOpenGL/UTGLR renderers, milestones read from the MEMFS log (`logPath: '/System/this.program.log'`) because a long synchronous boot overflows the DevTools console buffer. `unreal1-wasm-boot.spec.js:170-192` is the template for the SoftDrv discriminator (HP2 has SoftDrv; ut99 does not).
+
+ACTION — add two files (both e2e DATA/spec, no generic code):
+
+`packages/e2e/lib/engines/hp2.profile.js` (shape = `ut99.profile.js`):
+
+```js
+// Engine profile: hp2 (UE1 build 433 / Harry Potter and the Chamber of Secrets, 2002). Single-player: no net milestones.
+const testMap = 'PrivetDr';
+const bootMilestones = [
+    { pattern: /Name subsystem initialized/, name: 'NAME_INIT' },           // Core/Src/UnName.cpp:157
+    { pattern: /Init: Game engine initialized/, name: 'ENGINE_INIT' },      // Engine/Src/UnGame.cpp:242
+    { pattern: /XOpenGL::SetRes|Initializing OpenGLDrv|Got OpenGL.*WebGL/i, name: 'RENDER_READY' }, // TO-VERIFY vs a real hp2 log
+    { pattern: /Bringing Level startup\.MyLevel up for play/i, name: 'MENU_UP' }, // UnGame.cpp:1272 — the menu book map
+    { pattern: new RegExp('(Browse|LoadMap):\\s*' + testMap, 'i'), name: 'BROWSE' },
+    { pattern: /Bringing Level .* up for play/i, name: 'MATCH_START' },
+    { pattern: /Possessed PlayerPawn/i, name: 'POSSESSED' },                // Engine/Src/UnActor.cpp:940
+];
+module.exports = {
+    id: 'hp2', dbPrefix: 'hp2', peerPrefix: 'hp2',
+    logPath: '/System/this.program.log',          // TO-VERIFY: needs appUserDir()=="" on web
+    softwareRendererArg: '-SOFTWARERENDERER',
+    bootMilestones, hostMilestones: [], clientMilestones: [],
+    bootSurface: ['[FetchFS]', '[SHELL]', '[Prefetch]', '[PackageCache]', 'Bringing', 'Possessed', 'XOpenGL', 'OpenGLDrv', 'Got OpenGL', '[appThrowf]'],
+    netSurface: [], testMap, dmGameArgs: () => '',
+};
+```
+
+`packages/e2e/hp2-wasm-boot.spec.js` — start with three tests, add more as features land:
+
+| # | Test | Drives | Asserts |
+|---|---|---|---|
+| 1 | boots to the menu (first light, GPU) | `goto('/')`, `assertHardwareRenderer`, click `#start-btn` with an empty map | `RENDER_READY`, `MENU_UP`, `POSSESSED`; > 3 `[FetchFS] Downloaded`; no `Aborted`/`RuntimeError` in `t.errors` |
+| 2 | Software renderer, GPU-free | Advanced → `#render-device` = `Software (CPU)`, Start | `MENU_UP` reached, `RENDER_READY` **not** reached (copy `unreal1-wasm-boot.spec.js:170-192`) |
+| 3 | direct map load | `goto('/?map=PrivetDr')`, Start | `BROWSE` + `MATCH_START` for PrivetDr, `POSSESSED`, no abort |
+
+Then the shared suites that make sense for a single-player UE1 target (each is a `register…Tests(test, profile, …)` in `packages/e2e/lib/`): `registerLauncherUiTests`, `registerConfigPersistenceTests` (proves `hp2-user-data` round-trips `Game.ini`/`User.ini`), `registerSaveGameTests` (proves `userFiles` Save/Slot globs — the key HP2 feature), `registerIniSettingsTests` (frame-rate cap), `registerDebugEngineTests`, `registerTelemetrySilenceTest`. Skip `registerAutoFovTests`, `registerPlayerNameTests` (no multiplayer UI in-game), `registerMoverKeyframeTests` (ut99-specific repro), all net specs. ⚠ Each `register…` reads profile fields/selectors written for DM maps — read each before enabling (TO-VERIFY per helper).
+
+Run:
+
+```bash
+yarn build --target hp2                           # the DEFAULT serve-web/ — the E2E serves only that
+node packages/e2e/tools/e2e-gpu-guard.mjs -- --target hp2 hp2-wasm-boot.spec.js    # exit 2 = GPU lost, reboot + retry
+# or without the guard:
+yarn e2e --target hp2 hp2-wasm-boot.spec.js -g "boots to the menu"
+```
+
+### 5.4 The signaling server (only relevant if multiplayer is ever exposed)
+
+HP2 is single-player, so no `hp2-wasm-net.spec.js` is needed. For reference: the net specs self-host a per-worker static server + a PeerJS broker (`packages/e2e/lib/net-harness.js`); for hands-on play `node packages/e2e/tools/peer-broker.cjs` (WSS :9443, mkcert certs) or `--port 9060 --no-tls`, and point the page at it with `?peerhost=<ip>&peerport=9443&peersecure=true` (`packages/e2e/README.md:1666-1690`; `frontend/src/config/controller.ts:149-167`). The production broker is the Azure `peerjs` container (§10).
+
+### 5.5 Precache capture needs the same menu milestone
+
+`packages/e2e/tools/precache-baseline.cjs:168-229` needs an `hp2` branch that waits for `MENU_UP` (above) then `settle()`s (§3.3 Step B). Reuse the profile's regex so the two stay identical.
 
 ## 6. Publish-at-root plan (no portal, no game selector)
 
-(pending)
+**Verdict: there is no way today to publish one target at the publish root without a portal.** The app itself is
+position-independent (Vite `base: './'`, `%BASE_URL%` in `index.html`, a build refusal of origin-absolute refs —
+`docs/07` §8 "Mounting it at a subpath"; `ufront-build.mjs:327-337`), so the SAME bytes work at `https://host/` and at
+`https://host/hp2/`. What forces a subfolder + portal is `publish-all` alone:
+
+| Where | What it does now | Why it blocks a root publish |
+|---|---|---|
+| `packages/build/src/publish/args.mjs:217` | `if (!json.publish.folder) throw … publish.folder is required` | "" is refused; "." passes the check but… |
+| `args.mjs:322-323` | `folder: json.publish.folder, outDir: \`${out.value}/${json.publish.folder}\`` | …`"."` gives `<out>/.` = the root (works by accident, never tested) |
+| `packages/build/src/publish/run.mjs:647-666` | ALWAYS runs `build-portal.mjs --out <out>` with the cards from `discoverPublishedFolders` | writes `<out>/index.html` **over the game's own `index.html`** — the fatal step |
+| `run.mjs:522-545` `discoverPublishedFolders` | scans SUBDIRECTORIES for `ufront-target.json` + `index.html` | a root game is never a card → a 0-card portal (`build-portal.mjs:45` then dies: "at least one --game … is required") — either way the run fails or the page is destroyed |
+| `packages/build/src/publish/state.mjs:74-90` `claimOutRoot` | the root record's target list is a UNION keyed by folder | a `"."` record mixed with `u1/ ut99/ …` in one `--out` would be accepted silently |
+| `packages/portal/bin/build-portal.mjs:99-102` | temp+rename `index.html` at `--out` | same overwrite |
+| `run.mjs:396, 446, 491` | dry-run prints `folder <out>/<folder>`, `[portal] …` | cosmetic (`<out>/.`), and it would announce a portal that must not run |
+| `/home/ion/unreal-frontend-azure-infra/bin/deploy-ufront.py:237-240` | refuses a root lacking `config.json storage.requiredFolders` = `u1 ut99 ut99-436 ut2004` | an HP2-only tree is refused by the uploader (infra side, §10) |
+
+### 6.1 Track A — works today, zero ufrontend code (use until 6.2 lands)
+
+```bash
+# target.json: "publish": { "folder": "hp2", … }   (instead of ".")
+yarn publish-all --out /home/ion/publish-hp2 --target targets/hp2/target.json --dry-run
+yarn publish-all --out /home/ion/publish-hp2 --target targets/hp2/target.json
+#   → /home/ion/publish-hp2/index.html        one-card portal  — NOT uploaded
+#   → /home/ion/publish-hp2/hp2/              the game          — uploaded AS THE SITE ROOT
+yarn serve --root /home/ion/publish-hp2/hp2 --tls          # boot it at "/" exactly as the domain will
+yarn verify-site --out /home/ion/publish-hp2/hp2 --url https://<hp2-host>   # walks OUT, requests <url>/<rel>
+```
+
+Costs: an extra 1-card `index.html` + `.ufront-publish-root.json` + `publish-provenance.json` one level up that must
+not be uploaded (they are not in `hp2/`), so an uploader pointed at `<out>/hp2` is correct. `hp2/` itself contains the
+per-target `.ufront-publish.json` and `ufront-target.json` (small, harmless if uploaded — the multi-game site uploads
+the same files today). Provenance of the run stays in `<out>/publish-provenance.json`, off the site.
+
+⚠ With Track A, `publish.folder` must be `"hp2"`, i.e. §1.3's `"."` is replaced; record which track is live in
+`targets/hp2/README.md`.
+
+### 6.2 Track B — first-class root publish (recommended; generic, no game name in code)
+
+Rule: **a target whose `publish.folder` is `"."` IS the site.** It publishes directly into `--out`, alone, and no
+portal is rendered. Changes (all in `packages/build/src/publish/` + tests + docs; `packages/portal` unchanged):
+
+| # | File:line | Change |
+|---|---|---|
+| 1 | `args.mjs:217` | keep the required check; add: `const isRoot = (f) => f === '.';` and, when any descriptor has `isRoot(folder)`, `if (descriptors.length !== 1) throw new Error(\`${id}: publish.folder "." publishes this target AS the site root — it must be published alone (got ${ids.join(', ')})\`)`. Also refuse `"/"`, `""`, `".."`, anything with `/` (a folder is a single path segment). |
+| 2 | `args.mjs:323` | `outDir: isRoot(json.publish.folder) ? out.value : \`${out.value}/${json.publish.folder}\`` (no `<out>/.`). |
+| 3 | `args.mjs:331-357` | return `siteRoot: targets.length === 1 && isRoot(targets[0].folder) ? targets[0].id : null` in the plan. |
+| 4 | `run.mjs:40-59` `checkOutOwnership` (or a new check beside it, called from the planning pass at `run.mjs:349`) | **refuse mixing both shapes in one `--out`**: in site-root mode, a subdirectory holding `ufront-target.json` is a multi-game tree → refuse; in portal mode, `<out>/ufront-target.json` present → a root-game tree, the portal would overwrite its `index.html` → refuse. Both messages name the other shape and say "use another --out". |
+| 5 | `state.mjs:74-90` `claimOutRoot` | record `{folder: '.'}`; if `prior.targets` contains a different folder than this run's shape allows, refuse (same message as #4). Keeps "the union is load-bearing for the portal" true for portal roots only. |
+| 6 | `run.mjs:647-666` | `if (plan.siteRoot) log(\`· portal    none — ${plan.siteRoot} is published AT the root (publish.folder "."); no game selector\`); else { …existing discover + portalArgv… }`. `phaseVerify`, `writeProvenance`, `clearIncomplete` run unchanged. |
+| 7 | `run.mjs:396, 446, 491` | dry-run: print `folder <out>   (site root)` and `[portal] none (site root)` instead of the `build-portal` command. |
+| 8 | `execute.mjs:292-360` `phaseVerify` / `verify.mjs:139-170` | no logic change; message prefix `${target.folder}/` reads `./` — print `(root)` instead. The byte-identical-engine sweep (`verify.mjs:119-137`) is per run and still fine. |
+| 9 | `ufront-build.mjs:256-282` (deployable refresh) | **no change needed**: with `--no-asset-links` it deletes only its own `WRITES` from `out`, so `zstd/`, `.ufront-publish*.json`, `publish-provenance.json`, `.ufront-publish-incomplete` survive. Worth a comment that `out` may be a site root. |
+| 10 | `packages/e2e/tools/symbolize-wasm.cjs:200-209` | `publishFolder()` returns `"."`; make the URL builder drop a `.` segment (`folder === '.' ? site : site + '/' + folder`) instead of relying on curl's dot-segment squashing. |
+| 11 | `packages/e2e/tools/live-session.cjs:80` | default `--path '/ut2004/'`; for hp2 pass `--path '/'` (no code change; document). |
+| 12 | `packages/build/bin/ufront-publish.mjs` (help) + `packages/build/README.md` § Publishing + `docs/07` §8 + `docs/06` (publish block) | document `"."`, the alone-rule, the no-portal rule, the mixing refusal. `doc-sync` requires the doc in the same commit (§9). |
+| 13 | tests | `packages/build/test/publish-args.test.mjs` (next to `:103` "the output folder comes from publish.folder"): `"."` → `outDir === out`; `"."` + a second target → throws; `"a/b"`, `".."` → throw. `publish-state.test.mjs`: mixing refused. A pure test for the portal skip (factor the portal decision into a pure `portalPlan(plan, cards)` in `run.mjs` so it is testable without a filesystem). |
+
+Resulting daily command (with §7's local config, where `out` is the HP2 tree):
+
+```bash
+yarn publish-all --target targets/hp2/target.json --dry-run    # expect: "folder /home/ion/publish-hp2 (site root)", "portal none"
+yarn publish-all --target targets/hp2/target.json
+yarn serve --root /home/ion/publish-hp2 --tls                   # boot at "/"
+yarn verify-site --url https://<hp2-host>                       # out + siteUrl from publish.local.json
+```
+
+★ The storage state files at the site root (`.ufront-publish.json`, `.ufront-publish-root.json`,
+`.ufront-publish-incomplete`, `publish-provenance.json`) would be uploaded by a naive sync. They reveal the monorepo
+sha, dirty-file list and local paths (`collectProvenance`, `execute.mjs:363-…`: `monorepo.dirtyFiles`, asset paths).
+In the four-game tree they sit at the root too, next to the portal, so this is not new — but ACTION (infra): have
+the HP2 uploader skip `^\.ufront-` and `publish-provenance.json` (or confirm the owner accepts publishing them).
+
+### 6.3 What does NOT need to change for a root publish
+
+- The frontend: every runtime URL is relative (`fetch('precache-list.json')`, `new Worker('ufront-cache-worker.js')`,
+  `s.src='SDLLaunch.js'`, FetchFS `baseUrl ''`) — `docs/07` §8.
+- Storage names: per-origin anyway (§1.2).
+- The telemetry meta tag: injected into the game's own `index.html` by the app phase (`execute.mjs:166-175`), so a
+  root game reports exactly like a subfolder game; the portal's inlined copy is simply absent.
+- Invite links (`?connect=`, `?room=`): built from `location` (`frontend/src/stores/net.ts:292-296`), so they carry
+  the root URL. The `/dir`→`/dir/` redirect concern (`README` step 2.36a) disappears at the root.
 
 ## 7. `.ufront/publish.local.json` for this workspace
 
-(pending)
+Path: `/home/ion/hp2-ufrontend/ufrontend/.ufront/publish.local.json` — **does not exist yet** (`ls .ufront/` shows
+`README.md gates hooks install-engine-hooks.sh not-yet.mjs`). Gitignored (`UF/.gitignore`: `.ufront/publish.local.json`),
+so it is never committed and never trips a gate.
+
+Keys actually read (grep of `localConfig.*` in `packages/build/**` + `cfg.*` in `ufront-verify-site.mjs` + the two
+e2e tools): `out`, `assets.<id>`, `enginesRoot`, `engines.<id>`, `siteUrl`, `telemetryEndpoint`, `gameProxyList`
+(and the refused legacy `gameProxyUrl`), `compress`, `level`, `jobs`, `engineJobs`, `emsdk`, `install`.
+
+```json
+{
+  "out": "/home/ion/publish-hp2",
+  "assets": {
+    "hp2": "/home/ion/hp2-ufrontend/HarryPotter2/Assets"
+  },
+  "enginesRoot": "/home/ion/hp2-ufrontend",
+  "emsdk": "/home/ion/emsdk"
+}
+```
+
+Add after the HP2 domain exists (§10), exactly as `apply-outputs.sh` would write them:
+
+```json
+  "siteUrl": "https://<hp2-endpoint-host>",
+  "telemetryEndpoint": "https://<hp2-endpoint-host>/e"
+```
+
+| Key | Value | Who reads it / derivation |
+|---|---|---|
+| `out` | `/home/ion/publish-hp2` — a NEW directory, never `/home/ion/publish` (the four-game tree) | `args.mjs:245-255` (`--out` flag wins); `ufront-verify-site.mjs:52`. Must be empty or already owned (`.ufront-publish-root.json`, `run.mjs:40-59`). Track A (§6.1) deploys `<out>/hp2/`; Track B (§6.2) deploys `<out>/`. |
+| `assets.hp2` | `/home/ion/hp2-ufrontend/HarryPotter2/Assets` | `build-inputs.mjs:81-84` (yarn build) and `args.mjs:300-311` (publish). Keyed by the target **id** `hp2`, not the folder. Proven by `assetMarkers` before anything runs. |
+| `enginesRoot` | `/home/ion/hp2-ufrontend` | + `publish.engine.repo` `HarryPotter2` → `/home/ion/hp2-ufrontend/HarryPotter2` (`build-inputs.mjs:94-102`, `args.mjs:292-317`). ⚠ Without it publish-all's default is `<repoRoot>/../engines` = `/home/ion/hp2-ufrontend/engines`, which does not exist. |
+| `engines.hp2` | (omit) | per-target override, only if the repo ever moves away from `enginesRoot`. |
+| `publish.engine.presetDir` | `Source` (in target.json, not here) | `engine.mjs:63,77`: `cmake --preset wasm-perf` / `wasm` run in `HarryPotter2/Source`; `buildDir = <repo>/build-<preset>` (`engine.mjs:64`) = `HarryPotter2/build-wasm-perf`, matching `HP2/Source/CMakePresets.json:51-55` `binaryDir ${sourceDir}/../build-wasm-perf`. Presets `wasm` + `wasm-perf` both exist (`:26,51`). |
+| `emsdk` | `/home/ion/emsdk` (exists) | `args.mjs:345-350`; default is `$HOME/emsdk` anyway — listed for `--dry-run` clarity. |
+| `siteUrl` | the HP2 Front Door endpoint | `yarn verify-site`, `live-session.cjs:61-76`, `symbolize-wasm.cjs:183-195`. |
+| `telemetryEndpoint` | `<siteUrl>/e` | `args.mjs:259-267`; injected into `index.html` by the app phase. **Absent ⇒ the published HP2 page is silent** (dormant client). |
+| `gameProxyList` | **omit** | HP2 declares no `network.proxy`, and Proxy networking is for native servers (none exist for HP2). |
+| `compress`/`level`/`jobs`/`engineJobs` | omit (zstd -19, half the threads, all threads) | `args.mjs:290-291, 343-344`. |
+
+⚠ **Infra coupling.** `/home/ion/unreal-frontend-azure-infra/bin/apply-outputs.sh:15, 65-66` writes `siteUrl` +
+`telemetryEndpoint` into `<config.json .ufrontend>/.ufront/publish.local.json`, and `config.json` has
+`"ufrontend": "/home/ion/ufrontend"` — the UPSTREAM clone. An HP2 site added to that repo must write into THIS clone's
+file (a per-site `ufrontend` path), or the two values are typed by hand. ACTION (infra, §10).
+
+⚠ **Engine tree must be clean for publish-all.** `run.mjs:312-316` refuses a dirty engine repo (`--allow-dirty-engines`
+records it instead). `git -C HP2 status --short` currently shows modified `docs/porting/analysis/*.md` and an
+untracked `LightBits` — commit or ignore before the first publish. The analysis reports themselves make the tree
+dirty until committed.
+
+⚠ **The renderer forks are NOT where the task/CLAUDE.md says.** `ls /home/ion/hp2-ufrontend` lists only
+`HarryPotter2 ufrontend`; the forks are INSIDE the frontend clone: `UF/XOpenGLDrv` (branch `hp2-v433-compat`),
+`UF/utglr-copy` (`hp2`), `UF/gl4es` (`hp2`) — each its own git repo, and `git -C UF status` lists them as untracked
+(`?? XOpenGLDrv/ gl4es/ utglr-copy/`). Consequences for the ufrontend side:
+1. `yarn lint` = `eslint . && prettier --check .` walks them: `UF/XOpenGLDrv/glm/doc/**` carries ~100 `.js/.css`
+   files (jquery.js, doxygen.css…) that neither `.prettierignore` nor `eslint.config.mjs` ignores → the `lint` gate
+   (`.ufront/gates/lint.sh`) fails on vendored code.
+2. A `git add -A` in `UF` would try to add three nested repos (as gitlinks) to the monorepo.
+3. `publish-all` hashes the monorepo's dirty state into the app fingerprint (`freshness.mjs:157-160`) and records
+   `dirtyFiles` in the provenance; untracked dirs make every publish "dirty".
+4. `HP2/Source/CMakeLists.txt:249` expects them "at the sibling clones under /home/ion/hp2-ufrontend".
+ACTION: move them to `/home/ion/hp2-ufrontend/{XOpenGLDrv,utglr-copy,gl4es}` (plain `mv`; they are independent
+repos) — do NOT add them to the monorepo's ignore files as a workaround. Verify: `git -C UF status --short` empty
+of them; `yarn lint` green.
 
 ## 8. Places that hardcode the existing targets
 
-(pending)
+Method: `grep -rnE "ut99-436-compat|'unreal1'|\"unreal1\"|'ut2004'|\"ut2004\"|'ut99'|\"ut99\"" packages test .ufront`
+(code/test/shell/json, excluding generated manifests) → 60 files; each was opened and classified. Most hits are
+comments, fixtures or per-target profiles, which are correct as-is. **What actually discovers targets by folder
+(so needs nothing):** `ufront-build.mjs:63-65` (`knownTargets`), `ufront-build.mjs:91-110` (sibling fingerprints
+from every descriptor), `build-inputs.mjs:76` (unknown-target error lists them), `publish-all`'s fingerprint
+sweep (all descriptors on disk, README "Fingerprints are compared against every target the repo declares"),
+`run.mjs:533` (`targets/<marker.target>/target.json`), `vite.config.ts:25` (`UFRONT_TARGET` → any folder).
+
+### 8.1 MUST touch (a fifth target is silently skipped or broken otherwise)
+
+| File:line | Hard-coded | ACTION for hp2 |
+|---|---|---|
+| `test/skeleton.test.mjs:76` | `const TARGETS = ['unreal1','ut99','ut99-436-compat','ut2004']` | add `'hp2'` or discover (§4.3 #1) |
+| `test/skeleton.test.mjs:200-209` | `CAPTURED` telemetry fixture rows per target | add verbatim hp2 rows once captured (§4.2) |
+| `packages/frontend/test/capabilities.test.ts:63` | `for (const t of ['ut2004','ut99','ut99-436-compat','unreal1'])` | add `'hp2'` (or read `targets/`) |
+| `packages/frontend/test/net-notices.test.ts:119` (UE1 set) and `:146` (all) | the same lists | add `'hp2'` to both |
+| `packages/frontend/test/proxy-net-notices.test.ts:170` | `['unreal1','ut99']` — targets WITHOUT Proxy networking | add `'hp2'` (it declares no `network.proxy`) |
+| `packages/glue/test/_target-fixtures.cjs` + `target-config.test.cjs:76-95` | UT2004/UT99/UNREAL1 fixtures | add an HP2 fixture (§4.4) — proves `hp2-user-data`, `.ogg → Music`, `.usa → Save`, the Slot globs |
+| `packages/e2e/playwright.config.js:10,22-27` | spec name pattern `<id>-wasm-*.spec.js` | no edit — **create** `packages/e2e/hp2-wasm-boot.spec.js` + `lib/engines/hp2.profile.js` (§5.3) |
+| `packages/e2e/tools/precache-baseline.cjs:41,168-229` | `TARGET === 'unreal1' / 'ut99' / 'ut99-436-compat'`, else **ut2004 menu clicks** | add an `hp2` branch (wait for the startup level, settle) — else the precache capture drives UT2004 keys into HP2 (§3.3 B) |
+| `packages/e2e/tools/precache-capture.cjs:111-113,202` | waits for `UT2k4MainMenu.Opened`, loads the ut2004 profile | hp2 branch or use `precache-baseline.cjs` only |
+| `packages/e2e/tools/publish-boot-check.cjs:17-29` | `TARGETS = [{dir:'u1'},{dir:'ut99'},{dir:'ut99-436'},{dir:'ut2004',…}]` against `PUBLISH_URL` | add `{ dir: '.', ready: /Possessed PlayerPawn/i, renderer: 'Software (CPU)' }` for a root publish (or make the list come from the served `ufront-target.json`/descriptors) — this is the "boot the publish folder before uploading" proof |
+| `/home/ion/unreal-frontend-azure-infra/peerjs/server.js:110` | `ID_PREFIXES = ['u1','ut99','ut99-436-compat','ut2k4']`, `ID_ENFORCE=reject` | add `'hp2'` **only if** HP2 ever exposes P2P; otherwise hp2 peer ids are rejected (harmless for single-player) — infra repo, §10 |
+| `/home/ion/unreal-frontend-azure-infra/config.json` `storage.requiredFolders` + `bin/deploy-ufront.py:237-240` | the four folders | per-site config (§10) |
+
+### 8.2 SHOULD touch (tooling that defaults to/knows only the four; hp2 works via flags)
+
+| File:line | What | ACTION |
+|---|---|---|
+| `.ufront/install-engine-hooks.sh:19-24` | default repo list = the four `/home/ion/engines/engine-*` | run it with an explicit path: `.ufront/install-engine-hooks.sh /home/ion/hp2-ufrontend/HarryPotter2` (installs the engine pre-push guard as a symlink into `HP2/.git/hooks/pre-push`; allowed — it writes only the hook) — or add the path to the default list in this branch |
+| `packages/build/bin/ufront-e2e.mjs:31`, `playwright.config.js:10`, `vite.config.ts:25` | default target `ut2004` when none is given | always pass `--target hp2`; no change |
+| `packages/e2e/tools/asset-audit.mjs:36`, `missing-deps-report.mjs:43` | `TARGETS = {id: '/home/ion/<x>-assets'}` path maps | pass `--target hp2 --assets /home/ion/hp2-ufrontend/HarryPotter2/Assets`; optionally read `.ufront/publish.local.json` `assets.*` instead of a path map |
+| `packages/e2e/tools/native-smoke.mjs:73-140` | engine entries unreal1/ut99/ut2004 | add an hp2 native entry when the native Linux build boots |
+| `packages/e2e/tools/encoding-bench.mjs:49`, `relay-conformance.cjs:24` | defaults `ut99` | pass `--target hp2` / `--profile …` |
+| `packages/e2e/tools/symbolize-wasm.cjs:200-209` | `publish.folder` → URL segment | handle `"."` (§6.2 #10) |
+| `packages/e2e/tools/live-session.cjs:80` | default `--path '/ut2004/'` | pass `--path '/'` for hp2 |
+
+### 8.3 No change (comments, fixtures, per-target files)
+
+`packages/build/{bin,src/publish}/*` hits (`ufront-build.mjs:343`, `ufront-publish.mjs:60-61`, `args.mjs:230,309`,
+`engine.mjs:157-158`, `execute.mjs:350-351`, `state.mjs:78`, `verify.mjs:123`) are explanatory comments/messages
+about the ut99 vs ut99-436 identity problem; `packages/build/test/publish-*.test.mjs` use the four as fixtures (a
+new root-publish test belongs beside them, §6.2 #13); `packages/glue/test/{artifact-meta,ini-identity,wasmfs-backend}.test.cjs`
+fixture data; `packages/portal/test/render.test.mjs` card fixtures; `packages/e2e/lib/engines/*.profile.js`,
+`*.proxynet.js`, `lib/gui/shared.js:5`, `lib/autofov-tests.js:27` per-target data/comments;
+`packages/glue/bin/generate-travel.cjs:40,325` comments; `packages/frontend/test/network-section.test.ts:50,197,277`
+(proxy `profile: 'ut2004'` fixtures).
+
+### 8.4 Docs that enumerate "the four targets" (prose; update when hp2 lands so doc-sync reviewers are not misled)
+
+| File:line | Text | ACTION |
+|---|---|---|
+| `docs/README.md:69` | architecture diagram boxes ut2004 / ut99 / unreal1 | add an `hp2 (UE1 433)` box |
+| `CLAUDE.md` (UF) "What this is" | "four yarn-workspace packages" (packages, not targets) | none |
+| `packages/frontend/README.md:500` | "the deployment is four games side by side under one origin" | add: "hp2 is published at the root of its own origin (publish.folder ".")" |
+| `packages/e2e/README.md:89,123,157,952,1047-1092,1381,1494,1693` | "all four boot specs", the per-target save table (`:1091-1092`) | add hp2 rows as each shared suite is registered in `hp2-wasm-boot.spec.js`; the save table needs an hp2 row (menu book → save slot; `Save/Slot<N>/Save<i>.usa`) |
+| `docs/06-targets-and-branding.md` §3 (travel), publish block | the travel rule and `publish.folder` semantics | §4.3 #3 and §6.2 #12 |
+| `docs/07-build-and-ci.md:146-160, 228-251` | the four-target publish command; "drop the four folders side by side" | add the single-site command (§6) |
+| `packages/build/README.md` § Publishing + `.ufront/publish.local.json` example | four `assets.*` keys | add the site-root mode + an hp2 example |
 
 ## 9. Gates, hooks, CHANGELOG/STATE rules
 
-(pending)
+### 9.0 Hooks are not installed in this clone
+
+`git -C UF config --get core.hooksPath` → empty, and `UF/.git/hooks/` holds only `*.sample`. So today **no gate runs
+on commit/push in the hp2 clone**; only `yarn gates` (CI tier) runs them, by hand. ACTION (owner, one-time, per
+`.ufront/README.md` "Enable the git hooks"): `git -C /home/ion/hp2-ufrontend/ufrontend config core.hooksPath .ufront/hooks`.
+For the engine: `.ufront/install-engine-hooks.sh /home/ion/hp2-ufrontend/HarryPotter2` (§8.2).
+
+### 9.1 Gate-by-gate: what a new `targets/hp2/` does to each
+
+| Gate (file) | Tier | Trips on the hp2 work? | What must accompany it |
+|---|---|---|---|
+| `no-engine-specifics` (`.ufront/gates/no-engine-specifics.sh`) | hard, `yarn gates` | **No** — it scans only `packages/{frontend,glue}` (check 1, `:20-30`) and `packages/glue/src` + `packages/frontend/{src,public}` (check 2, `:33-41`); `targets/` is DATA. ⚠ But its patterns know only `ut2004\|ut2k4\|ut99\|unreal1` (`:27`, `:38`), so an `'hp2'` literal/branch in generic code would **pass unnoticed**. (`grep -rniE hp2 packages/{glue,frontend}/src packages/frontend/public` → 0 hits today, so adding it causes no false positive.) | ACTION: add `hp2` to both regexes in the same commit that adds the target: `…(ut2004\|ut99\|unreal1\|hp2)…` at `:27` and `"ut2004\|ut2k4\|ut99\|unreal1\|hp2"` at `:38`; update the header comment (`:7`). |
+| `doc-sync` (`gates/doc-sync.sh:12-21`) | hard, pre-commit | Only when `packages/<p>/(src\|bin\|lib)/` is staged without `packages/<p>/(README.md\|CHANGELOG.md\|docs/)`. `targets/**`, `test/**`, `packages/*/test/**`, `packages/e2e/*.spec.js` (package root) and `packages/e2e/tools/**` do **not** trigger it. They DO trigger: `packages/e2e/lib/engines/hp2.profile.js` (→ `packages/e2e/README.md`), `PlayPanel.vue` (`packages/frontend/src/` → `packages/frontend/README.md`), every §6.2 change (`packages/build/src/publish/*`, `bin/ufront-publish.mjs` → `packages/build/README.md`). | stage the matching README section in the same commit |
+| `lint` (`gates/lint.sh` → `yarn lint` = `eslint . && prettier --check .`) | hard, pre-commit when js/ts/vue staged + `yarn gates` | New `hp2-wasm-boot.spec.js`, `hp2.profile.js`, `branding/theme.css` must be prettier-clean (4 spaces, 120 cols, single quotes); `*.json`/`*.md`/`*.svg`/`*.html` are prettier-ignored (`.prettierignore`), manifests eslint-ignored (`eslint.config.mjs:48`). ⚠ **Fails today regardless** because of the nested fork checkouts (`UF/XOpenGLDrv/glm/doc/**/*.js`, §7). | `yarn lint:fix` on the new files; move the forks out |
+| `unit` (`gates/unit.sh:23-27`) | hard, `yarn gates` | `yarn test` (skeleton) fails if `'hp2'` is in `TARGETS` and `targets/hp2/file-manifest.json` is missing, or with an empty `travel` block before §4.3 #3; the frontend/glue loops only include hp2 once added (§8.1). | order of §4.5 |
+| `abi-parity` (`gates/abi-parity.sh`) | hard, `yarn gates` | No — no ABI change. (Engine side: `HP2/vendor/glue/ue_abi.h` is byte-identical to `UF/packages/glue/abi/ue_abi.h`, checked with `cmp`.) | — |
+| `placement-lint` (`gates/placement-lint.sh`) | warn, pre-commit | Only code files at the repo ROOT. `targets/hp2/*` is fine. | — |
+| `conventional-commits` | warn, commit-msg | Use `feat(hp2): add the hp2 target descriptor …`, `test(skeleton): …`, `feat(publish): site-root publish (publish.folder ".")`, `docs(…)`. | — |
+| `e2e-pre-push` (`gates/e2e-pre-push.sh:11-20`) | **hard, pre-push** | Blocks any push unless `.ufront/e2e-stamp` (gitignored, local) contains HEAD's sha. | run the hp2 boot spec (§5.3) green, append HEAD to the stamp; the docs-only-carry convention is in STATE ("validated at <sha>; HEAD differs by docs-only") |
+| `state-updated` (`gates/state-updated.sh`) | warn, pre-push | warns if `docs/migration/STATE.md` did not change in HEAD | add the STATE entry (9.3) in the last commit of the push |
+| `engine-pre-push` (`hooks/engine-pre-push`) | hard, engine clones | Only once installed in `HP2/.git/hooks`; blocks a force-push that drops a remote commit's content. | install (§9.0) |
+
+### 9.2 CHANGELOG rules
+
+`docs/08` §5 (`:75`): "A short CHANGELOG per package records **contract-affecting** changes (especially
+`ABI_VERSION`)". Only `packages/glue/CHANGELOG.md` exists. Adding a target is DATA → **no CHANGELOG entry**. An HP2
+glue fixture/test → none. The §6.2 site-root publish is a `packages/build` contract change (a new legal
+`publish.folder` value + refusals): document it in `packages/build/README.md` (doc-sync satisfies with the README;
+`packages/build` has no CHANGELOG — do not create one unless the owner wants it).
+
+### 9.3 STATE.md / steps / ROADMAP rules
+
+- `docs/09` §2 (`:40-63`): **every step updates `STATE.md`**; `docs/08` §6 (`:77-83`): read STATE first, update
+  STATE/CHANGELOG last. STATE is **newest-first**: a new top entry under the header block, shaped like the
+  existing ones (`STATE.md:369-405` for 2.75): `★★★ **<date> (<step>) — <TITLE IN CAPS>**`, `Record:
+  steps/<step>-<slug>.md. In one screen:`, then a fenced block with `report / cause / fix / e2e / swept / shipped / open`.
+- ACTION: create `docs/migration/steps/<next-step>-hp2-target.md` (the record), add a `ROADMAP.md` checkbox, and a
+  STATE top entry naming: the branch `hp2`, the engine repo `HarryPotter2 @ <sha>`, the hp2 boot spec result
+  (`N/N at <sha>`), the stamp, and **open items** (the TO-VERIFY list of §11).
+- Relevant STATE precedents to cite in the step record: 2.53 (telemetry patterns are DATA — `STATE.md:785`),
+  2.75 (`userFiles`, `STATE.md:369-405` — note `LoadMap ..\Save\Save0.usa` works on the UE1 web build, which is
+  evidence for the HP2 `..\\Save` path question in §1.4), 2.79 (network modes: absent `network.proxy` ⇒ P2P only).
 
 ## 10. Azure: a second, HP2-only domain (plan only)
 
-(pending)
+Sources (READ ONLY): `/home/ion/unreal-frontend-azure-infra/{README.md, CLAUDE.md, config.json, docs/ARCHITECTURE.md,
+docs/RUNBOOK.md, infra/main.bicep, infra/modules/{site,frontdoor,apps,logs,logs-access,gameproxy}.bicep,
+bin/deploy-ufront.py, bin/verify-site.mjs, bin/apply-outputs.sh, peerjs/server.js, relay/src/server.mjs}`.
+Nothing was executed against Azure. `INFRA` below = that repo.
+
+### 10.1 What exists today (the one site)
+
+| Piece | Name (config.json) | Declared in | Relevant fact for HP2 |
+|---|---|---|---|
+| static site | storage `unrealwebassets`, container `$web`, `indexDocument index.html`, `requiredFolders [u1, ut99, ut99-436, ut2004]` | `infra/modules/site.bicep:13-47`; static-website switched on by `bin/infra-deploy.sh:76-77` (data-plane) | one `$web` = one root; HP2 at the root needs its own `$web` |
+| CDN | Front Door **Standard** profile `unrealfd`, endpoint `unrealgames` (`unrealgames-bubshdc7hmg8h7b8.z03.azurefd.net`) | `frontdoor.bicep:21-33` | a Standard profile holds several endpoints; the base fee is per profile |
+| origin groups | `storage-og` (probe `/u1/index.html`, 240 s), `relay-og` (probe `/healthz`) | `frontdoor.bicep:37-95` | HP2 needs its own storage origin group (a probe path that exists at ITS root) |
+| COOP/COEP | rule set `coiheaders`, rule `addcoiheaders`: Overwrite `Cross-Origin-Opener-Policy: same-origin` + `Cross-Origin-Embedder-Policy: require-corp` on every response | `frontdoor.bicep:97-130` | rule sets are profile-level ⇒ **reuse it** on the HP2 route |
+| routes | `default-route` `/*` → storage-og, HTTPS redirect, `IgnoreQueryString`, compression for `frontDoor.compress` types; `telemetry-route` `/e`, `/e/*` → relay-og, not cached | `frontdoor.bicep:132-166` | HP2 needs both on its endpoint |
+| zstd | `.zst` uploaded as `application/octet-stream` + `Content-Encoding: zstd`, `Cache-Control public, max-age=86400`; `.wasm` stored brotli (`Content-Encoding: br`), app files `no-cache` | `bin/deploy-ufront.py:91-103`, `config.json cachePolicy` | same uploader behaviour serves HP2 (the glue byte path accepts both encoded and opaque, `docs/07` §8) |
+| broker | App Service `unrealpeer-we` (`wss://unrealpeer-we.azurewebsites.net/peerjs`), `ALLOWED_ORIGINS = siteOrigin + extraAllowedOrigins`, `ID_ENFORCE=reject`, `ID_PREFIXES ['u1','ut99','ut99-436-compat','ut2k4']` | `apps.bicep:27-55`, `peerjs/server.js:45-75,110-114` | the glue default broker host is `unrealpeer-we.azurewebsites.net` (`glue/src/webrtc/index.js:181`) — HP2 pages will talk to it as-is |
+| relay | App Service `unrealtel-we`, `ALLOWED_ORIGINS = siteOrigin` (CORS fallback only; same-origin through Front Door is the shipped path), accepts any origin's POST otherwise | `apps.bicep:59-90`, `relay/src/server.mjs:12-25,65-75` | reusable unchanged if HP2 gets its own `/e` route |
+| logs/alerts | workspace `law-unreal-signal` (0.05 GB/day cap), FD access logs at PROFILE scope (`frontdoor.bicep:169-176`), `alert-telemetry-silence` counts GETs matching `^https?://[^/?]+/(u1\|ut99\|ut99-436\|ut2004)?/?(index[.]html)?([?].*)?$` (`logs.bicep:171-185`) | | ⚠ that regex matches **`/` on any host** — HP2's root page loads count as "pages" |
+| writeback | `bin/apply-outputs.sh:15,65-66` writes `siteUrl`/`telemetryEndpoint` into `<config.ufrontend>/.ufront/publish.local.json`; `config.ufrontend = /home/ion/ufrontend` | | wrong clone for HP2 |
+
+### 10.2 Options
+
+| Option | What | Verdict |
+|---|---|---|
+| **A. Same profile `unrealfd`, second endpoint + second storage account** | new storage `hp2webassets` (`$web`), new FD endpoint `hp2games`, origin group `hp2-storage-og` → `hp2webassets.z6.web.core.windows.net`, route `hp2-route` `/*` (reuses `coiheaders`, same cache/compression), route `hp2-telemetry-route` `/e`,`/e/*` → existing `relay-og` | **Recommended.** No new profile fee; complete isolation of `$web` (the four-game mirror-sync can never delete HP2 blobs); own hostname = own origin (own IndexedDB/OPFS). |
+| B. Same profile, same storage, HP2 under `$web/hp2/`, route with `originPath: '/hp2'` | one storage, FD rewrites `/x` → `/hp2/x` | Not recommended: `deploy-ufront.py` mirror-syncs the WHOLE container (`to_delete = remote − local`, `deploy-ufront.py:259`), so the next four-game upload proposes deleting every `hp2/` blob; HP2 also appears at `unrealgames…/hp2/`; the `requiredFolders` guard and the silence regex both need per-folder special cases. |
+| C. A second Front Door profile | separate everything | Pays a second Standard base fee for no gain; loses the shared rule set/relay origin group. |
+
+### 10.3 Option A — changes, file by file (plan only)
+
+**`INFRA/config.json`** — add one block (every name lives here, `CLAUDE.md` rule 1), e.g.:
+
+```json
+"hp2Site": {
+  "_comment": "Harry Potter and the Chamber of Secrets, published at the ROOT of its own endpoint (no portal). Built by the hp2 clone of ufrontend.",
+  "ufrontend": "/home/ion/hp2-ufrontend/ufrontend",
+  "publishFolder": "/home/ion/publish-hp2",
+  "siteUrl": "",
+  "storage": { "account": "hp2webassets", "container": "$web", "webHost": "", "sku": "Standard_LRS", "indexDocument": "index.html",
+               "requiredFiles": ["index.html", "SDLLaunch.wasm", "SDLLaunch.js", "file-manifest.json", "zstd"] },
+  "frontDoor": { "endpoint": "hp2games", "endpointHost": "", "originGroup": "hp2-storage-og", "origin": "hp2-storage-origin",
+                 "healthProbe": { "path": "/index.html", "intervalSeconds": 240 },
+                 "routes": { "site": "hp2-route", "telemetry": "hp2-telemetry-route" } }
+}
+```
+
+(Track A of §6.1 makes `publishFolder` `/home/ion/publish-hp2/hp2`; Track B `/home/ion/publish-hp2`.)
+
+| File | Change |
+|---|---|
+| `infra/modules/site.bicep` | parameterise by a `s` object (today `var s = cfg.storage`, `:11`) and instantiate twice from `main.bicep` (`cfg.storage`, `cfg.hp2Site.storage`); output each `webHost`. |
+| `infra/modules/frontdoor.bicep` | add the HP2 endpoint, origin group + origin (probe `/index.html`), `hp2-route` (`patternsToMatch ['/*']`, `ruleSets [ruleSet.id]` — the SAME `coiheaders`, `IgnoreQueryString`, `compressionSettings` from `fd.compress`, `httpsRedirect Enabled`, `forwardingProtocol HttpsOnly`) and `hp2-telemetry-route` (`fd.telemetryPaths` → `ogRelay`). Cleaner: factor a `frontdoor-site.bicep` module taking the profile, rule-set id and relay-og id, called once per site. Output `hp2EndpointHost`. |
+| `infra/main.bicep:79,107` | pass `siteOrigins: ['https://<main>', 'https://<hp2>']` to `apps.bicep`; add `output hp2SiteUrl`. |
+| `infra/modules/apps.bicep:27,85` | `peerOrigins = join(concat(siteOrigins, extraAllowedOrigins), ',')`; relay `ALLOWED_ORIGINS = join(siteOrigins, ',')` (fallback CORS only). |
+| `infra/modules/logs.bicep:171-185` | make the silence alert per host, or add the hp2 host to the page regex deliberately. ⚠ If HP2 is published WITHOUT `telemetryEndpoint`, its root page GETs still count as pages while producing no opens → the alert fires. **Publish HP2 with telemetry** (§7) or scope the regex to `unrealgames…` host. |
+| `bin/infra-deploy.sh:76-77` | enable static website on BOTH accounts. |
+| `bin/apply-outputs.sh:30-70` | write `hp2Site.siteUrl`/`endpointHost`/`storage.webHost` back, and write `siteUrl` + `telemetryEndpoint = <hp2 siteUrl>/e` into `hp2Site.ufrontend/.ufront/publish.local.json` (the hp2 clone), not the upstream one. |
+| `bin/deploy-ufront.py:47-58,237-243` | add `--site hp2` (default = today's site) selecting account/container/endpoint and replacing the `requiredFolders` guard with `requiredFiles` for a root site (refuse a folder that has `u1/`… or lacks `index.html`/`SDLLaunch.wasm`/`zstd/`). Skip `.ufront-publish*.json`, `.ufront-publish-incomplete` (refuse to upload an incomplete tree!) and `publish-provenance.json` for the public site, or confirm with the owner (§6.2 ★). Purge on the HP2 endpoint. |
+| `bin/set-cache-headers.py:27-29`, `bin/verify-site.mjs:52-68` | the same `--site` selector. |
+| `bin/telemetry.mjs` | a target/host filter so HP2 sessions can be listed separately (the envelope carries the target's telemetry id — TO-VERIFY the column name in `queries/*.kql`). |
+| `peerjs/server.js:110` | add `'hp2'` to `ID_PREFIXES` **only if** HP2 exposes P2P hosting (it is single-player; without it, a player who presses Host is refused by the broker — `ID_ENFORCE=reject`). Discovery (`/peerjs/peers`) from the HP2 origin needs the origin in `ALLOWED_ORIGINS` (above) or it fails CORS silently. |
+| game proxy (`gameProxy.*`) | **no change** — HP2 declares no `network.proxy`; do not publish HP2 with `--game-proxy-list`. |
+| `docs/ARCHITECTURE.md`, `docs/RUNBOOK.md` § "Publish a new build", `docs/LOG.md` | the second site, its publish/upload/verify commands, the dated log line. |
+
+### 10.4 Custom domain ("its own domain")
+
+The endpoint host `hp2games-<hash>.z0N.azurefd.net` is Azure-assigned and changes on recreation
+(`config.json frontDoor._comment`). A real domain (e.g. `hp2.<owner-domain>`) = `Microsoft.Cdn/profiles/customDomains`
+(AFD-managed TLS certificate) + a DNS `CNAME` to the endpoint + a `_dnsauth` TXT for validation, and
+`customDomains: [ { id } ]` on both HP2 routes. Then `siteUrl` = the custom domain everywhere (broker/relay
+`ALLOWED_ORIGINS`, publish.local.json). This is also the "recorded way out" of hostname coupling
+(`INFRA/CLAUDE.md` rules; `RUNBOOK.md` "A custom domain would make the URL itself survive a recreation"). DNS
+provider and domain are OWNER decisions — TO-VERIFY.
+
+### 10.5 End-to-end runbook once A (+ §6) exists
+
+```bash
+# infra (once)
+cd /home/ion/unreal-frontend-azure-infra
+bin/infra-deploy.sh --what-if     # expect: + storage hp2webassets, + endpoint hp2games, + og/origin, + 2 routes; apps: ALLOWED_ORIGINS modified
+bin/infra-deploy.sh               # apply-outputs writes hp2Site.siteUrl + the hp2 clone's publish.local.json
+bin/deploy-peerjs.sh              # only if peerjs/server.js changed
+# publish (every build)
+cd /home/ion/hp2-ufrontend/ufrontend
+yarn publish-all --target targets/hp2/target.json --dry-run && yarn publish-all --target targets/hp2/target.json
+yarn serve --root /home/ion/publish-hp2 --tls                         # boot it locally at "/" first
+cd /home/ion/unreal-frontend-azure-infra
+bin/deploy-ufront.py --site hp2 /home/ion/publish-hp2 --dry-run && bin/deploy-ufront.py --site hp2 /home/ion/publish-hp2
+node bin/verify-site.mjs --site hp2                                    # asset differs 0
+node /home/ion/hp2-ufrontend/ufrontend/packages/e2e/tools/live-session.cjs --url <hp2 siteUrl> --path '/' --cap 120
+#   expect: 'Log: Bringing Level startup.MyLevel up for play', no crash panel; beacons with the new build sha
+```
+
+Costs (qualitative; not priced here): a second LRS storage account (GB stored ≈ HP2's zstd payload, a few hundred MB
+— TO-VERIFY after the first publish) + Front Door request/egress charges; no new profile fee; no new App Service.
+⚠ The workspace's 0.05 GB/day cap is SHARED: HP2 page opens and FD access-log rows (one per request, ~1 KB; a cold
+HP2 boot fetches ~230-460 files) add to the same budget — watch `node bin/telemetry.mjs cost` after launch.
 
 ## 11. Open questions / TO-VERIFY
+
+| # | Question / risk | Why it matters | How to verify / decide | Owner |
+|---|---|---|---|---|
+| Q1 | **Root-publish track**: Track A (`folder "hp2"`, upload `<out>/hp2/`) or Track B (`folder "."`, §6.2 code)? | §1.3 was written for B; A needs `publish.folder` changed to `"hp2"` | owner decision; record in `targets/hp2/README.md` | owner |
+| Q2 | `travel`: all-empty block + generic test/PlayPanel change (§4.3 #3) vs the truthful minimal block (§1.5) | the skeleton test fails at `test/skeleton.test.mjs:102` with an empty block | owner decision | owner |
+| Q3 | `appUserDir()` must return `""` on Unix/web and `appInit(TEXT("Game"),…)` must replace `"UnrealTournament"` (`HP2/Source/Game/Src/Launch.cpp:883`) | every `iniPath`, `userFiles` glob and `logPath` (`/System/this.program.log`) in this report assumes `/System/Game.ini`, `/System/User.ini`, `/Save/…` | after the first web boot: `FS.readdir('/System')`, `FS.readdir('/Save')` in devtools; the user-data store's keys in `hp2-user-data` | engine analyst |
+| Q4 | HP2 is single-player but the P2P panel always renders (`App.vue:117` renders `NetworkSection` unconditionally; every target must carry `network.peerPrefix/defaultServerName`, `glue/src/target/config.js:42-94`) | a "Host"/"Join" UI on a single-player game; hosting would be refused by the broker (`ID_PREFIXES` lacks `hp2`) | owner: accept, or add a generic DATA switch (e.g. `network.p2p: false` → hide `NetworkSection`) — frontend change + README (doc-sync) + test | owner |
+| Q5 | `appApplyIniOverrides` (the `-ini:<File>:[Section]:Key=` seam) is absent from HP2 Core (§1.4 row `network.playerName`) | without it the frontend's frame-rate cap, player name, server name are silently ignored | grep HP2 `Core/Src/UnMisc.cpp` for `appApplyIniOverrides` after the port; E2E `registerIniSettingsTests` | engine analyst |
+| Q6 | `notices` / `telemetry` patterns and the three `CAPTURED` fixtures | docs/06 §1: verified against a real log of THIS build | capture from a real hp2 web console (§4.2) | first boot |
+| Q7 | Save slots: 6? and does `..\\Save\\Slot<N>` map to `/Save/Slot<N>` (not a literal backslash dir) | `userFiles` globs list Slot1..6 | 2.75 precedent: UE1 web logged `LoadMap ..\Save\Save0.usa` fine (`STATE.md:369-405`); verify by saving in each slot and listing `/Save` | first boot |
+| Q8 | Renderer init milestone for XOpenGL on HP2 (`XOpenGL::SetRes…`) | `RENDER_READY` in the hp2 profile (§5.3) | read the first hp2 log | first boot |
+| Q9 | Menu music `.ogg` and the real precache list (Step B, §3.3) | warm-start guarantee | `precache-baseline.cjs` hp2 branch (§8.1) | after boot |
+| Q10 | The renderer forks live INSIDE the ufrontend clone (`UF/XOpenGLDrv`, `UF/utglr-copy`, `UF/gl4es`), not at `/home/ion/hp2-ufrontend/*` as `HP2/CLAUDE.md:29` and `HP2/Source/CMakeLists.txt:249` say | breaks `yarn lint`; risks committing nested repos; makes every publish "dirty" | `mv` them to `/home/ion/hp2-ufrontend/`; re-run `git -C UF status` | owner |
+| Q11 | `branding.displayName` wording / trademark; theme palette | public page title | owner | owner |
+| Q12 | Uploading `.ufront-publish*.json` + `publish-provenance.json` (monorepo dirty-file list, local asset paths) to a public site | information exposure (the same happens on the four-game site today) | owner decision; uploader skip-list (§10.3) | owner |
+| Q13 | Static `<title>Unreal Tournament 2004</title>` in `packages/frontend/index.html:6` before branding runs; no favicon | link previews / crawlers on the HP2 domain show UT2004 | optional generic Vite `transformIndexHtml` (§2.5) | frontend |
+| Q14 | Custom domain + DNS provider for "its own domain" | the azurefd.net host changes on endpoint recreation | owner (§10.4) | owner |
+| Q15 | `alert-telemetry-silence` counts `/` GETs on every host of the profile | an HP2 publish without telemetry would trip it | publish HP2 with `telemetryEndpoint`, or scope the regex per host (§10.3) | infra |
+| Q16 | `webrtc-shim.js` vendored in HP2 differs textually from `UF/packages/glue/engine-shim/webrtc-shim.js` (HP2's is byte-identical to `engine-ut99/vendor/glue/webrtc-shim.js`; the monorepo copy is re-formatted) | shim drift is the engine's abi-pin concern, not a target-descriptor one | `diff -w` the two and confirm only formatting differs (engine analyst) | engine analyst |

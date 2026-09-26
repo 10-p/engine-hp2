@@ -497,3 +497,21 @@ Nothing checks a CD at package-load time; there is no CD-key.
 6. Exact tokens each hub's `LevelStart_*` cut scene expects, for a "start at hub with state X" preset.
 7. FetchFS stubs for `System/CUTSCENES/*.int` (sub-directory of a stubbed folder).
 8. `SetRes`/`GetRes` behaviour of NSDLViewport on the web (the Sound&Video page reverts after a timeout if `SetRes` "fails", `HPConsole.uc:508-516`).
+
+---
+
+## Appendix A. The cut-scene system as a file consumer
+
+The last gap from the brief is filled here. It confirms fact 4 and the §6.4 `fetchStubs` question.
+
+| Step | Code | File-system effect | Action |
+|------|------|--------------------|--------|
+| A `CutScene` actor with a `FileName` (e.g. `00001PrivetIntro`) is triggered | `Source/HGame/Classes/CutScene.uc:92-105` | For `t = 0..19` (`var CutScript aThreads[20]`, `:5`) it calls `Localize("thread_"$t, "line_0", "Cutscenes\\" $FileName)` and spawns a `CutScriptDisk` for every thread whose `line_0` resolves | — |
+| `Localize` builds the file name | `Source/Core/Src/UnMisc.cpp:1222-1250`: `appSprintf(Filename, "%s.%s", Package, LangExt)` → `GConfig->GetString(Section, Key, …, "Cutscenes\00001PrivetIntro.int")` | `FConfigCacheIni` opens that **relative path, with a backslash, against the cwd (`System/`)**. The file is read once and cached, so the 20 thread probes and the `line_0..line_9998` loop (`CutScriptDisk.uc:25-37`) cost one open per cut scene. A missing file is cached as empty, which gives silent `<?int?…?>` results (logged as `Localization:` lines and hidden by `Suppress=Localization`). | The **engine** must turn `Cutscenes\X.int` into `Cutscenes/X.int` and match it case-insensitively against `System/CUTSCENES/` (fact 4). If it doesn't, **every scripted cut scene becomes a no-op without any error**: the camera is never captured, and `waitfor` cues that gate triggers never fire. Test on the first native boot: PrivetDr's owl/Dobby intro must play. The log must show no `No localization: Cutscenes\00001PrivetIntro` line (run with `Suppress=Localization` removed). |
+| Inline cut scenes (no file) | `CutScene.uc` inline script lines (the Startup.unr fly-through, §1.3) | none | — |
+| Command vocabulary | `CutScript.uc`: `CAPTURE`, `RECAPTURE`, `RELEASE`, `CUE`, `WAITFOR`, `SLEEP`, `TRIGGER`, `TRIGGERBOSSENCOUNTER`, `IF`/`IFNOT`, `MESSAGE`, `CAMERASHAKE`, `SLOMO`, `DISABLEPLAYERINPUT`/`ENABLEPLAYERINPUT`, **`SAVEGAME`** (auto-save, §3.2), **`CHANGEGAMESTATE`** (§9.2), `COMMENT`, and per-actor verbs (`FlyTo`, `FollowSpline`, `FadeIn`, `flash`, …) handled by the captured actor's `CutCommand` | the `SAVEGAME` command writes `Save0.usa` + `Save0.bmp` + `_pa` files → `userFiles` (§3.3) | none beyond the above |
+| Size | `Assets/System/CUTSCENES/`: 185 files, 265,398 B total | small | Ship **all** of them in the precache or the MEMFS boot set (0.27 MB). That is simpler than stubbing a sub-directory, and it settles open question 7. |
+
+**Resulting precache change:** add `System/CUTSCENES/*.int` (185 files, 265 KB) to the menu set in §6.2. The menu total stays about 141 MB.
+
+## Status: complete
