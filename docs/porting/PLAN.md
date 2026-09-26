@@ -291,5 +291,5 @@ Verify on the first boots (do not decide in advance):
 - [x] C: XOpenGLDrv hp2-v433-compat (`a5ec7d5..5b376cc`) · UTGLR hp2 (`6ad2b62..48b2681`) · native GL `Ch1Rictusempra` renders on both (Mesa llvmpipe, no GL errors); C7/H6 two-sided depth bias still open
 - [x] D: web inis · W1 link · W2 smoke · W3 loader sweep (L10 `fd6910c`) · `targets/hp2` + manifests + tests (ufrontend `22aa692..42012c7`) · **web boot to the title map on XOpenGL** (`yarn e2e --target hp2`: boot, SoftDrv, direct map load, config persistence, save/load — all green; UTGLR/gl4es + NullDrv boot too) · BUILD.md web section
 - [ ] E: EA-XA decoder + oracle · NOpenALDrv from ALAudio · vorbis · web audio ON
-- [ ] F: Windows `Game.exe` under wine
+- [x] F: Windows `Game.exe` under wine — first MinGW build, imports on the allow-list, `startup.MyLevel` on SoftDrv and `Ch1Rictusempra` gameplay on XOpenGL (wine + Mesa); fixed the thumbnail overrun it exposed (`0bda916`). Audio (L6) rides on Phase E
 - [ ] G: root publish track chosen · Azure Option A prepared (deploy on go-ahead)

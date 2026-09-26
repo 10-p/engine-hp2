@@ -60,3 +60,8 @@ One dated line per green milestone (PLAN §10). Newest last.
   (`Created WebGL 1.0 context`, `GL_VERSION 2.1 gl4es wrapper 1.1.7`), `Ch1Rictusempra` gameplay on XOpenGL,
   NullDrv boots. Silent (SoundDrv) until Phase E. Remaining for Acceptance D: key-binding persistence across a
   reload, the W3 loader sweep, `docs` (BUILD.md web section).
+- 2026-09-26 — **Phase F**: `cmake --preset windows` builds `Game.exe` (50 MB, static) first time; imports only
+  stock system DLLs. Wine 10 (prefix `/home/ion/hp2-ufrontend/.wine-hp2`): `Detected: Windows`, `startup.MyLevel`
+  on SoftDrv, `Ch1Rictusempra` on XOpenGL (Mesa 4.3). Wine exposed a real bug on every target: HP2's 160×120
+  save thumbnail read 960 rows from a 720-row 16:9 frame → fixed `0bda916` (web/native artifacts need a rebuild
+  to carry it). Also: web persistence + save/load E2E green (ufrontend `42012c7`), W3 L10 `fd6910c`, BUILD.md.

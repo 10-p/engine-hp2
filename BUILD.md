@@ -71,3 +71,21 @@ the `[layout]` guard prints any C++/script size mismatch).
    shadows the preloaded `Default.ini`.
 
 Audio is the null `SoundDrv.NullAudioSubsystem` until PLAN Phase E lands `NOpenALDrv`.
+
+## Windows (MinGW-w64, PLAN Phase F)
+
+```bash
+cd Source && cmake --preset windows && cmake --build --preset windows -j"$(nproc)"   # build-windows/Game/Game.exe
+tools/dev/mkrun-hp2.sh build-windows /home/ion/hp2-ufrontend/run-windows --windows
+export WINEPREFIX=/home/ion/hp2-ufrontend/.wine-hp2          # keep the prefix inside the workspace
+cd /home/ion/hp2-ufrontend/run-windows/System && wine Game.exe -SOFTWARERENDERER -NOMSGBOX
+```
+
+One self-contained `Game.exe` (`-static-libgcc -static-libstdc++`); its imports must stay within the stock system
+DLLs (`i686-w64-mingw32-objdump -p Game.exe | grep "DLL Name"`: ADVAPI32, GDI32, IMM32, KERNEL32, msvcrt, ole32,
+OLEAUT32, SETUPAPI, SHELL32, USER32, VERSION, WINMM, WS2_32 — plus `OpenAL32.dll`, copied beside the exe, once
+NOpenALDrv is on). The run tree never copies the retail `*.dll`/`*.exe` (a retail `OpenAL32.dll` or `Game.exe`
+would shadow ours). MinGW lays bitfields out the MSVC way, so the GCC layout pads in `EngineClasses.h` and
+`UnFractal.h` are `#ifndef __MINGW32__`. **Wine's file lookup is case-insensitive: a Windows run proves nothing
+about the path/case handling** — test that natively or on the web. `ucc-bin.exe` is not built on MinGW. Stop a
+hung prefix with `/usr/lib/x86_64-linux-gnu/wine/wineserver -k`.
