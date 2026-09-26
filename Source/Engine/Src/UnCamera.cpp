@@ -385,7 +385,11 @@ void UViewport::Destroy()
 	delete Canvas;
 	unguard;
 
-	// Shut down rendering.
+	#endif
+
+	// Shut down rendering. Outside the _MSC_VER block as in Epic/the template: HP2 had moved the
+	// #endif below it, so on GCC/clang RenDev->Exit() never ran and every viewport close/recreate
+	// (resolution change, FLUSH, fullscreen toggle) leaked the device and initialised a second one.
 	guard(DeleteRenDev);
 	if( RenDev )
 	{
@@ -393,8 +397,6 @@ void UViewport::Destroy()
 		delete RenDev;
 	}
 	unguard;
-
-	#endif
 
 	// Remove from viewport list.
 	GetOuterUClient()->Viewports.RemoveItem( this );
@@ -530,16 +532,12 @@ UBOOL  UViewport::ScreenShot( const TCHAR* Filename )
 		IH.biClrImportant	= 0;
 		Ar->Serialize( &IH, sizeof(IH) );
 
-		// Colors.
-		#if _MSC_VER
+		// Colors. BMP rows are bottom-up; the renderers' ReadPixels return top-down rows on every target,
+		// so the MSVC loop is right everywhere. (Epic's Loki "i=SizeY; i>0" branch read one row past the
+		// SizeX*SizeY buffer and never wrote row 0.)
 		for( INT i=SizeY-1; i>=0; i-- )
 			for( INT j=0; j<SizeX; j++ )
 				Ar->Serialize( &Buf[i*SizeX+j], 3 );
-		#else
-		for( INT i=SizeY; i>0; i-- )
-			for( INT j=0; j<SizeX; j++ )
-				Ar->Serialize( &Buf[i*SizeX+j], 3 );
-		#endif
 
 		// Success.
 		delete Ar;
@@ -719,7 +717,7 @@ UBOOL UViewport::Exec( const TCHAR* Cmd, FOutputDevice& Ar )
 				}
 
 				// divide dest by total number of pixels in source block
-				for (i=0; i<4; ++i)
+				for (unsigned int i=0; i<4; ++i)
 					dest [i] /= (shrinkage*shrinkage);
 
 				pDstLine[x].R = dest[0];
@@ -794,7 +792,7 @@ UBOOL UViewport::Exec( const TCHAR* Cmd, FOutputDevice& Ar )
 				}
 
 				// divide dest by total number of pixels in source block
-				for (i=0; i<4; ++i)
+				for (unsigned int i=0; i<4; ++i)
 					dest [i] /= (shrinkage*shrinkage);
 
 				pDstLine[x].R = dest[0];
@@ -877,7 +875,8 @@ UBOOL UViewport::Exec( const TCHAR* Cmd, FOutputDevice& Ar )
 				// Copy the actual data
 				for(int i=(int)snapV-1; i>=0; i-- )
 				{
-					for( unsigned int j=0; j<snapU; j++ )
+					unsigned int j;
+					for( j=0; j<snapU; j++ )
 						Ar->Serialize( &Buf[i*snapU+j], 3 );
 
 					// fill extra space to make bitmap of texture proportions
@@ -900,13 +899,14 @@ UBOOL UViewport::Exec( const TCHAR* Cmd, FOutputDevice& Ar )
 			if( Ar )
 			{
 				// calculate proportions of final bmp to be suitable as a texture
+				unsigned int destWidth, destHeight;
 				int widthFactor =0;
-				for (unsigned int destWidth = snapU; destWidth; destWidth>>=1)
+				for (destWidth = snapU; destWidth; destWidth>>=1)
 					widthFactor ++;
 				destWidth = appPow(2, widthFactor);
 				
 				int heightFactor =0;
-				for (unsigned int destHeight = snapV; destHeight; destHeight>>=1)
+				for (destHeight = snapV; destHeight; destHeight>>=1)
 					heightFactor ++;
 				destHeight = appPow(2, heightFactor);
 
@@ -965,7 +965,8 @@ UBOOL UViewport::Exec( const TCHAR* Cmd, FOutputDevice& Ar )
 				FColor * Buf = snapBuff.GetData ();
 
 				// fill extra space to make bitmap of texture proportions
-				for( int i=(int)destHeight-1; i>=(int)snapV; i-- )
+				int i;
+				for( i=(int)destHeight-1; i>=(int)snapV; i-- )
 				{
 					for( unsigned int j=0; j<destWidth; j++ )
 						Ar->Serialize(&Buf[0], 3 );
@@ -974,7 +975,8 @@ UBOOL UViewport::Exec( const TCHAR* Cmd, FOutputDevice& Ar )
 				// Copy the actual data
 				for( i=(int)snapV-1; i>=0; i-- )
 				{
-					for( unsigned int j=0; j<snapU; j++ )
+					unsigned int j;
+					for( j=0; j<snapU; j++ )
 						Ar->Serialize( &Buf[i*snapU+j], 3 );
 
 					// fill extra space to make bitmap of texture proportions

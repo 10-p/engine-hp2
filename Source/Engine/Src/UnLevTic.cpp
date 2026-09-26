@@ -643,7 +643,8 @@ INT ULevel::ServerTickClient( UNetConnection* Connection, FLOAT DeltaSeconds )
 		guard(MakeConsiderList);
 
 		// add LevelInfo to the list
-		for( INT i=0; i<2; i++ )
+		INT i;
+		for( i=0; i<2; i++ )
 		{
 			AActor* Actor = Actors(i);
 			if( Actor && (Actor->NetTag!=NetTag)
@@ -652,7 +653,17 @@ INT ULevel::ServerTickClient( UNetConnection* Connection, FLOAT DeltaSeconds )
 				//CullCount++;
 				Actor->NetTag                 = NetTag;
 				PriorityList  [ConsiderCount] = FActorPriority( ViewPos, ViewDir, Connection, Actor );
-				PriorityActors[ConsiderCount] = PriorityList + ConsiderCount++;
+				// ⚠ WAS: PriorityActors[ConsiderCount] = PriorityList + ConsiderCount++;
+				// C++17 sequences the RIGHT operand of `=` BEFORE the left, so `ConsiderCount++` ran
+				// first and the subscript on the left then used the ALREADY-INCREMENTED value: every
+				// pointer landed one slot too high and PriorityActors[0] was never written at all.
+				// Sort() then handed that uninitialised GMem slot to Compare(), which dereferenced it
+				// — the "memory access out of bounds" this engine takes at a raised net speed. The
+				// statement was fine under the 1998 compiler's evaluation order; C++17 changed what it
+				// means, not whether it is legal. Split so the order is stated rather than inferred.
+				// (HP2 has the statement three times in this loop set; all three are split.)
+				PriorityActors[ConsiderCount] = PriorityList + ConsiderCount;
+				ConsiderCount++;
 			}
 		}
 		FLOAT ServerTickRate = Engine->GetMaxTickRate();
@@ -683,7 +694,8 @@ INT ULevel::ServerTickClient( UNetConnection* Connection, FLOAT DeltaSeconds )
 							//CullCount++;
 							Actor->NetTag                 = NetTag;
 							PriorityList  [ConsiderCount] = FActorPriority( ViewPos, ViewDir, Connection, Actor );
-							PriorityActors[ConsiderCount] = PriorityList + ConsiderCount++;
+							PriorityActors[ConsiderCount] = PriorityList + ConsiderCount; // C++17: see above
+							ConsiderCount++;
 						}
 					}
 					LastTime = LastTime + 0.023f;
@@ -700,7 +712,8 @@ INT ULevel::ServerTickClient( UNetConnection* Connection, FLOAT DeltaSeconds )
 						//CullCount++;
 						Actor->NetTag                 = NetTag;
 						PriorityList  [ConsiderCount] = FActorPriority( ViewPos, ViewDir, Connection, Actor );
-						PriorityActors[ConsiderCount] = PriorityList + ConsiderCount++;
+						PriorityActors[ConsiderCount] = PriorityList + ConsiderCount; // C++17: see above
+						ConsiderCount++;
 					}
 					LastTime = LastTime + 0.023f;
 					ThisTime = ThisTime + 0.023f;
@@ -792,7 +805,7 @@ void ULevel::TickNetServer( FLOAT DeltaSeconds )
 	// Stats.
 	if( Updated )
 	{
-		for( i=0; i<NetDriver->ClientConnections.Num(); i++ )
+		for( INT i=0; i<NetDriver->ClientConnections.Num(); i++ )
 		{
 			UNetConnection* Connection = NetDriver->ClientConnections(i);
 			if( Connection->Actor && Connection->State==USOCK_Open )
@@ -956,8 +969,20 @@ void ULevel::Tick( ELevelTick TickType, FLOAT DeltaSeconds )
 	// Update time.
 	guard(UpdateTime);
 
-	// Clamp time between 200 fps and 10 fps.
-	DeltaSeconds = Clamp(DeltaSeconds,0.005f,0.10f);
+	// Clamp time between 1000 fps and 10 fps.
+	//
+	// ufront 2.19: the floor was 0.005 (200 fps). HP2 clamps BEFORE TimeSeconds accumulates, so above the
+	// floor's frame rate both the level clock and every actor's Tick/physics advance by more than actually
+	// elapsed — the world runs fps/200 times too fast. On modern hardware the web client reaches several
+	// hundred fps. Lowered to 0.001 to match engine-unreal1/engine-ut99 (babbygremlin d91f769, "Fix game
+	// speed increase past standard framerate"). The client frame cap in the launcher is the other half: it
+	// keeps the normal case far away from the floor, and this keeps an uncapped client honest.
+	//
+	// The CEILING stays HP2's 0.10 (KnowWonder's 100 ms hitch cap; stock UE1 has 0.40): it stops a hitch
+	// from integrating one enormous step and tunnelling actors, and HP2's physics is tuned against it.
+	// The floor buys quantization headroom (FRotator rotation truncates RotationRate*dt to INT; mover
+	// velocity divides by dt; input axes scale by 20/dt) — see engine-ut99 UnLevTic.cpp for the analysis.
+	DeltaSeconds = Clamp(DeltaSeconds,0.001f,0.10f);
 	DeltaSeconds *= Info->TimeDilation;
 	TimeSeconds = TimeSeconds + DeltaSeconds;
 	Info->TimeSeconds = TimeSeconds.GetFloat();
