@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 // emit-artifact-meta.mjs — write <out>/meta.json for the just-linked WASM artifact (docs/05 §4).
-// Run by the UnrealTournament launcher's POST_BUILD, AFTER SDLLaunch.js is finalized, so the js checksum is
+// Run by the Game launcher's POST_BUILD, AFTER SDLLaunch.js is finalized, so the js checksum is
 // of the served file. Self-contained (node stdlib only — no monorepo dep; the artifact + its descriptor
 // travel together across the public/private seam). The monorepo's packages/build VALIDATES this against
 // the glue ABI_VERSION + the host loader contract before assembling serve-web.
-// (ufront step 2.7b, engine-ut99 — mirrors engine-unreal1's script, adapted for the "Launch.*" basenames.)
+// (ufront step 2.7b, engine-ut99 — mirrors engine-unreal1's script; HP2: targetId/provenance/base below.)
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
@@ -57,13 +57,13 @@ const deps = Object.fromEntries(
 );
 
 const meta = {
-    targetId: args.target || 'ut99',
+    targetId: args.target || 'hp2',
     engineFamily: 'UE1',
     buildConfig: 'wasm-integrated',
     abiVersion: Number(args.abi), // from the vendored frozen ue_abi.h UE_ABI_VERSION
     loaderStyle: 'global-module', // classic <script> + bare globals (like engine-ut2004 / engine-unreal1)
-    provenance: { repo: 'engine-ut99', gitSha, builtAt },
-    toolchain: { emscripten: args.emcc || 'unknown', base: 'maximqaxd/ut99dc (UnrealTournament v400)', ...deps },
+    provenance: { repo: 'HarryPotter2', gitSha, builtAt }, // == targets/hp2/target.json publish.engine.repo
+    toolchain: { emscripten: args.emcc || 'unknown', base: 'Harry Potter and the Chamber of Secrets (UE1 build 433), templated on engine-ut99', ...deps },
     buildFlags: [
     // Descriptive, hand-maintained: keep it in step with the linker block or the descriptor
     // quietly misstates what shipped. -sWASMFS landed in 2.13.1 and the threading set in 2.13.2,
@@ -71,6 +71,7 @@ const meta = {
     // SharedArrayBuffer + OffscreenCanvas, so that is exactly what the descriptor must say.
     '-sASYNCIFY', '-sFULL_ES2', '-sUSE_SDL=2', '-sALLOW_MEMORY_GROWTH', '-sFORCE_FILESYSTEM', '-sWASMFS',
     '-pthread', '-sPROXY_TO_PTHREAD', '-sOFFSCREENCANVAS_SUPPORT', '-sOFFSCREENCANVASES_TO_PTHREAD=#canvas',
+    '-sOFFSCREEN_FRAMEBUFFER',
   ],
     exports: { symbolContract: 1 },
     checksums,
