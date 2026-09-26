@@ -38,3 +38,12 @@ One dated line per green milestone (PLAN §10). Newest last.
   was at H4 alpha-blend) — check `git -C ../XOpenGLDrv log/status`, `git -C ../utglr-copy log/status`,
   finish uncommitted edits. (3) ufrontend `targets/hp2` agent STOPPED (was starting branding) — check
   `git -C ../ufrontend status/log`, resume from contract §12.
+- 2026-09-26 — **Acceptance B met (native, SoftDrv + NullDrv)**: `Bringing Level startup.MyLevel up for play`,
+  `Creating root window`, `Possessed PlayerPawn`, zero `[layout]`, no `Critical:`; Esc opens `FEInGamePage`;
+  `Ch1Rictusempra` and `PrivetDr.unr -SAVESLOT=2` play (cut scenes + subtitles; `Save Slot Path: ../Save/Slot2`,
+  `Save/Slot2/cache/` created). Fixture: `docs/porting/logs/native-first-boot.log`. Reference screenshots (game
+  art — kept out of git) in `/home/ion/hp2-ufrontend/reference-shots/`. Fixed on the way: `UIceTexture` pad
+  `9cbb6ff`, `MeshRn::ProcessVert` exact-division segfault `2afdc93` (pointer difference across buffers).
+  RSS 168–204 MB on the heaviest maps (O10: no `-LAZY`). Phase C forks compile (XOpenGL `5b376cc`, UTGLR
+  `48b2681`; HP2 docs `90db56a`, `2e7c8be`) — first light pending. PLAN's `DrawWorld GetClass()` guard is
+  stale (the template dropped it). Next: W1 wasm link.

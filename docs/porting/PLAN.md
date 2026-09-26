@@ -267,11 +267,11 @@ Owner decisions (ask once, record the answer in §2):
 - **O5** gl4es ref: keep the template pin `fix/cubemap-bind-active-unit` (no HP2 change needed) or push/retag `hp2`?
 
 Verify on the first boots (do not decide in advance):
-- **O6** `Startup.MyLevel` vs `startup.MyLevel` in the log (drives every regex).
+- **O6** ~~`Startup.MyLevel` vs `startup.MyLevel`~~ — **answered: `startup.MyLevel`** (the level name follows the file, `Bringing Level startup.MyLevel up for play (0)...`; `docs/porting/logs/native-first-boot.log`).
 - **O7** `SetString("Core.System","paths",…)` replaces the **last** `Paths=` line? (read the written `Game.ini`).
 - **O8** With `GetGlobalTime`→0, do hub persistent-actor caches survive a web reload?
 - **O9** Retail D3D7 `PF_LumosAffected` quirk: blob shadows visible or not? (wine + retail `Game.exe`).
-- **O10** Resident heap on the heaviest maps; `-LAZY` needed?
+- **O10** ~~Resident heap~~ — **native answer: no `-LAZY`**: RSS 168 MB (menu), 185 MB `Ch6WizardCard`, 189 MB `Ch1Rictusempra`, 199 MB `Entryhall_hub`, 204 MB `Adv6Goyle` (SoftDrv, null audio). Re-measure the wasm heap in Phase D.
 - **O11** HUD scale at 21:9 (HP2 sizes from `Canvas.SizeX`).
 - **O12** Menu cursor double-move when NSDL emits both `MousePosition` and `IK_MouseX/Y` in absolute mode?
 - **O13** Stereo placement sign after the openal-soft coordinate conversion.
@@ -286,9 +286,9 @@ Verify on the first boots (do not decide in advance):
 - [x] CMake skeleton + template drivers copied + `tools/dev/merge3.sh`
 - [x] Analysis reports + critique complete and committed; readers' tools in `tools/dev/analysis/`
 - [x] P0 CMake list edits (UnTest, palette, UMasterCommandlet, UnCoreNative); web audio OFF until E; libxmp meta line dropped
-- [ ] A: Core (atomic header commit → UnUnix → Src files → UnMisc → UnObj/UnLinker) · Engine · Render+Fire · SoftDrv (template base) · Editor · syntax probe + varargs census · `compare.py` on all four `.u`
-- [ ] B: NullDrv · SoundDrv · NSDLDrv · launcher delta + native ini table · IpDrv · run tree · **boots to `startup.MyLevel` (SoftDrv, NullDrv), zero `[layout]`** · first-boot log committed · RSS measured · SoftDrv screenshots · UCC smoke
-- [ ] C: XOpenGLDrv hp2-v433-compat · UTGLR hp2 · native GL title map + `Ch1Rictusempra`
+- [x] A: Core (atomic header commit → UnUnix → Src files → UnMisc → UnObj/UnLinker) · Engine · Render+Fire · SoftDrv (template base) · Editor · syntax probe + varargs census · `compare.py` on all four `.u`
+- [x] B: NullDrv · SoundDrv · NSDLDrv · launcher delta + native ini table · IpDrv · run tree · **boots to `startup.MyLevel` (SoftDrv, NullDrv), zero `[layout]`** · first-boot log committed · RSS measured · SoftDrv screenshots · UCC smoke
+- [~] C: XOpenGLDrv hp2-v433-compat (compiles, `a5ec7d5..5b376cc`) · UTGLR hp2 (compiles, `6ad2b62..48b2681`) · native GL title map + `Ch1Rictusempra` (TODO: first light)
 - [ ] D: web inis · W1 link · W2 smoke · W3 loader sites · `targets/hp2` + manifests + tests + E2E · **web boot to the title map on XOpenGL** · map load · persistence
 - [ ] E: EA-XA decoder + oracle · NOpenALDrv from ALAudio · vorbis · web audio ON
 - [ ] F: Windows `Game.exe` under wine
