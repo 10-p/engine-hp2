@@ -716,12 +716,10 @@ int main( int argc, char* argv[] )
 	
 	INT ErrorLevel = 0;
 	GIsStarted	   = 1;
-	// Set module name: the BASENAME of argv[0], bounded (GModule is TCHAR[32]). An absolute or ./-prefixed
-	// argv[0] must still give "Game" -> Game.log / Game.ini / THIS_PACKAGE "Game" (Game.int).
-	{
-		const char* Base = strrchr( argv[0], '/' );
-		appStrncpy( GModule, Base ? Base+1 : argv[0], ARRAY_COUNT(GModule) );
-	}
+	// Set module name. HP2: always "Game" (PLAN §2) -> Game.log, THIS_PACKAGE "Game" (Game.int), whatever
+	// argv[0] is: an absolute path natively, and "./this.program" under Emscripten, which would otherwise
+	// give /System/this.program.log -- not the /System/Game.log the frontend tails.
+	appStrcpy( GModule, TEXT("Game") );
 
 	// Set the package name.
 	appStrcpy( THIS_PACKAGE, appPackage() );	
