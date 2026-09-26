@@ -341,8 +341,31 @@ int main( int argc, char** argv )
 {
 	if( argc < 2 )
 	{
-		fprintf( stderr, "usage: %s <Sounds-dir | package.uax>...   (AllDialog.uax runs the lip-sync oracle)\n", argv[0] );
+		fprintf( stderr, "usage: %s <Sounds-dir | package.uax>...   (AllDialog.uax runs the lip-sync oracle)\n"
+		                 "       %s --dump <package.uax> <SoundName> <out.s16>   (raw mono s16le PCM, for listening/comparing)\n", argv[0], argv[0] );
 		return 2;
+	}
+	if( strcmp( argv[1], "--dump" ) == 0 )
+	{
+		std::vector<uint8_t> Bytes;
+		std::vector<FSoundRec> Sounds;
+		int Version = 0, Unparsed = 0;
+		if( argc < 5 || !ReadFile( argv[2], Bytes ) || !ReadSounds( Bytes, Sounds, Version, Unparsed ) )
+			return 2;
+		for( size_t s = 0; s < Sounds.size(); s++ )
+			if( strcasecmp( Sounds[s].Name.c_str(), argv[3] ) == 0 && Sounds[s].FileType == "XA" )
+			{
+				const std::vector<int16_t> Pcm = DecodeChunked( Bytes, Sounds[s], 16384 );
+				FILE* F = fopen( argv[4], "wb" );
+				if( !F )
+					return 2;
+				fwrite( Pcm.data(), 2, Pcm.size(), F );
+				fclose( F );
+				printf( "%s: %d samples @ %d Hz -> %s\n", Sounds[s].Name.c_str(), (int)Pcm.size(), Sounds[s].SampleRate, argv[4] );
+				return 0;
+			}
+		fprintf( stderr, "no XA sound %s in %s\n", argv[3], argv[2] );
+		return 1;
 	}
 
 	// Expand directories to their *.uax (sorted, so the output is stable).

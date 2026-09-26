@@ -1,51 +1,85 @@
 project(NOpenALDrv C CXX)
 
-set(SRC_FILES "NOpenALDrv.cpp")
+# HP2 433 (PLAN Phase E): HP2's retail ALAudio ported to openal-soft on the template's pattern (see the header of
+# NOpenALDrv.cpp). SFX: OpenAL; EA-XA sounds through the in-tree EAXADecoder.cpp; music: Ogg Vorbis files opened
+# by path through libvorbisfile. No libxmp (HP2 has no .umx), no coda, no MpegLib.
+set(SRC_FILES
+  "NOpenALDrv.cpp"
+  "EAXADecoder.cpp"
+)
 
-# ufront 2.12 (web + native audio): SFX via OpenAL — openal-soft everywhere since 2.61 (on the web built by
-# cmake/OpenALSoft.cmake, full EFX/reverb/HRTF like native; before that Emscripten's built-in OpenAL 1.1
-# core with EFX/HRTF compiled out). libxmp (the tracker decoder for Unreal's .umx music)
-# is not reliably shipped by either toolchain, so fetch + build it as a static lib on BOTH targets — it is
-# portable C and cross-compiles cleanly under emcc and gcc. Depackers/ProWizard are disabled (Unreal music
-# is raw modules; depackers pull archive deps + bloat). NOTE: libxmp's BUILD_STATIC option collides by name
-# with the engine's own BUILD_STATIC ("single binary"); under libxmp's capped policy (CMP0077 OLD) its
-# option() would reset the inherited value and disable its static build (-> its "both disabled" FATAL_ERROR),
-# so we force the cache var for its configure and restore the engine's afterward (see the save/restore
-# around BUILD_STATIC below). Ported from engine-unreal1's NOpenALDrv (which carries the same latent
-# collision) + extended to the native branch below.
+# ---------------------------------------------------------------------------------------------------------------
+# libogg + libvorbis(file): FetchContent'd static libraries on every target, the upstream release tags (§11.2
+# A5 / M5-3; cmake/ArtifactDeps.cmake records them in meta.json). Built WITHOUT the engine's -fpack-struct=4:
+# OggVorbis_File has ogg_int64_t/double members, 8-aligned on wasm32, and libvorbisfile must lay it out the way
+# the C ABI says. The driver includes the headers under #pragma pack(push,8) and Init() compares sizeof() with
+# VorbisLayout.c below, compiled the library's way.
+# ---------------------------------------------------------------------------------------------------------------
 include(FetchContent)
-set(LIBXMP_SOURCE_DIR "" CACHE PATH "Local libxmp checkout. Empty => fetch from git.")
-set(LIBXMP_GIT_REPOSITORY "https://github.com/libxmp/libxmp.git" CACHE STRING "Upstream libxmp git repo")
-set(LIBXMP_GIT_TAG "libxmp-4.7.1" CACHE STRING "libxmp git tag/commit to fetch (pin for reproducibility)")
-if(LIBXMP_SOURCE_DIR)
-  message(STATUS "libxmp: using local source ${LIBXMP_SOURCE_DIR}")
-  FetchContent_Declare(libxmp SOURCE_DIR "${LIBXMP_SOURCE_DIR}")
-else()
-  message(STATUS "libxmp: fetching ${LIBXMP_GIT_REPOSITORY}@${LIBXMP_GIT_TAG}")
-  FetchContent_Declare(libxmp GIT_REPOSITORY "${LIBXMP_GIT_REPOSITORY}" GIT_TAG "${LIBXMP_GIT_TAG}" GIT_SHALLOW TRUE)
-endif()
-# libxmp's BUILD_STATIC (its own option) collides with the engine's BUILD_STATIC. Save the engine's
-# cached value, force ON for libxmp's configure, and RESTORE it after MakeAvailable (below) — otherwise
-# the FORCE persists and poisons the engine on the next *reconfigure* of this build dir: the top-level
-# read (LIB_TYPE) flips to STATIC and the NOpenGLES/XOpenGL glad-clash guard fires. libxmp runs under
-# CMP0077 OLD, so the value must be in the cache before its option() (a normal variable won't take).
-set(_UFRONT_SAVED_BUILD_STATIC "$CACHE{BUILD_STATIC}")
-set(BUILD_STATIC ON  CACHE BOOL "" FORCE)   # libxmp static lib (restored after MakeAvailable)
-set(BUILD_SHARED OFF CACHE BOOL "" FORCE)
-set(BUILD_LITE   OFF CACHE BOOL "" FORCE)
-set(LIBXMP_DISABLE_DEPACKERS ON CACHE BOOL "" FORCE)
-set(LIBXMP_DISABLE_PROWIZARD ON CACHE BOOL "" FORCE)
-set(WITH_UNIT_TESTS OFF CACHE BOOL "" FORCE)
-set(CMAKE_POLICY_VERSION_MINIMUM 3.10)  # libxmp's old cmake_minimum_required vs CMake 4.x
-FetchContent_MakeAvailable(libxmp)
+set(HP2_OGG_GIT_REPOSITORY    "https://github.com/xiph/ogg.git"    CACHE STRING "libogg git repo")
+set(HP2_OGG_GIT_TAG           "v1.3.5"                             CACHE STRING "libogg release tag")
+set(HP2_VORBIS_GIT_REPOSITORY "https://github.com/xiph/vorbis.git" CACHE STRING "libvorbis git repo")
+set(HP2_VORBIS_GIT_TAG        "v1.3.7"                             CACHE STRING "libvorbis release tag")
+FetchContent_Declare(ogg    GIT_REPOSITORY "${HP2_OGG_GIT_REPOSITORY}"    GIT_TAG "${HP2_OGG_GIT_TAG}"    GIT_SHALLOW TRUE)
+FetchContent_Declare(vorbis GIT_REPOSITORY "${HP2_VORBIS_GIT_REPOSITORY}" GIT_TAG "${HP2_VORBIS_GIT_TAG}" GIT_SHALLOW TRUE)
+# Their options, as cache entries (both projects predate CMP0077, so a normal variable would be ignored). None of
+# these names is one the engine uses.
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
+set(BUILD_FRAMEWORK OFF CACHE BOOL "" FORCE)
+set(INSTALL_DOCS OFF CACHE BOOL "" FORCE)
+set(INSTALL_PKG_CONFIG_MODULE OFF CACHE BOOL "" FORCE)
+set(INSTALL_CMAKE_PACKAGE_MODULE OFF CACHE BOOL "" FORCE)
+set(CMAKE_POLICY_VERSION_MINIMUM 3.10)   # their old cmake_minimum_required vs CMake 4.x
+FetchContent_MakeAvailable(ogg)
+# libvorbis looks for Ogg with its FindOgg module; point it at the tree just configured (the Ogg::ogg ALIAS target
+# ogg defines is what actually gets linked).
+set(OGG_INCLUDE_DIR "${ogg_SOURCE_DIR}/include" CACHE PATH "" FORCE)
+set(OGG_LIBRARY ogg CACHE STRING "" FORCE)
+FetchContent_MakeAvailable(vorbis)
 unset(CMAKE_POLICY_VERSION_MINIMUM)
-# Restore the engine's BUILD_STATIC so a reconfigure of this build dir isn't poisoned by libxmp's FORCE.
-set(BUILD_STATIC "${_UFRONT_SAVED_BUILD_STATIC}" CACHE BOOL "Link everything into a single binary" FORCE)
-if(NOT TARGET xmp_static)
-  message(FATAL_ERROR "libxmp: expected static target 'xmp_static' was not created.")
-endif()
-set(LIBXMP_LIBRARY xmp_static)
+foreach(_lib ogg vorbis vorbisfile)
+  if(NOT TARGET ${_lib})
+    message(FATAL_ERROR "NOpenALDrv: expected target '${_lib}' from xiph ogg/vorbis was not created")
+  endif()
+endforeach()
 
+# The layout probe: libvorbisfile's own sizeof(OggVorbis_File).
+add_library(NOpenALDrvVorbisLayout STATIC VorbisLayout.c)
+target_link_libraries(NOpenALDrvVorbisLayout PRIVATE vorbisfile)
+
+# Strip the engine's directory-level packing (and its companion warning switch) from every target of both trees,
+# subdirectories included (the walk cmake/OpenALSoft.cmake does for openal-soft), and from the probe.
+function(hp2_strip_engine_packing)
+  foreach(_t ${ARGN})
+    get_target_property(_type ${_t} TYPE)
+    if(_type STREQUAL "INTERFACE_LIBRARY" OR _type STREQUAL "UTILITY")
+      continue()
+    endif()
+    get_target_property(_opts ${_t} COMPILE_OPTIONS)
+    if(_opts)
+      list(REMOVE_ITEM _opts -fpack-struct=4 -Wno-address-of-packed-member)
+      set_target_properties(${_t} PROPERTIES COMPILE_OPTIONS "${_opts}")
+    endif()
+    # Static archives that may end up in a shared NOpenALDrv (a non-BUILD_STATIC native tree).
+    set_target_properties(${_t} PROPERTIES POSITION_INDEPENDENT_CODE ON)
+  endforeach()
+endfunction()
+set(_xiph_dirs "${ogg_SOURCE_DIR}" "${vorbis_SOURCE_DIR}")
+set(_xiph_targets NOpenALDrvVorbisLayout)
+while(_xiph_dirs)
+  list(POP_FRONT _xiph_dirs _dir)
+  get_property(_subdirs DIRECTORY "${_dir}" PROPERTY SUBDIRECTORIES)
+  list(APPEND _xiph_dirs ${_subdirs})
+  get_property(_dir_targets DIRECTORY "${_dir}" PROPERTY BUILDSYSTEM_TARGETS)
+  list(APPEND _xiph_targets ${_dir_targets})
+endwhile()
+hp2_strip_engine_packing(${_xiph_targets})
+message(STATUS "NOpenALDrv: xiph ogg ${HP2_OGG_GIT_TAG} + vorbis ${HP2_VORBIS_GIT_TAG} (static, natural packing)")
+
+# ---------------------------------------------------------------------------------------------------------------
+# OpenAL (template, unchanged).
+# ---------------------------------------------------------------------------------------------------------------
 if(EMSCRIPTEN)
   # ufront 2.61: openal-soft, built by the parent (cmake/OpenALSoft.cmake WEB) — was Emscripten's built-in
   # -lopenal. Linking the target also gives this driver openal-soft's <AL/alext.h>/<AL/efx.h>.
@@ -56,14 +90,14 @@ elseif(TARGET OpenAL)
   set(OPENAL_LIBRARY OpenAL)
 elseif(MINGW AND CMAKE_CROSSCOMPILING)
   # ufront 2.34 — cross-building for Windows: no system OpenAL, so fetch OpenAL Soft's official prebuilt
-  # Windows binaries (same pattern as SDL2Mingw). Real audio on Windows, because a silent build is not a
-  # usable default; see cmake/OpenALMingw.cmake for why this one library is loaded rather than linked.
+  # Windows binaries (same pattern as SDL2Mingw). See cmake/OpenALMingw.cmake for why this one library is
+  # loaded rather than linked.
   include(OpenALMingw)
 else()
-  # Native (Linux): system OpenAL (openal-soft) provides the full feature set (EFX/reverb/HRTF).
+  # Native (Linux) without HP2_BUNDLED_OPENAL: the system OpenAL (openal-soft).
   find_package(OpenAL)
   if(NOT OPENAL_LIBRARY)
-    set(OPENAL_LIBRARY "-lopenal")   # fall back to a plain link if find_package didn't populate it
+    set(OPENAL_LIBRARY "-lopenal")
   endif()
 endif()
 
@@ -71,10 +105,9 @@ add_library(${PROJECT_NAME} ${LIB_TYPE} ${SRC_FILES})
 
 target_include_directories(${PROJECT_NAME}
   PUBLIC
-  ${CMAKE_CURRENT_SOURCE_DIR}/Inc
+  ${CMAKE_CURRENT_SOURCE_DIR}
   PRIVATE
   ${OPENAL_INCLUDE_DIR}
-  ${LIBXMP_INCLUDE_DIR}
 )
 
 if(MSVC)
@@ -82,8 +115,17 @@ if(MSVC)
   target_link_options(${PROJECT_NAME} PRIVATE "/SAFESEH:NO")
 endif()
 
-target_link_libraries(${PROJECT_NAME} ${OPENAL_LIBRARY} ${LIBXMP_LIBRARY})
+target_link_libraries(${PROJECT_NAME} ${OPENAL_LIBRARY} vorbisfile vorbis ogg NOpenALDrvVorbisLayout)
 
 target_link_libraries(${PROJECT_NAME} Engine Render Core)
 
 target_compile_definitions(${PROJECT_NAME} PRIVATE NOPENALDRV_EXPORTS UPACKAGE_NAME=${PROJECT_NAME})
+
+# ---------------------------------------------------------------------------------------------------------------
+# The EA-XA decoder's acceptance test (Test/EAXAOracle.cpp, template-drivers.md §11.4). NOT built by default and
+# never run by the build; native only (it reads the retail Assets/Sounds, read-only):
+#   cmake --build <native-tree> --target eaxa_oracle && <native-tree>/NOpenALDrv/eaxa_oracle Assets/Sounds
+# ---------------------------------------------------------------------------------------------------------------
+if(NOT EMSCRIPTEN AND NOT CMAKE_CROSSCOMPILING)
+  add_executable(eaxa_oracle EXCLUDE_FROM_ALL Test/EAXAOracle.cpp EAXADecoder.cpp)
+endif()

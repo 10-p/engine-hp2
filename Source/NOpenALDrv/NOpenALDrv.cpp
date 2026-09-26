@@ -1,32 +1,51 @@
-#include <stdlib.h>
+/*=============================================================================
+	NOpenALDrv.cpp: HP2's OpenAL audio subsystem (NOpenALDrv.NOpenALAudioSubsystem).
 
-// ufront 2.61: every platform plays through openal-soft now — the web too (cmake/OpenALSoftWeb.cmake: mixed on
-// a pthread, played by an AudioWorklet), where 2.12 had Emscripten's built-in OpenAL 1.1 core and so compiled
-// out EFX reverb, HRTF and AL_METERS_PER_UNIT under NOPENAL_WEB. That guard is gone: one code path, the full
-// feature set on every target. Music is still pumped from Update() everywhere (no decoder thread, 2.12).
+	HP2 433 port, PLAN Phase E. This is Source/ALAudio/Src/ALAudioSubsystem.cpp (the retail driver, by Daniel
+	Vogel + TG's HP2 changes) ported per docs/porting/analysis/template-drivers.md §11.3 onto the template's
+	NOpenALDrv pattern (engine-ut99):
+
+	  ALAudio                                          here
+	  OpenAL 1.0 SDK, alcOpenDevice("DirectSound3D")    openal-soft (cmake/OpenALSoft.cmake), alcOpenDevice(NULL),
+	                                                    the template's ALC attribute list (OutputRate, HRTF)
+	  EAX (compiled out in retail)                      EFX resolved at run time (template), UseReverb default off
+	  GFileStream + a 1 ms Win32 thread + coda          a driver-owned stream table, decoded synchronously from
+	                                                    Update() (no thread: WasmFS only answers the main thread)
+	  CEAXABLKDec (closed)                              FEAXADecoder (EAXADecoder.cpp, tested by Test/EAXAOracle)
+	  vorbisfile on fopen("..\\music\\x.ogg")           vorbisfile over GFileManager (case + '\' folding),
+	                                                    ../Music/<Song>.ogg then ../Music/<Song>
+	  listener axes tuned for Creative's DS3D           the template's right-handed conversion (Z negated)
+
+	What stays ALAudio's: voice allocation and priorities (SLOT_Talk boost, FindLeastImportantSound), the
+	occlusion/radius smoothing, fades (FADE_In/FADE_Out), ModifySound, flag-driven stops, ambient sounds, the
+	PlayMusic/StopMusic handle contract (index+1, 0 = failure), the USound per-Id stream bookkeeping
+	(AddStreamHandle/BindStream/GetHandle), FLipSyncAnimMgr, the Exec commands, DISTANCE_FACTOR and
+	AL_INVERSE_DISTANCE_CLAMPED with reference distance = radius.
+
+	Fixed on the way (§11.2 A2/A7/A14): volumes apply live; every processed stream buffer is refilled per
+	Update and an underrun restarts the source (music included); USound::Data of an XA sound is unloaded once
+	its last stream ends; delete[] for arrays; FLipSyncAnimMgr's channel pointer initialised and dropped when
+	its actor is destroyed; PLAYINGSOUNDSTATS stays inside Sources.
+=============================================================================*/
+
+#include <stdlib.h>
 
 #include "AL/al.h"
 #include "AL/alc.h"
 #include "AL/alext.h"
-// ufront 2.76: EFX IS RESOLVED AT RUN TIME AND NEVER LINKED. `AL_ALEXT_PROTOTYPES` used to be defined here,
-// which turns every EFX call into an ordinary linked symbol — seven of them (alGenEffects, alEffecti/f/fv,
-// alGenAuxiliaryEffectSlots, alDeleteAuxiliaryEffectSlots, alAuxiliaryEffectSloti). Against an OpenAL that
-// has no EFX that is a LINK error, not a fallback, and this driver is meant to run on whatever OpenAL a
-// platform has (the FunKey and other native builds). The pointers live in `Efx` below.
+// EFX IS RESOLVED AT RUN TIME AND NEVER LINKED (template, ufront 2.76): the pointers live in `Efx` below, so a
+// core OpenAL 1.1 without EFX still links and plays everything but reverb.
 #if defined(__has_include)
 #  if __has_include("AL/efx.h")
 #    define NOPENAL_HAVE_EFX_HEADERS 1
 #  endif
 #else
-#  define NOPENAL_HAVE_EFX_HEADERS 1   // a compiler with no __has_include: assume the usual SDK layout
+#  define NOPENAL_HAVE_EFX_HEADERS 1
 #endif
 #if NOPENAL_HAVE_EFX_HEADERS
 #include "AL/efx.h"
 #include "AL/efx-presets.h"
 #else
-// A core-only SDK (no <AL/efx.h>): spell out the handful of types and enums this driver uses, so it still
-// COMPILES. The EAX reverb preset table is efx-presets.h's and is not reproduced — without those headers the
-// EAX path compiles out and there is no reverb.
 #define NOPENAL_NO_EAX 1
 typedef void (AL_APIENTRY *LPALGENEFFECTS)( ALsizei, ALuint* );
 typedef void (AL_APIENTRY *LPALDELETEEFFECTS)( ALsizei, const ALuint* );
@@ -39,11 +58,14 @@ typedef void (AL_APIENTRY *LPALAUXILIARYEFFECTSLOTI)( ALuint, ALenum, ALint );
 #define AL_EFFECT_TYPE                           0x8001
 #define AL_EFFECT_NULL                           0x0000
 #define AL_EFFECTSLOT_EFFECT                     0x0001
+#define AL_EFFECTSLOT_NULL                       0x0000
 #define AL_FILTER_NULL                           0x0000
 #define AL_AUXILIARY_SEND_FILTER                 0x20006
-#define AL_METERS_PER_UNIT                       0x20004
 #endif
-// openal-soft's output-mode extension (1.23+); spelled out for older alext.h headers a native build may find.
+// openal-soft's output-mode / HRTF extensions, spelled out for older alext.h headers (template).
+#ifndef ALC_HRTF_SOFT
+#define ALC_HRTF_SOFT 0x1992
+#endif
 #ifndef ALC_OUTPUT_MODE_SOFT
 #define ALC_OUTPUT_MODE_SOFT 0x19AC
 #endif
@@ -53,24 +75,40 @@ typedef void (AL_APIENTRY *LPALAUXILIARYEFFECTSLOTI)( ALuint, ALenum, ALint );
 #ifndef ALC_STEREO_HRTF_SOFT
 #define ALC_STEREO_HRTF_SOFT 0x19B2
 #endif
-#include "xmp.h"
 
-#include "NOpenALDrvPrivate.h"
+#include "Engine.h"
 #include "UnRender.h"
 
+// libvorbisfile, built WITHOUT the engine's -fpack-struct=4 (NOpenALDrv/CMakeLists.txt), so its structs must
+// be seen here at natural alignment: OggVorbis_File has ogg_int64_t/double members, 8-aligned on wasm32 (the
+// retail driver guarded the same include the same way, ALAudioSubsystem.cpp:15-22). Init() cross-checks the
+// size with the library's own (VorbisLayout.c).
+#if SUPPORTS_PRAGMA_PACK
+#pragma pack (push,8)
+#endif
+#include "vorbis/codec.h"
+#include "vorbis/vorbisfile.h"
+#if SUPPORTS_PRAGMA_PACK
+#pragma pack (pop)
+#endif
+
+#include "NOpenALDrvPrivate.h"
+
+extern "C" int NOpenALDrv_VorbisFileSize( void );
+
 /*-----------------------------------------------------------------------------
-	Global implementation.
+	Package / class.
 -----------------------------------------------------------------------------*/
 
 IMPLEMENT_PACKAGE(NOpenALDrv);
 IMPLEMENT_CLASS(UNOpenALAudioSubsystem);
 
-// ufront 2.76 — EFX's entry points, resolved once in Init and NEVER referenced at link time (see the include
-// block above). `Present` is the whole test the rest of the driver makes: the device advertises ALC_EXT_EFX
-// AND every pointer resolved. A library that has neither (a core OpenAL 1.1) plays everything except reverb.
-//
-// File-static on purpose: it is per-process state, and the audio subsystem is a NATIVE UE1 class whose layout
-// script depends on — this adds no member to it.
+/*-----------------------------------------------------------------------------
+	EFX entry points (template, verbatim in behaviour).
+-----------------------------------------------------------------------------*/
+
+enum { NAL_REVERB_EAX=0, NAL_REVERB_NONE=1 };
+
 static struct FNOpenALEfx
 {
 	LPALGENEFFECTS                 GenEffects;
@@ -104,991 +142,1689 @@ static UBOOL ResolveEfx( ALCdevice* InDevice )
 	return Efx.Present;
 }
 
-
 /*-----------------------------------------------------------------------------
-	UNOpenALAudioSubsystem implementation.
+	Helpers.
 -----------------------------------------------------------------------------*/
 
-void UNOpenALAudioSubsystem::StaticConstructor()
+// Unreal space (left-handed, Z up, units) -> OpenAL space (right-handed, meters): negate Z (template §A8).
+static inline FVector ToALSpace( const FVector& V )
 {
-	guardSlow(UNOpenALAudioSubsystem::StaticConstructor);
-	// Register the config properties here. v400 calls StaticConstructor at class registration (wired by the
-	// DECLARE_CLASS macro, Core/Inc/UnObjBas.h) — the v200-style InternalClassInitializer hook this driver
-	// previously used is NEVER invoked by v400, so MusicVolume/SoundVolume/... were left UNREGISTERED. That
-	// made LoadConfig() read nothing (audio ran on the C++ ctor defaults) AND made the UWindow audio menu's
-	// `get/set ini:Engine.Engine.AudioDevice MusicVolume` find no property -> the sliders showed/forced 0.
-	// Mirrors URenderDevice::StaticConstructor (UnCamera.cpp). DeviceName stays unregistered (no UStrProperty
-	// for a fixed char[]); it stays "" -> the default AL device (alcOpenDevice(NULL)), which is correct.
-	new(GetClass(), TEXT("OutputRate"),         RF_Public)UIntProperty   ( CPP_PROPERTY( OutputRate         ), TEXT("Audio"), CPF_Config );
-	new(GetClass(), TEXT("MusicVolume"),        RF_Public)UByteProperty  ( CPP_PROPERTY( MusicVolume        ), TEXT("Audio"), CPF_Config );
-	new(GetClass(), TEXT("SoundVolume"),        RF_Public)UByteProperty  ( CPP_PROPERTY( SoundVolume        ), TEXT("Audio"), CPF_Config );
-	new(GetClass(), TEXT("MasterVolume"),       RF_Public)UByteProperty  ( CPP_PROPERTY( MasterVolume       ), TEXT("Audio"), CPF_Config );
-	new(GetClass(), TEXT("AmbientFactor"),      RF_Public)UFloatProperty ( CPP_PROPERTY( AmbientFactor      ), TEXT("Audio"), CPF_Config );
-	new(GetClass(), TEXT("DopplerFactor"),      RF_Public)UFloatProperty ( CPP_PROPERTY( DopplerFactor      ), TEXT("Audio"), CPF_Config );
-	new(GetClass(), TEXT("UseReverb"),          RF_Public)UBoolProperty  ( CPP_PROPERTY( UseReverb          ), TEXT("Audio"), CPF_Config );
-	new(GetClass(), TEXT("UseHRTF"),            RF_Public)UBoolProperty  ( CPP_PROPERTY( UseHRTF            ), TEXT("Audio"), CPF_Config );
-	new(GetClass(), TEXT("MusicInterpolation"), RF_Public)UByteProperty  ( CPP_PROPERTY( MusicInterpolation ), TEXT("Audio"), CPF_Config );
-	unguardSlow;
+	return FVector( V.X * DISTANCE_FACTOR, V.Y * DISTANCE_FACTOR, -V.Z * DISTANCE_FACTOR );
 }
+
+// vorbisfile I/O over an FArchive from GFileManager, so the music path goes through the engine's file manager
+// (FFileManagerLinux folds '\' and resolves case per component) instead of a raw fopen.
+static size_t NalOggRead( void* Ptr, size_t Size, size_t Count, void* Source )
+{
+	FArchive* Ar = (FArchive*)Source;
+	if( !Size )
+		return 0;
+	INT Avail = Ar->TotalSize() - Ar->Tell();
+	INT Want  = (INT)( Size * Count );
+	if( Want > Avail )
+		Want = Avail - Avail % (INT)Size;
+	if( Want <= 0 )
+		return 0;
+	Ar->Serialize( Ptr, Want );
+	return Ar->IsError() ? 0 : (size_t)Want / Size;
+}
+static int NalOggSeek( void* Source, ogg_int64_t Offset, int Whence )
+{
+	FArchive* Ar = (FArchive*)Source;
+	ogg_int64_t Pos = Whence == SEEK_SET ? Offset : Whence == SEEK_CUR ? Ar->Tell() + Offset : Ar->TotalSize() + Offset;
+	if( Pos < 0 || Pos > Ar->TotalSize() )
+		return -1;
+	Ar->Seek( (INT)Pos );
+	return Ar->IsError() ? -1 : 0;
+}
+static int NalOggClose( void* Source )
+{
+	delete (FArchive*)Source;
+	return 0;
+}
+static long NalOggTell( void* Source )
+{
+	return ((FArchive*)Source)->Tell();
+}
+
+/*------------------------------------------------------------------------------------
+	UNOpenALAudioSubsystem.
+------------------------------------------------------------------------------------*/
 
 UNOpenALAudioSubsystem::UNOpenALAudioSubsystem()
 {
-	OutputRate = DEFAULT_OUTPUT_RATE;
-	MasterVolume = 255;
-	SoundVolume = 127;
-	MusicVolume = 63;
-	AmbientFactor = 0.6f;
-	DopplerFactor = 0.01f;
-	UseHRTF = false;	// ufront 2.61: the player's choice (see Init)
-	UseReverb = true;
-	ReverbKind = REVERB_EAX;
-	MusicInterpolation = XMP_INTERP_LINEAR;
+	guard(UNOpenALAudioSubsystem::UNOpenALAudioSubsystem);
+	// ALAudio's retail values (Config/System/Default.ini [ALAudio.ALAudioSubsystem]) + the template's. The C++
+	// constructor runs after the class defaults are copied in, so these are what an instance starts with;
+	// Init() then LoadConfig()s the ini on top.
+	DopplerFactor	= 1.f;
+	MusicVolume		= 0.5f;
+	SoundVolume		= 0.9f;
+	RollOff			= 1.f;
+	MaxChannels		= 32;
+	OutputRate		= DEFAULT_OUTPUT_RATE;
+	StreamBuffers	= DEFAULT_STREAM_BUFFERS;
+	StreamChunkSize	= DEFAULT_STREAM_CHUNKSIZE;
+	ReverseStereo	= 0;
+	UsePrecache		= 0;
+	Use3dHardware	= 0;
+	UseHRTF			= 0;
+	UseReverb		= 0;
+
+	Viewport		= NULL;
+	LastTime		= appSeconds();
+	LastPosition	= FVector(0,0,0);
+	Initialized		= 0;
+	LastRealtime	= 0;
+	LastPaused		= 0;
+	RestartSounds	= 0;
+	OggUsable		= 0;
+	SoundDevice		= NULL;
+	SoundContext	= NULL;
+	ReverbKind		= NAL_REVERB_NONE;
+	ReverbEffect	= 0;
+	ReverbSlot		= 0;
+	ReverbOn		= 0;
+	ReverbZone		= NULL;
+	StatXaStreams = StatOggStreams = StatWavBuffers = StatLipSync = StatUnderruns = 0;
+	appMemzero( &RegionListener, sizeof(RegionListener) );
+	unguard;
 }
 
-UBOOL UNOpenALAudioSubsystem::Init()
+void UNOpenALAudioSubsystem::StaticConstructor()
 {
-	guard(UNOpenALAudioSubsystem::Init)
+	guard(UNOpenALAudioSubsystem::StaticConstructor);
+	// ALAudio's names (the HGame options page reads/writes them through ini:Engine.Engine.AudioDevice), minus
+	// UseEAX/CompatibilityMode (Win32 device switches). Use3dHardware: HGame's Harry.uc asks for it.
+	new(GetClass(),TEXT("UsePrecache"),		RF_Public)UBoolProperty  (CPP_PROPERTY(UsePrecache     ), TEXT("Audio"), CPF_Config );
+	new(GetClass(),TEXT("ReverseStereo"),	RF_Public)UBoolProperty  (CPP_PROPERTY(ReverseStereo   ), TEXT("Audio"), CPF_Config );
+	new(GetClass(),TEXT("Channels"),		RF_Public)UIntProperty   (CPP_PROPERTY(MaxChannels     ), TEXT("Audio"), CPF_Config );
+	new(GetClass(),TEXT("MusicVolume"),		RF_Public)UFloatProperty (CPP_PROPERTY(MusicVolume     ), TEXT("Audio"), CPF_Config );
+	new(GetClass(),TEXT("SoundVolume"),		RF_Public)UFloatProperty (CPP_PROPERTY(SoundVolume     ), TEXT("Audio"), CPF_Config );
+	new(GetClass(),TEXT("DopplerFactor"),	RF_Public)UFloatProperty (CPP_PROPERTY(DopplerFactor   ), TEXT("Audio"), CPF_Config );
+	new(GetClass(),TEXT("RollOff"),			RF_Public)UFloatProperty (CPP_PROPERTY(RollOff         ), TEXT("Audio"), CPF_Config );
+	new(GetClass(),TEXT("Use3dHardware"),	RF_Public)UBoolProperty  (CPP_PROPERTY(Use3dHardware   ), TEXT("Audio"), CPF_Config );
+	// The template's: the frontend's HRTF toggle writes -ini:System:[NOpenALDrv.NOpenALAudioSubsystem]:UseHRTF=.
+	new(GetClass(),TEXT("OutputRate"),		RF_Public)UIntProperty   (CPP_PROPERTY(OutputRate      ), TEXT("Audio"), CPF_Config );
+	new(GetClass(),TEXT("UseHRTF"),			RF_Public)UBoolProperty  (CPP_PROPERTY(UseHRTF         ), TEXT("Audio"), CPF_Config );
+	new(GetClass(),TEXT("UseReverb"),		RF_Public)UBoolProperty  (CPP_PROPERTY(UseReverb       ), TEXT("Audio"), CPF_Config );
+	// Stream tuning (§11.3; not in the shipped ini -- the defaults are the constructor's).
+	new(GetClass(),TEXT("StreamBuffers"),	RF_Public)UIntProperty   (CPP_PROPERTY(StreamBuffers   ), TEXT("Audio"), CPF_Config );
+	new(GetClass(),TEXT("StreamChunkSize"),	RF_Public)UIntProperty   (CPP_PROPERTY(StreamChunkSize ), TEXT("Audio"), CPF_Config );
+	unguard;
+}
 
-	// Apply the [NOpenALDrv.NOpenALAudioSubsystem] ini config (MasterVolume/SoundVolume/MusicVolume/...) onto
-	// this live instance. The engine constructs us with ConstructObject + Init() and never LoadConfigs us:
-	// the ClassConstructor runs AFTER InitProperties (so the C++ ctor defaults clobber the memcpy'd class
-	// defaults), and the web static build's StaticConstructObject only repairs *wiped* native config objects
-	// (Class==NULL) — we have a real ctor so we're skipped. Without this the volume-menu sliders (which
-	// read/write `get/set ini:Engine.Engine.AudioDevice MusicVolume`) diverged from the audio the driver
-	// actually played. LoadConfig only touches our CPF_Config properties; it's idempotent + safe. (2.12)
-	LoadConfig();
+/*------------------------------------------------------------------------------------
+	UObject Interface.
+------------------------------------------------------------------------------------*/
 
-	Viewport = NULL;
-	Device = NULL;
-	if( DeviceName[0] )
-		Device = alcOpenDevice( DeviceName );
-	if( !Device )
-		Device = alcOpenDevice( NULL );
-	if( !Device )
-	{
-		debugf( NAME_Warning, "Could not open AL device: %04x", alcGetError( NULL ) );
-		return false;
-	}
+void UNOpenALAudioSubsystem::PostEditChange()
+{
+	guard(UNOpenALAudioSubsystem::PostEditChange);
 
-	if( OutputRate <= 0 )
-		OutputRate = DEFAULT_OUTPUT_RATE;
-	
-	if( DopplerFactor < 0.f )
-		DopplerFactor = 0.f;
+	// Validate configurable variables.
+	SoundVolume = Clamp(SoundVolume,0.f,1.f);
+	MusicVolume = Clamp(MusicVolume,0.f,1.f);
 
-	AmbientFactor = Clamp( AmbientFactor, 0.f, 1.f );
-
-	if( MusicInterpolation > XMP_INTERP_SPLINE )
-		MusicInterpolation = XMP_INTERP_SPLINE;
-
-	// ufront 2.61 -- HRTF. This passed ALC_SOFT_HRTF, the extension's PRESENCE macro (value 1), as the attribute
-	// KEY where ALC_HRTF_SOFT (0x1992) belongs, so openal-soft ignored it and UseHRTF never did anything on any
-	// platform. And HRTF is a STEREO rendering: asked for alone, a 5.1/7.1 device renders surround and reports
-	// ALC_HRTF_UNSUPPORTED_FORMAT_SOFT (Firefox reports a 5.1 device's six channels to the page, measured in
-	// ufront 2.61 §3.1). So UseHRTF also asks for the stereo-HRTF output mode, and is off by default: it is the
-	// player's choice (the launcher's "Headphone audio"), because no browser can tell headphones from speakers.
-	const ALint AttrList[] = {
-		ALC_FREQUENCY, OutputRate,
-		ALC_HRTF_SOFT, UseHRTF ? ALC_TRUE : ALC_FALSE,
-		ALC_OUTPUT_MODE_SOFT, UseHRTF ? ALC_STEREO_HRTF_SOFT : ALC_ANY_SOFT,
-		0
-	};
-
-	Ctx = alcCreateContext( Device, AttrList );
-	if( !Ctx )
-	{
-		debugf( NAME_Warning, "Could not create AL context: %04x", alcGetError( Device ) );
-		alcCloseDevice( Device );
-		Device = NULL;
-		return false;
-	}
-
-	alcMakeContextCurrent( Ctx );
-
-	// ufront 2.76: two tiers, decided here (context current, so the line below can report it) by what the LINKED
-	// library offers: EFX -> EFX's EAX reverb (the 2.61 path); no EFX at all -> everything except reverb plays.
-	ResolveEfx( Device );
-	ReverbKind = REVERB_EAX;
-	if( UseReverb && !Efx.Present )
-	{
-		ReverbKind = REVERB_NONE;
-		debugf( TEXT("NOpenALDrv: this OpenAL has no EFX (ALC_EXT_EFX) - reverb is off; everything else plays") );
-	}
-#if NOPENAL_NO_EAX
-	if( ReverbKind == REVERB_EAX && UseReverb )
-	{
-		ReverbKind = REVERB_NONE;
-		debugf( TEXT("NOpenALDrv: built without the EFX headers - reverb is off") );
-	}
-#endif
-
-	{
-		// Read back what the library did: a request is not a result.
-		ALCint HRTFActive = 0;
-		alcGetIntegerv( Device, ALC_HRTF_SOFT, 1, &HRTFActive );
-		debugf( TEXT("NOpenALDrv: HRTF %s (UseHRTF=%s), reverb %s"), HRTFActive ? TEXT("ACTIVE") : TEXT("inactive"),
-			UseHRTF ? TEXT("True") : TEXT("False"),
-			!UseReverb ? TEXT("off (UseReverb=False)") : ReverbKind == REVERB_NONE ? TEXT("off (no EFX in this OpenAL)") : TEXT("on (EAX)") );
-	}
-
-	alDistanceModel( AL_LINEAR_DISTANCE_CLAMPED );
-	alDopplerFactor( Max( 0.f, DopplerFactor ) );
-	if( Efx.Present )
-		alListenerf( AL_METERS_PER_UNIT, DISTANCE_SCALE );   // an EFX listener property: AL_INVALID_ENUM without it
-	alListenerf( AL_GAIN, MasterVolume / 255.f );
-
-	alGenSources( MAX_SOURCES, Sources );
-
-	alGenSources( 1, &MusicSource	);
-	alSourcei( MusicSource, AL_SOURCE_RELATIVE, AL_TRUE );
-	alSource3f( MusicSource, AL_POSITION, 0.f, 0.f, 0.f );
-	alSourcef( MusicSource, AL_ROLLOFF_FACTOR, 0.f );
-	alSourcef( MusicSource, AL_GAIN, MusicVolume / 255.f );
-
-	alGenBuffers( ARRAY_COUNT( MusicBuffers ), MusicBuffers );
-	for( INT i = 0; i < ARRAY_COUNT( MusicBuffers ); ++i )
-	{
-		alBufferData( MusicBuffers[i], AL_FORMAT_STEREO16, MusicBufferData, sizeof( MusicBufferData ), OutputRate );
-		FreeMusicBuffers[i] = MusicBuffers[i];
-	}
-	NumFreeMusicBuffers = NUM_MUSIC_BUFFERS;
-
-	if( UseReverb && ReverbKind != REVERB_NONE )
-	{
-		Efx.GenEffects( 1, &ReverbEffect );
-		InitReverbEffect();
-		Efx.GenAuxiliaryEffectSlots( 1, &ReverbSlot );
-		Efx.AuxiliaryEffectSloti( ReverbSlot, AL_EFFECTSLOT_EFFECT, AL_EFFECT_NULL );
-	}
-	ReverbOn = false;
-
-	for( INT i = 0; i < MAX_SOURCES; ++i )
-		Voices[i].Buffer = INVALID_BUFFER;
-
-	MusicCtx = xmp_create_context();
-	xmp_set_player( MusicCtx, XMP_PLAYER_INTERP, MusicInterpolation );
-
-	// Set ourselves up as the audio subsystem.
-	USound::Audio = this;
-	UMusic::Audio = this;
-
-	// Music is pumped from Update() (single-threaded; no background decoder thread — see the header note).
-
-	return true;
+	// ALAudio's SetVolumes() was empty, so a slider only reached the NEXT sound (§11.2 A2). Apply it now.
+	ApplyVolumes();
 
 	unguard;
 }
 
 void UNOpenALAudioSubsystem::Destroy()
 {
-	guard(UNOpenALAudioSubsystem::Destroy)
-
-	USound::Audio = NULL;
-	UMusic::Audio = NULL;
-
-	if( MusicCtx )
+	guard(UNOpenALAudioSubsystem::Destroy);
+	if( Initialized )
 	{
-		xmp_end_player( MusicCtx );
-		xmp_free_context( MusicCtx );
-		MusicCtx = NULL;
-	}
+		// Unhook.
+		USound::Audio = NULL;
 
-	if( UseReverb && ReverbKind != REVERB_NONE && Efx.Present )
-	{
-		Efx.DeleteAuxiliaryEffectSlots(1, &ReverbSlot);
-		Efx.DeleteEffects(1, &ReverbEffect);
-	}
+		for( INT i=0; i<Sources.Num(); i++ )
+			StopSoundSource( i );
 
-	if( Ctx )
-	{
-		// If we have a context, we probably have everything else. Kill it.
-		SetViewport( NULL ); // This will also stop all sounds.
-		alDeleteBuffers( Buffers.Num(), &Buffers(0) );
-		alDeleteBuffers( ARRAY_COUNT( MusicBuffers ), MusicBuffers );
-		alDeleteSources( MAX_SOURCES, Sources );
-		alDeleteSources( 1, &MusicSource );
-		alcMakeContextCurrent( NULL );
-		alcDestroyContext( Ctx );
-		Ctx = NULL;
+		for( TObjectIterator<USound> SoundIt; SoundIt; ++SoundIt )
+			if( SoundIt->IsRegistered() || SoundIt->OpenStreams.Num() )
+				UnregisterSound( *SoundIt );
+
+		for( INT i=0; i<Streams.Num(); i++ )
+			if( Streams(i).Kind != NALSTREAM_None )
+				DestroyStream( i );
+		Streams.Empty();
+
+		for( INT i=0; i<Sources.Num(); i++ )
+			alDeleteSources( 1, &Sources(i).Source );
+		Sources.Empty();
+
+		for( INT i=0; i<Buffers.Num(); i++ )
+			if( Buffers(i).Buffer )
+				alDeleteBuffers( 1, &Buffers(i).Buffer );
 		Buffers.Empty();
-	}
 
-	if( Device )
+		if( ReverbKind != NAL_REVERB_NONE && Efx.Present )
+		{
+			Efx.DeleteAuxiliaryEffectSlots( 1, &ReverbSlot );
+			Efx.DeleteEffects( 1, &ReverbEffect );
+		}
+
+		Viewport = NULL;
+		Initialized = 0;
+		debugf( NAME_Exit, TEXT("NOpenALDrv: audio subsystem shut down.") );
+	}
+	if( SoundContext )
 	{
-		// We might still have a device even if we haven't created a context.
-		alcCloseDevice( Device );
-		Device = NULL;
+		alcMakeContextCurrent( NULL );
+		alcDestroyContext( SoundContext );
+		SoundContext = NULL;
 	}
-
+	if( SoundDevice )
+	{
+		alcCloseDevice( SoundDevice );
+		SoundDevice = NULL;
+	}
 	Super::Destroy();
-
 	unguard;
 }
 
 void UNOpenALAudioSubsystem::ShutdownAfterError()
 {
-	guard(UNOpenALAudioSubsystem::Destroy)
-
-	USound::Audio = NULL;
-	UMusic::Audio = NULL;
-
-	// Shutdown contexts without touching anything else.
-	if( MusicCtx )
+	guard(UNOpenALAudioSubsystem::ShutdownAfterError);
+	if( Initialized )
 	{
-		xmp_free_context( MusicCtx );
-		MusicCtx = NULL;
-		Music = NULL;
+		// Unhook, and silence what is playing so a crash dialog is not accompanied by a stuck loop.
+		USound::Audio = NULL;
+		for( INT i=0; i<Sources.Num(); i++ )
+			alSourceStop( Sources(i).Source );
+		debugf( NAME_Exit, TEXT("UNOpenALAudioSubsystem::ShutdownAfterError") );
 	}
-	if( UseReverb && ReverbKind != REVERB_NONE && Efx.Present )
-	{
-		Efx.DeleteAuxiliaryEffectSlots(1, &ReverbSlot);
-		Efx.DeleteEffects(1, &ReverbEffect);
-	}
-	if( Ctx )
-	{
-		alcMakeContextCurrent( NULL );
-		alcDestroyContext( Ctx );
-		Ctx = NULL;
-	}
-	if( Device )
-	{
-		alcCloseDevice( Device );
-		Device = NULL;
-	}
-
 	Super::ShutdownAfterError();
-
 	unguard;
 }
 
-void UNOpenALAudioSubsystem::PostEditChange()
+/*------------------------------------------------------------------------------------
+	Init.
+------------------------------------------------------------------------------------*/
+
+UBOOL UNOpenALAudioSubsystem::Init()
 {
-	guard(UNOpenALAudioSubsystem::PostEditChange)
+	guard(UNOpenALAudioSubsystem::Init);
 
-	Super::PostEditChange();
+	if( Initialized )
+		return 1;
 
-	FScopedLock Lock( MusicMutex );
-
+	// The engine ConstructObject()s us and never LoadConfig()s the instance, and the C++ constructor above ran
+	// after the class defaults were copied in -- so apply the [NOpenALDrv.NOpenALAudioSubsystem] ini here
+	// (template, ufront 2.12).
+	LoadConfig();
+	SoundVolume		= Clamp( SoundVolume, 0.f, 1.f );
+	MusicVolume		= Clamp( MusicVolume, 0.f, 1.f );
+	if( OutputRate <= 0 )
+		OutputRate = DEFAULT_OUTPUT_RATE;
 	if( DopplerFactor < 0.f )
 		DopplerFactor = 0.f;
-	AmbientFactor = Clamp( AmbientFactor, 0.f, 1.f );
-	MusicInterpolation = Clamp( MusicInterpolation, (BYTE)0, (BYTE)XMP_INTERP_SPLINE );
+	if( RollOff <= 0.0f )
+		RollOff = 1.0f;
+	StreamBuffers	= Clamp( StreamBuffers, 2, MAX_STREAM_BUFFERS );
+	StreamChunkSize	= Clamp( StreamChunkSize, 4096, 262144 ) & ~3;	// whole 16-bit stereo frames
 
-	if( Ctx )
+	if( MaxChannels <= 0 )
 	{
-		alListenerf( AL_GAIN, MasterVolume / 255.f );
-		alDopplerFactor( DopplerFactor );
-		alSourcef( MusicSource, AL_GAIN, Max(MusicFade, 0.f) * MusicVolume / 255.f );
-		// Voice volumes will be updated in Update().
+		debugf( NAME_Init, TEXT("NOpenALDrv: Channels=%i -- no audio"), MaxChannels );
+		return 0;
 	}
 
-	if( MusicCtx )
+	SoundDevice = alcOpenDevice( NULL );
+	if( !SoundDevice )
 	{
-		xmp_set_player( MusicCtx, XMP_PLAYER_INTERP, MusicInterpolation );
+		debugf( NAME_Init, TEXT("NOpenALDrv: no OpenAL device (alcOpenDevice: %04x)"), alcGetError( NULL ) );
+		return 0;
 	}
+
+	// Template (ufront 2.61): ALC_HRTF_SOFT (the attribute KEY, not the ALC_SOFT_HRTF presence macro), and
+	// HRTF is a stereo rendering, so UseHRTF also asks for the stereo-HRTF output mode. Off by default: the
+	// player's choice (the frontend's "Headphone audio"), no browser can tell headphones from speakers.
+	const ALCint AttrList[] =
+	{
+		ALC_FREQUENCY, OutputRate,
+		ALC_HRTF_SOFT, UseHRTF ? ALC_TRUE : ALC_FALSE,
+		ALC_OUTPUT_MODE_SOFT, UseHRTF ? ALC_STEREO_HRTF_SOFT : ALC_ANY_SOFT,
+		0
+	};
+	SoundContext = alcCreateContext( SoundDevice, AttrList );
+	if( !SoundContext )
+	{
+		debugf( NAME_Init, TEXT("NOpenALDrv: context creation failed (%04x)"), alcGetError( SoundDevice ) );
+		alcCloseDevice( SoundDevice );
+		SoundDevice = NULL;
+		return 0;
+	}
+	alcMakeContextCurrent( SoundContext );
+	if( alError( TEXT("Init") ) )
+	{
+		debugf( NAME_Init, TEXT("NOpenALDrv: makecurrent failed.") );
+		return 0;
+	}
+
+	// Reverb (template, ufront 2.76): EFX's EAX reverb when the LINKED library has EFX, otherwise none. Retail
+	// HP2 had no reverb at all (EAX compiled out) and no map carries I3DL2 data, so UseReverb defaults off
+	// (§11.2 A9); the machinery is kept for the two bReverbZone maps.
+	ResolveEfx( SoundDevice );
+	ReverbKind = ( UseReverb && Efx.Present ) ? NAL_REVERB_EAX : NAL_REVERB_NONE;
+#if NOPENAL_NO_EAX
+	ReverbKind = NAL_REVERB_NONE;
+#endif
+
+	// Initialize channels.
+	Sources.Empty();
+	for( INT i=0; i<Min(MaxChannels, MAX_AUDIOCHANNELS); i++ )
+	{
+		ALuint sid = 0;
+		alGenSources( 1, &sid );
+		if( alError( TEXT("Init (creating sources)"), false ) )
+			break;
+		INT Index = Sources.AddZeroed( 1 );
+		Sources(Index).Source = sid;
+	}
+	if( !Sources.Num() )
+	{
+		debugf( NAME_Init, TEXT("NOpenALDrv: couldn't allocate sources") );
+		return 0;
+	}
+
+	// Initialize streams (all free: Kind == NALSTREAM_None).
+	Streams.Empty( MAX_AUDIOSTREAMS );
+	Streams.AddZeroed( MAX_AUDIOSTREAMS );
+	StreamScratch.Empty();
+	StreamScratch.Add( StreamChunkSize );
+
+	// ALAudio's distance model: DS3D's, with the reference distance = the sound's radius (PlaySound).
+	alDistanceModel( AL_INVERSE_DISTANCE_CLAMPED );
+	alDopplerFactor( DopplerFactor );
+
+	if( ReverbKind != NAL_REVERB_NONE )
+	{
+		Efx.GenEffects( 1, &ReverbEffect );
+		InitReverbEffect();
+		Efx.GenAuxiliaryEffectSlots( 1, &ReverbSlot );
+		Efx.AuxiliaryEffectSloti( ReverbSlot, AL_EFFECTSLOT_EFFECT, AL_EFFECT_NULL );
+	}
+	ReverbOn	= 0;
+	ReverbZone	= NULL;
+
+	// §11.2 A5: libvorbisfile was compiled at natural alignment and we include its headers under pack(8); an
+	// OggVorbis_File of another size would be overrun by ov_open. Music is disabled (SFX still play) rather
+	// than corrupt the heap.
+	OggUsable = NOpenALDrv_VorbisFileSize() == (int)sizeof(OggVorbis_File);
+	if( !OggUsable )
+		debugf( NAME_Warning, TEXT("NOpenALDrv: sizeof(OggVorbis_File) is %i here but %i in libvorbisfile -- struct packing mismatch, music disabled"),
+			(INT)sizeof(OggVorbis_File), NOpenALDrv_VorbisFileSize() );
+
+	Initialized		= 1;
+	LastRealtime	= 0;
+	LastPaused		= 0;
+	LastTime		= appSeconds();
+
+	// Initialized.
+	USound::Audio = this;
+
+	// Read back what the library did: a request is not a result.
+	ALCint HRTFActive = 0, Frequency = 0;
+	alcGetIntegerv( SoundDevice, ALC_HRTF_SOFT, 1, &HRTFActive );
+	alcGetIntegerv( SoundDevice, ALC_FREQUENCY, 1, &Frequency );
+	const char* DevName = alcGetString( SoundDevice, ALC_DEVICE_SPECIFIER );
+	const char* Version = alGetString( AL_VERSION );
+	debugf( NAME_Init, TEXT("NOpenALDrv: OpenAL %s on '%s', %i Hz, %i channels, streams %ix%i bytes, HRTF %s (UseHRTF=%s), reverb %s, vorbisfile %s"),
+		ANSI_TO_TCHAR( Version ? Version : "?" ), ANSI_TO_TCHAR( DevName ? DevName : "?" ), Frequency, Sources.Num(),
+		StreamBuffers, StreamChunkSize, HRTFActive ? TEXT("ACTIVE") : TEXT("inactive"), UseHRTF ? TEXT("True") : TEXT("False"),
+		ReverbKind != NAL_REVERB_NONE ? TEXT("on (EFX EAX reverb)") : UseReverb ? TEXT("off (no EFX in this OpenAL)") : TEXT("off (UseReverb=False)"),
+		OggUsable ? TEXT("ok") : TEXT("LAYOUT MISMATCH") );
+	debugf( NAME_Init, TEXT("NOpenALDrv: SoundVolume=%1.2f MusicVolume=%1.2f DopplerFactor=%1.2f RollOff=%1.2f ReverseStereo=%s"),
+		SoundVolume, MusicVolume, DopplerFactor, RollOff, ReverseStereo ? TEXT("True") : TEXT("False") );
+	return 1;
 
 	unguard;
 }
+
+/*------------------------------------------------------------------------------------
+	Viewport.
+------------------------------------------------------------------------------------*/
 
 void UNOpenALAudioSubsystem::SetViewport( UViewport* InViewport )
 {
-	guard(UNOpenALAudioSubsystem::SetViewport)
+	guard(UNOpenALAudioSubsystem::SetViewport);
 
-	// Stop all sounds before viewport change.
-	for( INT i = 0; i < MAX_SOURCES; ++i )
-		StopVoice( i );
+	// Stop playing sounds.
+	for( INT i=0; i<Sources.Num(); i++ )
+		if( Sources(i).Started && !(Sources(i).Flags & SF_Music) )
+			StopSoundSource( i );
 
-	// Stop and free music if the viewport has changed.
-	if( InViewport != Viewport )
+	if( Viewport != InViewport )
 	{
-		if( Music )
+		// Switch viewports.
+		Viewport = InViewport;
+
+		// Set listener region to 0.
+		appMemzero( &RegionListener, sizeof(RegionListener) );
+
+		if( Viewport && UsePrecache && Initialized )
 		{
-			UnregisterMusic( Music );
-			Music = NULL;
+			// Register everything that is a plain buffer. (Streams are per play; registering every XA sound
+			// would only exhaust the stream table -- retail shipped UsePrecache=False.)
+			for( TObjectIterator<USound> SoundIt; SoundIt; ++SoundIt )
+				if( !(SoundIt->CoreFlags & SF_Streaming) )
+					RegisterSound( *SoundIt );
 		}
 	}
 
-	Viewport = InViewport;
-
 	unguard;
 }
 
-void UNOpenALAudioSubsystem::RegisterMusic( UMusic* Music )
+UViewport* UNOpenALAudioSubsystem::GetViewport()
 {
-	guard(UNOpenALAudioSubsystem::RegisterMusic)
-
-	FScopedLock Lock( MusicMutex );
-
-	if( Music->Handle || !Music->Data.Num() )
-		return;
-
-	INT Err = xmp_load_module_from_memory( MusicCtx, &Music->Data(0), Music->Data.Num() );
-	if( Err < 0 )
-	{
-		debugf( NAME_Warning, "Couldn't load music `%s`: %d", Music->GetName(), Err );
-		return;
-	}
-
-	Err = xmp_start_player( MusicCtx, OutputRate, 0 );
-	if( Err < 0 )
-	{
-		xmp_release_module( MusicCtx );
-		debugf( NAME_Warning, "Couldn't start player on `%s`: %d", Music->GetName(), Err );
-		return;
-	}
-
-	Music->Handle = (void*)1;
-	MusicIsLoaded = true;
-
+	guard(UNOpenALAudioSubsystem::GetViewport);
+	return Viewport;
 	unguard;
 }
 
-void UNOpenALAudioSubsystem::UnregisterMusic( UMusic* Music )
+/*------------------------------------------------------------------------------------
+	Streams (the GFileStream replacement).
+------------------------------------------------------------------------------------*/
+
+// Point a free FNALStream at a sound: XA over USound::Data, or an Ogg file by path (USound::Filename).
+UBOOL UNOpenALAudioSubsystem::OpenStream( FNALStream& Stream, USound* Sound, INT Flags )
 {
-	guard(UNOpenALAudioSubsystem::UnregisterMusic)
+	guard(UNOpenALAudioSubsystem::OpenStream);
 
-	FScopedLock Lock( MusicMutex );
+	appMemzero( &Stream, sizeof(Stream) );
+	Stream.Sound	= Sound;
+	Stream.Flags	= Flags;
+	Stream.Looping	= (Flags & (SF_Looping | SF_Music)) != 0;
 
-	StopMusic();
-	ClearMusicBuffers();
-	if( MusicCtx )
+	if( appStricmp( *Sound->FileType, TEXT("ogg") ) == 0 )
 	{
-		xmp_end_player( MusicCtx );
-		if( MusicIsLoaded )
-			xmp_release_module( MusicCtx );
+		if( !OggUsable )
+			return 0;
+		FArchive* Ar = GFileManager->CreateFileReader( *Sound->Filename );
+		if( !Ar )
+		{
+			debugf( NAME_Warning, TEXT("NOpenALDrv: cannot open %s"), *Sound->Filename );
+			return 0;
+		}
+		ov_callbacks Callbacks;
+		Callbacks.read_func  = NalOggRead;
+		Callbacks.seek_func  = NalOggSeek;
+		Callbacks.close_func = NalOggClose;
+		Callbacks.tell_func  = NalOggTell;
+		OggVorbis_File* Ogg = new OggVorbis_File;
+		appMemzero( Ogg, sizeof(OggVorbis_File) );
+		const int Result = ov_open_callbacks( Ar, Ogg, NULL, 0, Callbacks );
+		if( Result != 0 )
+		{
+			// On failure vorbisfile does not close the data source.
+			debugf( NAME_Warning, TEXT("NOpenALDrv: %s is not Ogg Vorbis (ov_open %i)"), *Sound->Filename, Result );
+			delete Ogg;
+			delete Ar;
+			return 0;
+		}
+		vorbis_info* Info = ov_info( Ogg, -1 );
+		if( !Info || Info->channels < 1 || Info->channels > 2 || Info->rate <= 0 )
+		{
+			debugf( NAME_Warning, TEXT("NOpenALDrv: %s: unsupported Vorbis stream (%i channels)"), *Sound->Filename, Info ? Info->channels : 0 );
+			ov_clear( Ogg );
+			delete Ogg;
+			return 0;
+		}
+		Stream.Kind		= NALSTREAM_Ogg;
+		Stream.Ogg		= Ogg;
+		Stream.Rate		= Info->rate;
+		Stream.Channels	= Info->channels;
+		Stream.Format	= Info->channels == 2 ? AL_FORMAT_STEREO16 : AL_FORMAT_MONO16;
+		Sound->Duration	= ov_time_total( Ogg, -1 );
+		if( StatOggStreams++ == 0 || (Flags & SF_Music) )
+			debugf( TEXT("NOpenALDrv: Ogg Vorbis stream %s: %i Hz, %i ch, %1.1f s"), *Sound->Filename, Stream.Rate, Stream.Channels, Sound->Duration );
+		return 1;
 	}
 
-	MusicIsLoaded = false;
+	if( appStricmp( *Sound->FileType, TEXT("XA") ) == 0 )
+	{
+		// EA-XA (C4): mono 16-bit at raw_SampleRate. The data must stay loaded while any stream reads it;
+		// UnregisterSound unloads it again once the last one is gone (M5-6).
+		Sound->Data.Load();
+		if( Sound->Data.Num() < EAXA_FRAME_BYTES || Sound->raw_NumChannels > 1 || ( Sound->raw_BitsPerSample && Sound->raw_BitsPerSample != 16 ) )
+		{
+			debugf( NAME_Warning, TEXT("NOpenALDrv: %s: unplayable XA data (%i bytes, %i ch, %i bit)"), Sound->GetPathName(),
+				Sound->Data.Num(), Sound->raw_NumChannels, Sound->raw_BitsPerSample );
+			return 0;
+		}
+		Stream.Kind		= NALSTREAM_XA;
+		Stream.Rate		= Sound->raw_SampleRate > 0 ? Sound->raw_SampleRate : 22050;
+		Stream.Channels	= 1;
+		Stream.Format	= AL_FORMAT_MONO16;
+		Stream.Xa.Init( (const uint8_t*)&Sound->Data(0), Sound->Data.Num(), Sound->raw_NumSamples );
+		if( StatXaStreams++ == 0 )
+			debugf( TEXT("NOpenALDrv: first EA-XA stream: %s (%i samples @ %i Hz, %i bytes, flags %i)"), Sound->GetPathName(),
+				Sound->raw_NumSamples, Stream.Rate, Sound->Data.Num(), Sound->CoreFlags );
+		return 1;
+	}
 
+	debugf( NAME_Warning, TEXT("NOpenALDrv: %s: streaming FileType '%s' is neither XA nor ogg"), Sound->GetPathName(), *Sound->FileType );
+	return 0;
 	unguard;
 }
 
-void UNOpenALAudioSubsystem::RegisterSound( USound* Sound )
+// Decode up to MaxBytes of 16-bit PCM. A looping stream rewinds at its end; a finished one sets Eof.
+INT UNOpenALAudioSubsystem::FillStreamChunk( FNALStream& Stream, BYTE* Out, INT MaxBytes )
 {
-	guard(UNOpenALAudioSubsystem::RegisterSound)
-
-	if( Sound->Handle )
-		return;
-
-	check( Sound->Data.Num() );
-
-	FWaveModInfo WaveInfo;
-	if( !WaveInfo.ReadWaveInfo( Sound->Data ) )
+	guard(UNOpenALAudioSubsystem::FillStreamChunk);
+	INT Got = 0;
+	UBOOL JustRewound = 0;
+	while( Got < MaxBytes && !Stream.Eof )
 	{
-		debugf( NAME_Warning, "Sound %s is not a valid WAV file", Sound->GetName() );
-		return;
+		INT N = 0;
+		if( Stream.Kind == NALSTREAM_XA )
+		{
+			N = 2 * Stream.Xa.Decode( (int16_t*)( Out + Got ), ( MaxBytes - Got ) / 2 );
+		}
+		else if( Stream.Kind == NALSTREAM_Ogg )
+		{
+			for( INT Tries=0; Tries<8; Tries++ )
+			{
+				int Section = 0;
+				const long R = ov_read( (OggVorbis_File*)Stream.Ogg, (char*)( Out + Got ), MaxBytes - Got, 0, 2, 1, &Section );
+				if( R == OV_HOLE )
+					continue;	// a gap in the data: vorbisfile resyncs on the next call
+				if( R < 0 )
+				{
+					debugf( NAME_Warning, TEXT("NOpenALDrv: Ogg decode error %i in %s"), (INT)R, Stream.Sound ? *Stream.Sound->Filename : TEXT("?") );
+					Stream.Looping = 0;
+				}
+				N = R > 0 ? (INT)R : 0;
+				break;
+			}
+		}
+		if( N > 0 )
+		{
+			Got += N;
+			JustRewound = 0;
+			continue;
+		}
+		// End of the data. A rewind that yields nothing again means there is nothing to loop.
+		if( !Stream.Looping || JustRewound )
+		{
+			Stream.Eof = 1;
+			break;
+		}
+		if( Stream.Kind == NALSTREAM_XA )
+			Stream.Xa.Rewind();
+		else if( ov_pcm_seek( (OggVorbis_File*)Stream.Ogg, 0 ) != 0 )
+		{
+			Stream.Eof = 1;
+			break;
+		}
+		JustRewound = 1;
+	}
+	return Got;
+	unguard;
+}
+
+void UNOpenALAudioSubsystem::DestroyStream( INT i )
+{
+	guard(UNOpenALAudioSubsystem::DestroyStream);
+	FNALStream& Stream = Streams(i);
+	if( Stream.NumBuffers )
+		alDeleteBuffers( Stream.NumBuffers, Stream.Buffer );
+	alError( TEXT("DestroyStream"), false );
+	if( Stream.Kind == NALSTREAM_Ogg && Stream.Ogg )
+	{
+		ov_clear( (OggVorbis_File*)Stream.Ogg );	// closes the FArchive through NalOggClose
+		delete (OggVorbis_File*)Stream.Ogg;
+	}
+	appMemzero( &Stream, sizeof(FNALStream) );
+	unguard;
+}
+
+INT UNOpenALAudioSubsystem::GetNewStreamStruct()
+{
+	guard(UNOpenALAudioSubsystem::GetNewStreamStruct);
+	for( INT i=0; i<Streams.Num(); i++ )
+		if( Streams(i).Kind == NALSTREAM_None )
+			return i;
+	// Full: take back a stream that was registered but never bound to a voice (PlaySound's early returns
+	// leave those behind; retail kept them until the sound was destroyed).
+	const INT Reclaimed = ReclaimIdleStream();
+	if( Reclaimed >= 0 )
+		return Reclaimed;
+	debugf( NAME_DevSound, TEXT("More than %i streams in use"), MAX_AUDIOSTREAMS );
+	return -1;
+	unguard;
+}
+
+INT UNOpenALAudioSubsystem::ReclaimIdleStream()
+{
+	guard(UNOpenALAudioSubsystem::ReclaimIdleStream);
+	for( INT i=0; i<Streams.Num(); i++ )
+	{
+		USound* Sound = Streams(i).Sound;
+		if( Streams(i).Kind == NALSTREAM_None || !Sound )
+			continue;
+		// OpenStreams holds (index+1)*2, with bit 0 set while bound to a PlaySound Id.
+		INT Entry = INDEX_NONE;
+		for( INT j=0; j<Sound->OpenStreams.Num() && Entry == INDEX_NONE; j++ )
+			if( (Sound->OpenStreams(j) & ~1) == (i+1)*2 )
+				Entry = j;
+		if( Entry != INDEX_NONE && !(Sound->OpenStreams(Entry) & 1) )
+		{
+			Sound->DeleteStreamHandle( i+1 );
+			Sound->RefCount--;
+			DestroyStream( i );
+			if( !Sound->OpenStreams.Num() )
+				UnloadSoundData( Sound );
+			return i;
+		}
+	}
+	return -1;
+	unguard;
+}
+
+FNALStream* UNOpenALAudioSubsystem::StreamForSource( INT i )
+{
+	if( !Sources(i).Sound )
+		return NULL;
+	const INT Handle = Sources(i).Sound->GetHandle( Sources(i).Id );
+	if( Handle < 1 || Handle > Streams.Num() || Streams(Handle-1).Kind == NALSTREAM_None )
+		return NULL;
+	return &Streams(Handle-1);
+}
+
+// Refill every processed buffer of a streaming voice (A14: retail refilled one per Update, which underruns
+// at a throttled frame rate) and restart it after an underrun. Returns false once the stream has played out.
+UBOOL UNOpenALAudioSubsystem::PumpStream( INT i )
+{
+	guard(UNOpenALAudioSubsystem::PumpStream);
+	FNALStream* Stream = StreamForSource( i );
+	if( !Stream )
+		return 0;
+	const ALuint Sid = Sources(i).Source;
+
+	ALint Processed = 0;
+	alGetSourcei( Sid, AL_BUFFERS_PROCESSED, &Processed );
+	while( Processed-- > 0 )
+	{
+		ALuint Buf = 0;
+		alSourceUnqueueBuffers( Sid, 1, &Buf );
+		if( alError( TEXT("unqueueing") ) )
+			break;
+		const INT Bytes = Stream->Eof ? 0 : FillStreamChunk( *Stream, &StreamScratch(0), StreamChunkSize );
+		if( Bytes > 0 )
+		{
+			alBufferData( Buf, Stream->Format, &StreamScratch(0), Bytes, Stream->Rate );
+			alSourceQueueBuffers( Sid, 1, &Buf );
+			alError( TEXT("queueing") );
+		}
 	}
 
-	ALuint Buf = 0;
-	alGenBuffers( 1, &Buf );
-	Buffers.AddItem( Buf );
-
-	ALenum Format = AL_FORMAT_MONO8;
-	if( *WaveInfo.pChannels == 2 )
+	ALint State = AL_STOPPED, Queued = 0;
+	alGetSourcei( Sid, AL_SOURCE_STATE, &State );
+	alGetSourcei( Sid, AL_BUFFERS_QUEUED, &Queued );
+	if( State == AL_STOPPED || State == AL_INITIAL )
 	{
-		if( *WaveInfo.pBitsPerSample == 16 )
-			Format = AL_FORMAT_STEREO16;
+		// A stopped source has every queued buffer processed; what is queued now was refilled just above.
+		if( Queued > 0 )
+		{
+			// Ran dry (a load hitch, a throttled tab): play on from the fresh buffers.
+			Stream->Underruns++;
+			if( StatUnderruns++ < 16 )
+				debugf( NAME_DevSound, TEXT("NOpenALDrv: stream underrun, restarting %s"), Sources(i).Sound->GetName() );
+			alSourcePlay( Sid );
+			return 1;
+		}
+		return 0;
+	}
+	return 1;
+	unguard;
+}
+
+// TLazyArray<T>::Unload() is a no-op under GCC while GLazyLoad is 0 (Core/Inc/UnTemplate.h), and the client
+// always runs with GLazyLoad 0. The engine's own idiom for a forced lazy (un)load is to raise GLazyLoad around
+// the call (UnTex.cpp, UnFont.cpp). The data comes back from the package linker on the next Load(); a linker
+// reset force-loads first (ResetLoaders(...,ForceLazyLoad=1)), so nothing is lost.
+void UNOpenALAudioSubsystem::UnloadSoundData( USound* Sound )
+{
+	const UBOOL SavedLazyLoad = GLazyLoad;
+	GLazyLoad = 1;
+	Sound->Data.Unload();
+	GLazyLoad = SavedLazyLoad;
+}
+
+/*------------------------------------------------------------------------------------
+	Sound registration.
+------------------------------------------------------------------------------------*/
+
+UBOOL UNOpenALAudioSubsystem::RegisterSound( USound* Sound )
+{
+	guard(UNOpenALAudioSubsystem::RegisterSound);
+
+	if( !Sound || !Initialized )
+		return 0;
+
+	if( !Sound->IsRegistered() )
+	{
+		INT Flags = Sound->CoreFlags | Sound->WorkingFlags;
+
+		if( Flags & SF_Streaming )
+		{
+			// One stream per playing instance (USound::AddStreamHandle / BindStream / GetHandle(Id)).
+			const INT Index = GetNewStreamStruct();
+			if( Index < 0 )
+			{
+				debugf( NAME_DevSound, TEXT("Failed to register sound: %s (no free stream)"), Sound->GetName() );
+				return 0;
+			}
+			FNALStream& Stream = Streams(Index);
+			if( !OpenStream( Stream, Sound, Flags ) )
+			{
+				appMemzero( &Stream, sizeof(FNALStream) );
+				if( !Sound->OpenStreams.Num() && appStricmp( *Sound->FileType, TEXT("XA") ) == 0 )
+					UnloadSoundData( Sound );
+				return 0;
+			}
+
+			// Prime the buffers (a short sound needs fewer than StreamBuffers).
+			Stream.NumBuffers = StreamBuffers;
+			alGenBuffers( Stream.NumBuffers, Stream.Buffer );
+			if( alError( TEXT("Creating streaming buffer.") ) )
+			{
+				Stream.NumBuffers = 0;
+				DestroyStream( Index );
+				return 0;
+			}
+			for( INT b=0; b<Stream.NumBuffers; b++ )
+			{
+				const INT Bytes = FillStreamChunk( Stream, &StreamScratch(0), StreamChunkSize );
+				if( Bytes <= 0 )
+					break;
+				alBufferData( Stream.Buffer[b], Stream.Format, &StreamScratch(0), Bytes, Stream.Rate );
+				Stream.NumPrimed++;
+			}
+			if( !Stream.NumPrimed || alError( TEXT("Priming streaming buffer.") ) )
+			{
+				debugf( NAME_DevSound, TEXT("Failed to register sound: %s (no audio data)"), Sound->GetName() );
+				DestroyStream( Index );
+				return 0;
+			}
+			Sound->AddStreamHandle( Index + 1 );
+		}
 		else
-			Format = AL_FORMAT_STEREO8;
+		{
+			// Plain RIFF WAVE: one AL buffer, kept until the sound is destroyed.
+			Sound->Data.Load();
+			FWaveModInfo WaveInfo;
+			if( Sound->Data.Num() <= 0 || !WaveInfo.ReadWaveInfo( Sound->Data ) || !WaveInfo.SampleDataSize )
+			{
+				debugf( NAME_DevSound, TEXT("Failed to register sound: %s (not a RIFF WAVE)"), Sound->GetPathName() );
+				return 0;
+			}
+			const INT BufferFlags = WaveInfo.SampleLoopsNum ? SF_Looping : 0;
+			ALenum Format;
+			if( *WaveInfo.pBitsPerSample == 8 )
+				Format = ( *WaveInfo.pChannels == 1 ) ? AL_FORMAT_MONO8 : AL_FORMAT_STEREO8;
+			else
+				Format = ( *WaveInfo.pChannels == 1 ) ? AL_FORMAT_MONO16 : AL_FORMAT_STEREO16;
+
+			ALuint bid = 0;
+			alGenBuffers( 1, &bid );
+			alError( TEXT("RegisterSound (generating buffer)") );
+			// Whole sample frames only (a padded odd byte count is an AL_INVALID_VALUE).
+			const INT FrameBytes = ( *WaveInfo.pBitsPerSample / 8 ) * Max<INT>( 1, *WaveInfo.pChannels );
+			alBufferData( bid, Format, WaveInfo.SampleDataStart, WaveInfo.SampleDataSize - WaveInfo.SampleDataSize % Max(FrameBytes,1), *WaveInfo.pSamplesPerSec );
+			const UBOOL Failed = alError( TEXT("RegisterSound (creating buffer)") );
+
+			// Unload the data: the AL buffer has its own copy.
+			UnloadSoundData( Sound );
+
+			if( Failed )
+			{
+				alDeleteBuffers( 1, &bid );
+				return 0;
+			}
+			INT Slot = INDEX_NONE;
+			for( INT b=0; b<Buffers.Num() && Slot == INDEX_NONE; b++ )
+				if( !Buffers(b).Buffer )
+					Slot = b;
+			if( Slot == INDEX_NONE )
+				Slot = Buffers.AddZeroed( 1 );
+			Buffers(Slot).Buffer = bid;
+			Buffers(Slot).Flags  = BufferFlags;
+			Sound->SetHandle( Slot + 1 );
+			if( StatWavBuffers++ == 0 )
+				debugf( TEXT("NOpenALDrv: first PCM sound: %s (%i Hz, %i bit, %i ch)"), Sound->GetPathName(),
+					*WaveInfo.pSamplesPerSec, *WaveInfo.pBitsPerSample, *WaveInfo.pChannels );
+		}
+	}
+
+	// Need to keep track of how many times a sound object is SUCCESSFULLY registered.
+	Sound->RefCount++;
+	return 1;
+
+	unguard;
+}
+
+void UNOpenALAudioSubsystem::UnregisterSound( USound* Sound, INT Id )
+{
+	guard(UNOpenALAudioSubsystem::UnregisterSound);
+
+	if( !Sound || !Initialized )
+		return;
+
+	// Stop the sound's voice(s).
+	for( INT i=0; i<Sources.Num(); i++ )
+	{
+		if( Id == -1 )
+		{
+			if( Sources(i).Sound == Sound )
+				OldStopSound( i );
+		}
+		else if( Sources(i).Sound && Sources(i).Id == Id )
+			OldStopSound( i );
+	}
+	alError( TEXT(""), false );
+
+	if( Sound->CoreFlags & SF_Streaming )
+	{
+		if( Id == -1 )
+		{
+			// The sound is going away (USound::Destroy) or the driver is: every stream, bound or not.
+			for( INT j=0; j<Sound->OpenStreams.Num(); j++ )
+			{
+				const INT i = Sound->OpenStreams(j) / 2 - 1;
+				if( i >= 0 && i < Streams.Num() && Streams(i).Sound == Sound )
+					DestroyStream( i );
+			}
+			Sound->UnbindAllStreams();
+			Sound->DeleteAllStreamHandles();
+			Sound->RefCount = 0;
+		}
+		else
+		{
+			Sound->RefCount--;
+			const INT Handle = Sound->GetHandle( Id );
+			if( Handle > 0 )
+			{
+				if( Handle <= Streams.Num() && Streams(Handle-1).Sound == Sound )
+					DestroyStream( Handle - 1 );
+				Sound->UnbindStream( Id );
+				Sound->DeleteStreamHandle( Handle );
+			}
+		}
+		// M5-6: the last stream of an XA sound is gone -- drop the encoded bytes (dialog would otherwise pile up
+		// line after line; AllDialog.uax is 97 MB).
+		if( !Sound->OpenStreams.Num() && appStricmp( *Sound->FileType, TEXT("XA") ) == 0 )
+			UnloadSoundData( Sound );
 	}
 	else
 	{
-		if( *WaveInfo.pBitsPerSample == 16 )
-			Format = AL_FORMAT_MONO16;
-		else
-			Format = AL_FORMAT_MONO8;
-	}
-
-	alBufferData( Buf, Format, (const void*)WaveInfo.SampleDataStart, WaveInfo.SampleDataSize, *WaveInfo.pSamplesPerSec );
-
-	Sound->Handle = (void*)Buf;
-	// v400 USound has no Looping field (v200 did). Looping is decided per-voice by sound slot at PlaySound
-	// time (ambient sounds loop), matching UT99's UGenericAudioSubsystem — see PlaySound below.
-
-	if( !GIsEditor )
-		Sound->Data.Empty();
-
-	unguard;
-}
-
-void UNOpenALAudioSubsystem::UnregisterSound( USound* Sound )
-{
-	guard(UNOpenALAudioSubsystem::UnregisterSound)
-
-	check( Sound );
-
-	if( Sound->Handle )
-	{
-		ALuint Buf = (ALuint)Sound->Handle;
-		check( alIsBuffer( Buf ) );
-
-		for( INT i = 0; i < MAX_SOURCES; ++i )
+		// Plain buffers stay until the sound itself is destroyed (Id == -1): replaying a sound then costs
+		// nothing, and the whole PCM set is 6 MB. Retail deleted at RefCount 0 and re-read the package.
+		if( Id == -1 )
 		{
-			if( Voices[i].Sound == Sound )
-				StopVoice( i );
+			const INT Handle = Sound->GetHandle();
+			if( Handle > 0 && Handle <= Buffers.Num() && Buffers(Handle-1).Buffer )
+			{
+				alDeleteBuffers( 1, &Buffers(Handle-1).Buffer );
+				Buffers(Handle-1).Buffer = 0;
+				Buffers(Handle-1).Flags  = 0;
+			}
+			Sound->SetHandle( 0 );
+			Sound->RefCount = 0;
 		}
-
-		Buffers.RemoveItem( Buf );
-		alDeleteBuffers( 1, &Buf );
-
-		Sound->Handle = NULL;
+		else if( Sound->RefCount > 0 )
+			Sound->RefCount--;
 	}
 
 	unguard;
 }
 
-void UNOpenALAudioSubsystem::UpdateVoice( INT Num, const ENVoiceOp Op )
+/*------------------------------------------------------------------------------------
+	Playing.
+------------------------------------------------------------------------------------*/
+
+FLOAT UNOpenALAudioSubsystem::SourceGain( INT i, FLOAT Volume )
 {
-	guard(UNOpenALAudioSubsystem::UpdateVoice)
+	return Clamp( Volume * ( (Sources(i).Flags & SF_Music) ? MusicVolume : SoundVolume ), 0.f, 1.f );
+}
 
-	FNVoice& Voice = Voices[Num];
+void UNOpenALAudioSubsystem::ApplyVolumes()
+{
+	guard(UNOpenALAudioSubsystem::ApplyVolumes);
+	if( !Initialized )
+		return;
+	for( INT i=0; i<Sources.Num(); i++ )
+		if( Sources(i).Id && Sources(i).FadeMode == FADE_None )
+			alSourcef( Sources(i).Source, AL_GAIN, SourceGain( i, Sources(i).Volume ) );
+	unguard;
+}
 
-	// Swap position and velocity into AL space.
-	FVector ALVelocity;
-	ALVelocity.X = Voice.Velocity.X;
-	ALVelocity.Y = Voice.Velocity.Y;
-	ALVelocity.Z = -Voice.Velocity.Z;
+INT UNOpenALAudioSubsystem::PlaySound( AActor* Actor, INT Id, USound* Sound, FVector Location, FLOAT Volume, FLOAT Radius, FLOAT Pitch, INT Flags, FLOAT FadeDuration, FLOAT InPriority )
+{
+	guard(UNOpenALAudioSubsystem::PlaySound);
 
-	// If the source is close enough to the listener, don't spatialize it.
-	DWORD SourceRelative;
-	FVector ALLocation;
-	if( FDistSquared( ListenerCoords.Origin, Voice.Location ) < Square( Voice.Radius * DESPATIALIZE_FACTOR ) )
+	static INT FreeSlot = 0;
+
+	if( !Viewport || !Sound || !Initialized )
+		return -1;
+	if( Radius <= 0.f )
+		Radius = GAudioDefaultRadius;	// retail check(Radius)'d here
+
+	debugf( NAME_DevSound, TEXT("Playing %ssound %s"), (Sound->CoreFlags & SF_Streaming) ? TEXT("streaming ") : TEXT(""), Sound->GetName() );
+
+	// Add any resident flags from the sound -tg
+	Sound->WorkingFlags = Sound->CoreFlags | Flags;
+
+	// If we failed to register the sound, kill the least important playing sound (if any are "least
+	// important") and try again.
+	if( !RegisterSound( Sound ) )
 	{
-		SourceRelative = AL_TRUE;
-		ALLocation.X = 0.f;
-		ALLocation.Y = 0.f;
-		ALLocation.Z = 0.f;
-		// If the source is ON the listener, also reset the velocity so we don't doppler our own voice.
-		if( Viewport && Viewport->Actor && Voice.Actor == Viewport->Actor )
-		{
-			ALVelocity.X = 0.f;
-			ALVelocity.Y = 0.f;
-			ALVelocity.Z = 0.f;
-		}
+		INT iIndex = FindLeastImportantSound( Sound );
+		if( iIndex == -1 )
+			return -1;
+		StopSoundSource( iIndex );
+		if( !RegisterSound( Sound ) )
+			return -1;
+	}
+
+	Volume = Clamp( Volume, 0.f, 1.f );
+
+	// Compute priority.
+	FLOAT Priority;
+	if( (Id & 14) == (SLOT_Talk * 2) )
+	{
+		// Boost priority of sounds played in SLOT_Talk to make sure they get played.
+		Priority = 100.f;
+	}
+	else if( InPriority && ((Id & 14) == SLOT_Ambient * 2) )
+	{
+		// Ambient sounds have their priority calculated in Update.
+		Priority = InPriority;
 	}
 	else
 	{
-		SourceRelative = AL_FALSE;
-		ALLocation.X = Voice.Location.X;
-		ALLocation.Y = Voice.Location.Y;
-		ALLocation.Z = -Voice.Location.Z;
-	}
-
-	// Set up AL source.
-	ALuint Source = Sources[Num];
-	alSourcei( Source, AL_SOURCE_RELATIVE, SourceRelative );
-	alSourcef( Source, AL_GAIN, Voice.Volume * ( SoundVolume / 255.f ) );
-	alSourcef( Source, AL_PITCH, Voice.Pitch );
-	alSourcef( Source, AL_MAX_DISTANCE, Voice.Radius );
-	alSourcef( Source, AL_REFERENCE_DISTANCE, Voice.Radius * DESPATIALIZE_FACTOR );
-	alSourcef( Source, AL_ROLLOFF_FACTOR, ROLLOFF_FACTOR );
-	alSourcefv( Source, AL_POSITION, &ALLocation.X );
-	alSourcefv( Source, AL_VELOCITY, &ALVelocity.X );
-	alSourcei( Source, AL_LOOPING, Voice.Looping );
-
-	if( Voice.BufferChanged )
-	{
-		Voice.BufferChanged = false;
-		INT State = AL_STOPPED;
-		alGetSourcei( Source, AL_SOURCE_STATE, &State );
-		if( State == AL_PLAYING || State == AL_PAUSED )
-			alSourceStop( Source );
-		alSourcei( Source, AL_BUFFER, Voice.Buffer );
-		if( State == AL_PLAYING || State == AL_PAUSED )
+		// Calculate occlusion before priority.
+		FLOAT OcclusionRadius = Radius;
+		if( !(Flags & SF_No3D) && Actor && Actor->GetLevel() )
 		{
-			alSourcePlay( Source );
-			if( State == AL_PAUSED )
-				alSourcePause( Source );
+			guard(SoundOcclusion);
+			if( !Actor->GetLevel()->IsAudibleAt( Location, LastPosition, Actor, (ESoundOcclusion) Actor->SoundOcclusion ) )
+			{
+				FPointRegion RegionSource = Actor->GetLevel()->Model->PointRegion( Actor->Level, Location );
+				OcclusionRadius = Radius * Actor->GetLevel()->CalculateRadiusMultiplier( RegionSource.ZoneNumber, RegionListener.ZoneNumber );
+				OcclusionRadius *= OCCLUSION_FACTOR;
+			}
+			unguard;
 		}
+		Priority = SoundPriority( Viewport, Location, Volume * SoundVolume, OcclusionRadius, Flags );
 	}
 
-	if( UseReverb && ReverbKind != REVERB_NONE && Op == NVOP_Play )
-		alSource3i( Source, AL_AUXILIARY_SEND_FILTER, (ALint)ReverbSlot, 0, AL_FILTER_NULL );
+	FLOAT BestPriority = Priority;
 
-	// Play or stop if needed.
-	switch( Op )
+	// Allocate a new slot if requested. (Id & 00001110)
+	if( (Id & 14) == 2 * SLOT_None )
+		Id = 16 * --FreeSlot;
+
+	INT Index = -1;
+
+	// Find a voice to play the sound in.
+	for( INT i=0; i<Sources.Num(); i++ )
 	{
-		case ENVoiceOp::NVOP_Play:  alSourcePlay( Source ); break;
-		case ENVoiceOp::NVOP_Pause: alSourcePause( Source ); break;
-		case ENVoiceOp::NVOP_Stop:  alSourceStop( Source ); break;
-		default: break;
-	}
-
-	unguard;
-}
-
-UBOOL UNOpenALAudioSubsystem::PlaySound( AActor* Actor, INT Id, USound* Sound, FVector Location, FLOAT Volume, FLOAT Radius, FLOAT Pitch )
-{
-	guard(UNOpenALAudioSubsystem::PlaySound)
-
-	if( !Viewport )
-		return false;
-
-	// Lazily register the sound the first time it's played. On the web static build a sound's data-load-time
-	// RegisterSound hook (UnAudio.cpp, gated on USound::Audio being set) is unreliable — packages can load
-	// before the audio subsystem exists — leaving Sound->Handle==0, so every gameplay one-shot (weapon fire,
-	// impacts, screams) was silently dropped by the !Sound->Handle bail below while ambience (registered when
-	// its map loaded) still played. Register on demand, mirroring UGenericAudioSubsystem::GetSound(). (2.12)
-	if( Sound && !Sound->Handle && Sound->Data.Num() )
-		RegisterSound( Sound );
-
-	// Allocate a new slot if requested.
-	if( SOUND_SLOT_IS( Id, SLOT_None ) )
-		Id = 16 * --NextId;
-
-	FLOAT Priority = GetVoicePriority( Location, Volume, Radius );
-	FLOAT MaxPriority = Priority;
-	FNVoice* Voice = NULL;
-	for( INT i = 0; i < MAX_SOURCES; ++i )
-	{
-		FNVoice* V = &Voices[i];
-		if( ( V->Id & ~1 ) == ( Id & ~1 ) )
+		if( (Sources(i).Id & ~1) == (Id & ~1) )
 		{
 			// Skip if not interruptable.
 			if( Id & 1 )
-				return false;
-			StopVoice( i );
-			Voice = V;
+				return -1;
+
+			// Stop the sound.
+			Index = i;
 			break;
 		}
-		else if( V->Priority <= MaxPriority )
+		else if( (Sources(i).Priority * PLAYING_PRIORITY_MULTIPLIER) < BestPriority )
 		{
-			MaxPriority = V->Priority;
-			Voice = V;
+			Index = i;
+			BestPriority = Sources(i).Priority;
 		}
 	}
 
-	// If we ran out of voices or the sound is too low priority, bail.
-	if( !Voice || !Sound || !Sound->Handle )
-		return false;
+	// If no room to play the sound, see if we can make some room by stopping a sound that is currently
+	// playing multiple instances.
+	if( Index == -1 )
+		Index = FindLeastImportantSound( Sound );
+	if( Index == -1 )
+		return -1;
 
-	ALuint Buf = (ALuint)Sound->Handle;
-	check( alIsBuffer( Buf ) );
+	StopSoundSource( Index );
 
-	Voice->Id = Id;
-	Voice->BufferChanged = ( Buf != Voice->Buffer );
-	Voice->Buffer = Buf;
-	Voice->Location = Location;
-	Voice->Velocity = Actor ? Actor->Velocity : FVector();
-	Voice->Volume = Clamp( Volume, 0.f, 1.f );
-	Voice->Radius = Radius;
-	Voice->Pitch = Pitch;
-	Voice->Priority = Priority;
-	Voice->Actor = Actor;
-	Voice->Looping = SOUND_SLOT_IS( Id, SLOT_Ambient ); // v400: ambient sounds loop (matches UGenericAudioSubsystem)
-	Voice->Sound = Sound;
+	// Here's where we bind the stream to the sound (if a streaming sound).
+	FNALStream* Stream = NULL;
+	if( Sound->CoreFlags & SF_Streaming )
+	{
+		Sound->BindStream( Id );
+		const INT Handle = Sound->GetHandle( Id );
+		if( Handle < 1 || Handle > Streams.Num() || Streams(Handle-1).Kind == NALSTREAM_None )
+			return -1;
+		Stream = &Streams(Handle-1);
+		// A stream registered for an earlier, non-looping request can serve a looping one: it is still at its
+		// start, so switching only changes what happens at its end.
+		const UBOOL WantLoop = (Flags & (SF_Looping | SF_Music)) != 0;
+		if( WantLoop && !Stream->Looping )
+		{
+			Stream->Looping = 1;
+			Stream->Eof = 0;
+		}
+	}
+	else if( Sound->GetHandle() < 1 || Sound->GetHandle() > Buffers.Num() )
+		return -1;
 
-	// Start the voice.
-	UpdateVoice( Voice - Voices, NVOP_Play );
+	Pitch  = Clamp<FLOAT>( Pitch, 0.1f, 2.0f );
+	Volume = Clamp<FLOAT>( Volume, 0.01f, 1.0f );
 
-	return true;
+	FNALSource& Src = Sources(Index);
 
+	// Set default values.
+	Src.ZoneRadius		= Radius;
+	Src.UsedRadius		= Radius;
+	Src.WantedRadius	= Radius;
+
+	// Calculate initial radius.
+	if( !(Flags & SF_No3D) && Actor && Actor->GetLevel() )
+	{
+		guard(SoundOcclusion);
+		if( !Actor->GetLevel()->IsAudibleAt( Location, LastPosition, Actor, (ESoundOcclusion) Actor->SoundOcclusion ) )
+		{
+			FPointRegion RegionSource = Actor->GetLevel()->Model->PointRegion( Actor->Level, Location );
+			FLOAT TempRadius = Radius * Actor->GetLevel()->CalculateRadiusMultiplier( RegionSource.ZoneNumber, RegionListener.ZoneNumber );
+			Src.ZoneRadius	= TempRadius;
+			TempRadius *= OCCLUSION_FACTOR;
+			Src.UsedRadius	= TempRadius;
+			Src.WantedRadius	= TempRadius;
+		}
+		unguard;
+	}
+
+	// Setup the voice.
+	Src.Sound			= Sound;
+	Src.Id				= Id;
+	Src.Actor			= Actor;
+	Src.Priority		= Priority;
+	Src.Location		= (Flags & SF_No3D) ? FVector(0,0,0) : Location;
+	Src.Radius			= Radius;
+	Src.LastChange		= appSeconds();
+	Src.FadeDuration	= FadeDuration;
+	Src.FadeTime		= 0.f;
+	Src.FadeMode		= FadeDuration > 0.f ? FADE_In : FADE_None;
+	Src.Volume			= Volume;
+	Src.Started			= 1;
+	Src.Paused			= 0;
+	Src.Flags			= Flags | ( Stream ? Stream->Flags : Buffers(Sound->GetHandle() - 1).Flags );
+	Src.LipSyncAnimMgr	= NULL;
+
+	// If this fails, no big deal, as subsequent code will assume NULL means it has no lip-sync data.
+	if( (Sound->WorkingFlags & SF_HasLipSync) && Actor )
+		Src.LipSyncAnimMgr = new FLipSyncAnimMgr( Actor, &Sound->LipSyncData );
+
+	const ALuint sid = Src.Source;
+	alSourceStop( sid );
+	alSourcei( sid, AL_BUFFER, 0 );
+	alSourcef( sid, AL_REFERENCE_DISTANCE, Src.UsedRadius * DISTANCE_FACTOR );
+	alSourcef( sid, AL_GAIN, Src.FadeMode == FADE_In ? 0.f : SourceGain( Index, Src.Volume ) );
+	alSourcef( sid, AL_PITCH, Pitch );
+	alSourcei( sid, AL_LOOPING, ( !Stream && (Src.Flags & SF_Looping) ) ? AL_TRUE : AL_FALSE );
+	const FVector ALLocation = ToALSpace( Src.Location );
+	alSourcefv( sid, AL_POSITION, (ALfloat*)&ALLocation );
+	const FVector ALVelocity( 0.f, 0.f, 0.f );
+	alSourcefv( sid, AL_VELOCITY, (ALfloat*)&ALVelocity );
+	alSourcef( sid, AL_ROLLOFF_FACTOR, RollOff );
+	alSourcei( sid, AL_SOURCE_RELATIVE, (Flags & SF_No3D) ? AL_TRUE : AL_FALSE );
+	if( ReverbKind != NAL_REVERB_NONE )
+		alSource3i( sid, AL_AUXILIARY_SEND_FILTER, (Flags & SF_No3D) ? (ALint)AL_EFFECTSLOT_NULL : (ALint)ReverbSlot, 0, AL_FILTER_NULL );
+
+	if( Stream )
+		alSourceQueueBuffers( sid, Stream->NumPrimed, Stream->Buffer );
+	else
+		alSourcei( sid, AL_BUFFER, Buffers( Sound->GetHandle() - 1 ).Buffer );
+	alSourcePlay( sid );
+	alError( TEXT("PlaySound") );
+
+	// Lip sync also needs to know how long a sound has been playing so it can determine the appropriate lip
+	// frame at any given time.
+	if( Src.LipSyncAnimMgr )
+	{
+		const UBOOL HasChannel = Src.LipSyncAnimMgr->Start( appSeconds().GetFloat() );
+		if( StatLipSync++ == 0 )
+			debugf( TEXT("NOpenALDrv: first lip-synced line: %s on %s (%i amplitude frames, mouth channel %s)"), Sound->GetPathName(),
+				Actor->GetName(), Sound->LipSyncData.Num(), HasChannel ? TEXT("created") : TEXT("none") );
+		else
+			debugf( NAME_DevSound, TEXT("NOpenALDrv: lip-synced line %s on %s (%i frames, channel %s)"), Sound->GetName(),
+				Actor->GetName(), Sound->LipSyncData.Num(), HasChannel ? TEXT("created") : TEXT("none") );
+	}
+
+	return Index;
+
+	unguard;
+}
+
+//-----------------------------------------------------------------------------
+//	StopSound( AActor* Actor, USound* Sound ) -- New Warfare StopSound()
+//-----------------------------------------------------------------------------
+UBOOL UNOpenALAudioSubsystem::StopSound( AActor* Actor, USound* Sound )
+{
+	guard(UNOpenALAudioSubsystem::StopSound);
+	UBOOL Stopped = false;
+
+	// Stop all sounds.
+	if( !Actor && !Sound )
+	{
+		for( INT i=0; i<Sources.Num(); i++ )
+			StopSoundSource( i );
+		return true;
+	}
+
+	// Stop selected sound.
+	for( INT i=0; i<Sources.Num(); i++ )
+	{
+		const UBOOL Match = Sound
+			? ( Sound == Sources(i).Sound && ( !Actor || Actor == Sources(i).Actor ) )
+			: ( Actor == Sources(i).Actor );
+		if( Match )
+		{
+			StopSoundSource( i );
+			Stopped = true;
+		}
+	}
+	return Stopped;
+	unguard;
+}
+
+//-----------------------------------------------------------------------------
+//	StopSound( AActor* Actor, INT Id, USound * Sound ) -- the one script calls.
+//-----------------------------------------------------------------------------
+UBOOL UNOpenALAudioSubsystem::StopSound( AActor* Actor, INT Id, USound * Sound, FLOAT fFadeOutTime )
+{
+	guard(UNOpenALAudioSubsystem::StopSound);
+	UBOOL Stopped = false;
+
+	for( INT i=0; i<Sources.Num(); i++ )
+	{
+		UBOOL bSoundFound;
+		bSoundFound  = Sources(i).Actor == Actor;										// actors match
+		bSoundFound &= (((Sources(i).Id & ~1) == (Id & ~1)) ||							// same slot or SLOT_None and
+					   (((Id & 14) == SLOT_None) && (Sources(i).Id < 0)));				//   sound was played in SLOT_None
+		bSoundFound &= Sources(i).Sound == Sound || Sound == NULL;						// sounds match or NULL sent in
+
+		if( bSoundFound && Sources(i).Id )
+		{
+			if( fFadeOutTime > 0.f )
+			{
+				Sources(i).FadeTime		= 0.f;
+				Sources(i).FadeDuration	= fFadeOutTime;
+				Sources(i).FadeMode		= FADE_Out;
+			}
+			else
+				StopSoundSource( i );
+			Stopped = true;
+		}
+	}
+	return Stopped;
+	unguard;
+}
+
+//-----------------------------------------------------------------------------
+//	ModifySound( AActor* Actor, INT Id, USound * Sound, BYTE parameter, FLOAT Value )
+//-----------------------------------------------------------------------------
+UBOOL UNOpenALAudioSubsystem::ModifySound( AActor* Actor, INT Id, USound * Sound, BYTE parameter, FLOAT Value )
+{
+	guard(UNOpenALAudioSubsystem::ModifySound);
+	UBOOL bRet = false;
+
+	for( INT i=0; i<Sources.Num(); i++ )
+	{
+		UBOOL bSoundFound;
+		bSoundFound  = Sources(i).Actor == Actor;
+		bSoundFound &= (((Sources(i).Id & ~1) == (Id & ~1)) ||
+					   (((Id & 14) == SLOT_None) && (Sources(i).Id < 0)));
+		bSoundFound &= Sources(i).Sound == Sound || Sound == NULL;
+
+		if( bSoundFound && Sources(i).Id )
+		{
+			const ALuint sid = Sources(i).Source;
+			switch( parameter )
+			{
+			case SOUND_Volume:
+				Sources(i).Volume = Clamp<FLOAT>( Value, 0.01f, 1.0f );
+				alSourcef( sid, AL_GAIN, SourceGain( i, Sources(i).Volume ) );
+				break;
+
+			case SOUND_Radius:
+				Sources(i).ZoneRadius	= Value;
+				Sources(i).UsedRadius	= Value;
+				Sources(i).WantedRadius	= Value;
+				if( !(Sources(i).Flags & SF_No3D) && Sources(i).Actor && Sources(i).Actor->GetLevel() )
+				{
+					guard(SoundOcclusion);
+					ULevel* Level = Sources(i).Actor->GetLevel();
+					if( !Level->IsAudibleAt( Sources(i).Actor->Location, LastPosition, Sources(i).Actor, (ESoundOcclusion) Sources(i).Actor->SoundOcclusion ) )
+					{
+						FPointRegion RegionSource = Level->Model->PointRegion( Sources(i).Actor->Level, Sources(i).Actor->Location );
+						FLOAT TempRadius = Value * Level->CalculateRadiusMultiplier( RegionSource.ZoneNumber, RegionListener.ZoneNumber );
+						Sources(i).ZoneRadius	= TempRadius;
+						TempRadius *= OCCLUSION_FACTOR;
+						Sources(i).UsedRadius	= TempRadius;
+						Sources(i).WantedRadius	= TempRadius;
+					}
+					unguard;
+				}
+				alSourcef( sid, AL_REFERENCE_DISTANCE, Sources(i).UsedRadius * DISTANCE_FACTOR );
+				break;
+
+			case SOUND_Pitch:
+				alSourcef( sid, AL_PITCH, Clamp<FLOAT>( Value, 0.1f, 2.0f ) );
+				break;
+			}
+			bRet = true;
+		}
+	}
+	return bRet;
 	unguard;
 }
 
 void UNOpenALAudioSubsystem::NoteDestroy( AActor* Actor )
 {
-	guard(UNOpenALAudioSubsystem::NoteDestroy)
-
+	guard(UNOpenALAudioSubsystem::NoteDestroy);
 	check(Actor);
 	check(Actor->IsValid());
-	for( INT i = 0; i < MAX_SOURCES; ++i)
+
+	// Stop the actor's sound, and dereference owned sounds.
+	for( INT i=0; i<Sources.Num(); i++ )
 	{
-		if( Voices[i].Actor == Actor )
+		// The actor, or the mouth channel a line animates, is going: the manager must not touch it again.
+		if( Sources(i).LipSyncAnimMgr && Sources(i).LipSyncAnimMgr->Involves( Actor ) )
 		{
-			if( SOUND_SLOT_IS( Voices[i].Id, SLOT_Ambient ) )
-			{
-				// Stop ambient sound when actor dies.
-				StopVoice( i );
-			}
+			Sources(i).LipSyncAnimMgr->Detach();
+			delete Sources(i).LipSyncAnimMgr;
+			Sources(i).LipSyncAnimMgr = NULL;
+		}
+		if( Sources(i).Actor == Actor )
+		{
+			if( (Sources(i).Id & 14) == SLOT_Ambient * 2 )
+				StopSoundSource( i );
 			else
+				Sources(i).Actor = NULL; // Not interruptable sound.
+		}
+	}
+	unguard;
+}
+
+/*------------------------------------------------------------------------------------
+	Music: Ogg Vorbis by path.
+------------------------------------------------------------------------------------*/
+
+// ALAudio built "..\\music\\" + Song [+ ".ogg"] and fopen'd it. Here: ../Music/<Song>.ogg, then ../Music/<Song>
+// as given (Music/Peeves_chase_v2 has no extension, M5-4), through GFileManager, whose Unix file manager folds
+// '\' to '/' and resolves the case of every component (the directory is `Music`, retail said `music`). A song
+// name that carries its own path is tried as given too.
+UBOOL UNOpenALAudioSubsystem::ResolveMusic( const FString& Song, FString& Path, void* )
+{
+	guard(UNOpenALAudioSubsystem::ResolveMusic);
+	TArray<FString> Candidates;
+	const UBOOL HasExt = appStricmp( appFExt( *Song ), TEXT("ogg") ) == 0;
+	const UBOOL HasDir = Song.InStr( TEXT("\\") ) != INDEX_NONE || Song.InStr( TEXT("/") ) != INDEX_NONE;
+	if( HasDir )
+	{
+		new(Candidates) FString( HasExt ? Song : Song + TEXT(".ogg") );
+		new(Candidates) FString( Song );
+	}
+	if( !HasExt )
+		new(Candidates) FString( FString(TEXT("../Music/")) + Song + TEXT(".ogg") );
+	new(Candidates) FString( FString(TEXT("../Music/")) + Song );
+	for( INT i=0; i<Candidates.Num(); i++ )
+	{
+		FArchive* Ar = GFileManager->CreateFileReader( *Candidates(i) );
+		if( Ar )
+		{
+			const INT Size = Ar->TotalSize();
+			delete Ar;
+			if( Size > 0 )
 			{
-				// Unbind regular sounds from actors.
-				Voices[i].Actor = NULL;
+				Path = Candidates(i);
+				return 1;
 			}
 		}
 	}
-
+	return 0;
 	unguard;
 }
 
-void UNOpenALAudioSubsystem::StopVoice( INT Num )
+INT UNOpenALAudioSubsystem::PlayMusic( FString Song, FLOAT FadeInTime )
 {
-	guard(UNOpenALAudioSubsystem::StopVoice)
+	guard(UNOpenALAudioSubsystem::PlayMusic);
 
-	FNVoice& Voice = Voices[Num];
+	if( !Initialized || Song == TEXT("") || appStricmp( *Song, TEXT("none") ) == 0 )
+		return 0;
 
-	alSourcei( Sources[Num], AL_LOOPING, AL_FALSE );
-	alSourceStop( Sources[Num] );
-
-	if( Voice.Buffer != INVALID_BUFFER )
+	FString Filename;
+	if( !ResolveMusic( Song, Filename, NULL ) )
 	{
-		Voice.Buffer = INVALID_BUFFER;
-		alSourcei( Sources[Num], AL_BUFFER, 0 );
+		// Retail silently played nothing (e.g. Ch1Rictusempra names a song that exists nowhere, §11.2 A6).
+		debugf( TEXT("NOpenALDrv: PlayMusic '%s' -- no ../Music/%s.ogg or ../Music/%s"), *Song, *Song, *Song );
+		return 0;
 	}
 
-	Voice.Priority = 0.f;
-	Voice.Sound = NULL;
-	Voice.Actor = NULL;
-	Voice.Looping = false;
-	Voice.Id = 0;
+	// A transient USound (retail): garbage-collected at the next map change, which stops the song.
+	USound* Music = new USound( *Filename, SF_Streaming | SF_Music );
+	if( !Music )
+		return 0;
+	Music->FileType = FName( TEXT("ogg") );
 
-	unguard;
-}
-
-void UNOpenALAudioSubsystem::PlayMusic()
-{
-	guard(UNOpenALAudioSubsystem::PlayMusic)
-
-	FScopedLock Lock( MusicMutex );
-
-	alSourceStop(MusicSource);
-	ClearMusicBuffers();
-	xmp_set_position( MusicCtx, MusicSection );
-
-	ALint State = 0;
-	alGetSourcei( MusicSource, AL_SOURCE_STATE, &State );
-	if( State != AL_PLAYING )
-		alSourcePlay( MusicSource );
-
-	MusicIsPlaying = true;
-
-	unguard;
-}
-
-void UNOpenALAudioSubsystem::StopMusic()
-{
-	guard(UNOpenALAudioSubsystem::StopMusic)
-
-	FScopedLock Lock( MusicMutex );
-
-	MusicIsPlaying = false;
-	alSourceStop( MusicSource );
-
-	unguard;
-}
-
-void UNOpenALAudioSubsystem::Update( FPointRegion Region, FCoords& Listener )
-{
-	guard(UNOpenALAudioSubsystem::Update)
-
-	// Pump the music stream here every frame (web + native share this single music path; no background
-	// decoder thread). Done before the realtime early-return so menu/title music keeps streaming even when
-	// there's no live viewport.
-	UpdateMusicBuffers();
-
-	if( !Viewport || !Viewport->IsRealtime() )
-		return;
-
-	// Update AL listener position, velocity and orientation.
-	FVector ALPosition;
-	ALPosition.X = Listener.Origin.X;
-	ALPosition.Y = Listener.Origin.Y;
-	ALPosition.Z = -Listener.Origin.Z;
-	FVector ALVelocity;
-	if( Viewport->Actor )
+	const INT Index = PlaySound( NULL, 2*SLOT_None | 1, Music, FVector(0,0,0), 1.f, 1000, 1.f, SF_Streaming | SF_No3D | SF_Music, FadeInTime );
+	if( Index < 0 )
 	{
-		ALVelocity.X = Viewport->Actor->Velocity.X;
-		ALVelocity.Y = Viewport->Actor->Velocity.Y;
-		ALVelocity.Z = -Viewport->Actor->Velocity.Z;
+		debugf( TEXT("NOpenALDrv: PlayMusic '%s' (%s) -- no voice or stream available"), *Song, *Filename );
+		UnregisterSound( Music );
+		return 0;
 	}
-	FLOAT ALOrientation[] = {
-		+Listener.ZAxis.X,
-		+Listener.ZAxis.Y,
-		-Listener.ZAxis.Z,
-		-Listener.YAxis.X,
-		-Listener.YAxis.Y,
-		+Listener.YAxis.Z,
-	};
-	alListenerfv( AL_POSITION, &ALPosition.X );
-	alListenerfv( AL_VELOCITY, &ALVelocity.X );
-	alListenerfv( AL_ORIENTATION, ALOrientation );
-	ListenerCoords = Listener;
+	debugf( TEXT("NOpenALDrv: PlayMusic '%s' -> %s on channel %i (fade in %1.1f s, MusicVolume %1.2f)"), *Song, *Filename, Index, FadeInTime, MusicVolume );
+	return Index + 1;
+	unguard;
+}
 
-	if( UseReverb )
-		UpdateReverb( Region );
+UBOOL UNOpenALAudioSubsystem::StopMusic( INT SongHandle, FLOAT FadeOutTime )
+{
+	guard(UNOpenALAudioSubsystem::StopMusic);
 
-	// Start new ambient sounds if needed.
-	if( Viewport->Actor && Viewport->Actor->XLevel )
+	// Stop music.
+	SongHandle--;
+	if( SongHandle >= 0 && SongHandle < Sources.Num() )
 	{
-		for( INT i = 0; i < Viewport->Actor->XLevel->Actors.Num(); i++ )
+		// (Retail stopped whatever occupied the channel; a stale handle must not cut off a sound effect.)
+		if( !(Sources(SongHandle).Flags & SF_Music) )
+			return 0;
+		debugf( NAME_DevSound, TEXT("NOpenALDrv: StopMusic channel %i (fade out %1.1f s)"), SongHandle, FadeOutTime );
+		if( FadeOutTime > 0.f )
 		{
-			AActor* Actor = Viewport->Actor->XLevel->Actors(i);
-			if( !Actor || !Actor->IsValid() )
-				continue;
-
-			const FLOAT DistSq = FDistSquared( Viewport->Actor->Location, Actor->Location );
-			const FLOAT AmbRad = Square( Actor->WorldSoundRadius() );
-			if( !Actor->AmbientSound || DistSq > AmbRad )
-				continue;
-
-			// See if it's already playing.
-			INT Id = AMBIENT_SOUND_ID( Actor->GetIndex() );
-			INT AmbientNum;
-			for( AmbientNum = 0; AmbientNum < MAX_SOURCES; ++AmbientNum )
-			{
-				if( Voices[AmbientNum].Id == Id )
-					break;
-			}
-
-			// If not, start it.
-			if( AmbientNum == MAX_SOURCES )
-			{
-				FLOAT Vol = AmbientFactor * Actor->SoundVolume / 255.f;
-				FLOAT Rad = Actor->WorldSoundRadius();
-				FLOAT Pitch = Actor->SoundPitch / 64.f;
-				PlaySound( Actor, Id, Actor->AmbientSound, Actor->Location, Vol, Rad, Pitch );
-			}
-		}
-	}
-
-	// Update active ambient sounds.
-	for( INT VoiceNum = 0; VoiceNum < MAX_SOURCES; ++VoiceNum )
-	{
-		FNVoice& Voice = Voices[VoiceNum];
-		if( !Voice.Id || !Voice.Sound || Voice.Buffer == INVALID_BUFFER || !SOUND_SLOT_IS( Voice.Id, SLOT_Ambient ) )
-			continue;
-
-		check( Voice.Actor );
-
-		const FLOAT DistSq = FDistSquared( Viewport->Actor->Location, Voice.Actor->Location );
-		const FLOAT AmbRad = Square( Voice.Actor->WorldSoundRadius() );
-		if( Voice.Sound != Voice.Actor->AmbientSound || DistSq > AmbRad )
-		{
-			// Sound changed or went out of range.
-			StopVoice( VoiceNum );
+			Sources(SongHandle).FadeTime		= 0.f;
+			Sources(SongHandle).FadeDuration	= FadeOutTime;
+			Sources(SongHandle).FadeMode		= FADE_Out;
 		}
 		else
-		{
-			// Update parameters. These will be applied in the loop below.
-			Voice.Radius = Voice.Actor->WorldSoundRadius();
-			Voice.Pitch = Voice.Actor->SoundPitch / 64.f;
-			Voice.Volume = AmbientFactor * Voice.Actor->SoundVolume / 255.f;
-			if( Voice.Actor->LightType != LT_None )
-				Voice.Volume *= Voice.Actor->LightBrightness / 255.f;
-		}
+			StopSoundSource( SongHandle );
+		return 1;
 	}
-
-	// Update all active voices.
-	for( INT VoiceNum = 0; VoiceNum < MAX_SOURCES; ++VoiceNum )
-	{
-		FNVoice& Voice = Voices[VoiceNum];
-		if( !Voice.Id || !Voice.Sound || Voice.Buffer == INVALID_BUFFER )
-			continue;
-
-		ALuint Source = Sources[VoiceNum];
-		ALint SourceState;
-		alGetSourcei( Source, AL_SOURCE_STATE, &SourceState );
-		if( SourceState == AL_STOPPED )
-		{
-			// Voice has finished playing.
-			StopVoice( VoiceNum );
-		}
-		else if( SourceState == AL_PLAYING )
-		{
-			// Voice is playing, update its location and priority.
-			if( Voice.Actor && Voice.Actor->IsValid() )
-			{
-				Voice.Location = Voice.Actor->Location;
-				Voice.Velocity = Voice.Actor->Velocity;
-			}
-			Voice.Priority = GetVoicePriority( Voice.Location, Voice.Volume, Voice.Radius );
-			// Update AL source.
-			UpdateVoice( VoiceNum );
-		}
-	}
-
-	// Update music.
-	DOUBLE DeltaTime = appSeconds() - MusicTime;
-	MusicTime += DeltaTime;
-	DeltaTime = Clamp( DeltaTime, 0.0, 1.0 );
-	if( Viewport->Actor && Viewport->Actor->Transition != MTRAN_None )
-	{
-		// Track is changing.
-		UBOOL MusicChanged = Music != Viewport->Actor->Song;
-		if( Music )
-		{
-			// Already playing something, figure out if we're ready to change.
-			UBOOL MusicDone = false;
-			if( MusicSection == 255 )
-			{
-				MusicDone = true;
-			}
-			else if( Viewport->Actor->Transition == MTRAN_Fade )
-			{
-				MusicFade -= DeltaTime;
-				MusicDone = ( MusicFade < -2.f / 1000.f );
-			}
-			else if( Viewport->Actor->Transition == MTRAN_SlowFade )
-			{
-				MusicFade -= DeltaTime * 0.2;
-				MusicDone = ( MusicFade < 0.2f * -2.f / 1000.f );
-			}
-			else if( Viewport->Actor->Transition == MTRAN_FastFade )
-			{
-				MusicFade -= DeltaTime * 3.0;
-				MusicDone = ( MusicFade < 3.0f * -2.f / 1000.f );
-			}
-			else
-			{
-				MusicDone = true;
-			}
-
-			MusicMutex.Lock();
-
-			if( MusicDone )
-			{
-				if( Music && MusicChanged )
-					UnregisterMusic( Music );
-				Music = NULL;
-			}
-			else
-			{
-				alSourcef( MusicSource, AL_GAIN, Max(MusicFade, 0.f) * MusicVolume / 255.f );
-			}
-
-			MusicMutex.Unlock();
-		}
-
-		if( Music == NULL )
-		{
-			FScopedLock Lock( MusicMutex );
-			MusicFade = 1.f;
-			alSourcef( MusicSource, AL_GAIN, Max(MusicFade, 0.f) * MusicVolume / 255.f );
-			Music = Viewport->Actor->Song;
-			MusicSection = Viewport->Actor->SongSection;
-			if( Music )
-			{
-				if( MusicChanged )
-					RegisterMusic( Music );
-				if( MusicSection != 255 )
-					PlayMusic();
-				else
-					StopMusic();
-			}
-			Viewport->Actor->Transition = MTRAN_None;
-		}
-	}
-
+	return 0;
 	unguard;
 }
 
-void UNOpenALAudioSubsystem::UpdateMusicBuffers()
+INT UNOpenALAudioSubsystem::StopAllMusic( FLOAT FadeOutTime )
 {
-	guard(UNOpenALAudioSubsystem::UpdateMusicBuffers)
+	guard(UNOpenALAudioSubsystem::StopAllMusic);
+	for( INT i=0; i<Sources.Num(); i++ )
+		if( Sources(i).Flags & SF_Music )
+			StopMusic( i+1, FadeOutTime );
+	return 0;
+	unguard;
+}
 
-	FScopedLock Lock( MusicMutex );
-
-	// First dequeue the buffers that are done playing and put them into the buffer pool
-	ALint BuffersProcessed = 0;
-	ALint BuffersQueued = 0;
-	ALint State = AL_STOPPED;
-	alGetSourcei( MusicSource, AL_BUFFERS_PROCESSED, &BuffersProcessed );
-	alGetSourcei( MusicSource, AL_BUFFERS_QUEUED, &BuffersQueued );
-	alGetSourcei( MusicSource, AL_SOURCE_STATE, &State );
-	if( BuffersProcessed > 0 && NumFreeMusicBuffers < NUM_MUSIC_BUFFERS )
+void UNOpenALAudioSubsystem::PauseSounds()
+{
+	guard(UNOpenALAudioSubsystem::PauseSounds);
+	for( INT i=0; i<Sources.Num(); i++ )
 	{
-		const INT NumToUnqueue = Min( NUM_MUSIC_BUFFERS - NumFreeMusicBuffers, BuffersProcessed );
-		alSourceUnqueueBuffers( MusicSource, NumToUnqueue, &FreeMusicBuffers[NumFreeMusicBuffers] );
-		NumFreeMusicBuffers += NumToUnqueue;
+		if( Sources(i).Id )
+		{
+			Sources(i).Paused = 1;
+			alSourcePause( Sources(i).Source );
+		}
 	}
+	unguard;
+}
 
-	if( !Music || !MusicIsPlaying || MusicSection == 255 || !MusicCtx )
+void UNOpenALAudioSubsystem::UnpauseSounds()
+{
+	guard(UNOpenALAudioSubsystem::UnpauseSounds);
+	for( INT i=0; i<Sources.Num(); i++ )
+	{
+		if( Sources(i).Id )
+		{
+			Sources(i).Paused = 0;
+			if( Sources(i).Started )
+				alSourcePlay( Sources(i).Source );
+		}
+	}
+	unguard;
+}
+
+/*------------------------------------------------------------------------------------
+	Update: the per-frame loop (ALAudio's), plus the stream pump.
+------------------------------------------------------------------------------------*/
+
+static INT Compare( FNALAmbient& A, FNALAmbient& B )
+{
+	return (B.Priority - A.Priority >= 0) ? 1 : -1;
+}
+
+void UNOpenALAudioSubsystem::Update( FSceneNode* SceneNode )
+{
+	guard(UNOpenALAudioSubsystem::Update);
+
+	if( !Viewport || !Viewport->Actor || !SceneNode || !Initialized )
 		return;
 
-	// If music is playing, render and queue more buffers if available
-	while( BuffersQueued < NUM_MUSIC_BUFFERS && NumFreeMusicBuffers )
-	{
-		if( xmp_play_buffer( MusicCtx, MusicBufferData, sizeof( MusicBufferData ), 0 ) < 0 )
-			break;
-		alBufferData( FreeMusicBuffers[NumFreeMusicBuffers - 1], AL_FORMAT_STEREO16, MusicBufferData, sizeof( MusicBufferData ), OutputRate );
-		alSourceQueueBuffers( MusicSource, 1, &FreeMusicBuffers[NumFreeMusicBuffers - 1] );
-		--NumFreeMusicBuffers;
-		++BuffersQueued;
-	}
+	// Projection/ Orientation.
+	FVector ViewLocation = SceneNode->Coords.Origin;
 
-	// If it stopped because it ran out of buffers, restart it
-	if( BuffersQueued > 0 && ( State == AL_INITIAL || State == AL_STOPPED ) )
-		alSourcePlay( MusicSource );
+	// Find out which zone the listener is in.
+	AActor* ViewTarget = Viewport->Actor->ViewTarget ? Viewport->Actor->ViewTarget : Viewport->Actor;
+	ULevel* Level = ViewTarget->GetLevel();
+	if( !Level )
+		return;
+	RegionListener = Level->Model->PointRegion( ViewTarget->Level, ViewLocation );
+
+	// Time passes...
+	FTime CurrentTime	= appSeconds();
+	FLOAT DeltaTime		= CurrentTime - LastTime;
+	LastTime			= CurrentTime;
+	DeltaTime			= Clamp( DeltaTime, 0.0001f, 1.0f );
+
+	UBOOL Realtime	= Viewport->IsRealtime();
+	UBOOL Paused	= Viewport->Actor->Level->Pauser != TEXT("");
+
+	// Stop all sounds if transitioning out of realtime, pause or unpause sounds if pause transition.
+	if( (!Realtime && LastRealtime) || (Paused && !LastPaused) )
+		PauseSounds();
+	else if( (Realtime && !LastRealtime) || (!Paused && LastPaused) )
+		UnpauseSounds();
+	else if( RestartSounds )
+	{
+		RestartSounds = false;
+		UnpauseSounds();
+	}
+	LastRealtime	= Realtime;
+	LastPaused		= Paused;
+
+	// Streams first (every processed buffer refilled), then finished sounds. Retail skipped SF_Looping and
+	// SF_Music here; a looping stream never ends, and a song whose file breaks off is released instead of
+	// holding its channel forever.
+	guard(PumpAndCheckFinished);
+	for( INT i=0; i<Sources.Num(); i++ )
+	{
+		if( !Sources(i).Id || !Sources(i).Sound || Sources(i).Paused )
+			continue;
+		if( Sources(i).Flags & SF_Streaming )
+		{
+			if( !PumpStream( i ) )
+				UnregisterSound( Sources(i).Sound, Sources(i).Id );	// played out: frees the voice and its stream
+		}
+		else if( !(Sources(i).Flags & (SF_Looping | SF_Music)) )
+		{
+			ALint State = AL_PLAYING;
+			alGetSourcei( Sources(i).Source, AL_SOURCE_STATE, &State );
+			if( State == AL_STOPPED )
+				StopSoundSource( i );
+		}
+	}
+	unguard;
+
+	// See if any new ambient sounds need to be started.
+	guard(HandleAmbience);
+	if( Realtime && !Paused )
+	{
+		TArray<FNALAmbient> AmbientSounds;
+
+		for( INT a=0; a<Level->Actors.Num(); a++ )
+		{
+			AActor* Actor = Level->Actors(a);
+			if( !Actor || !Actor->AmbientSound )
+				continue;
+			const INT Id = Actor->GetIndex()*16 + SLOT_Ambient*2;
+			UBOOL Playing = 0;
+			for( INT j=0; j<Sources.Num() && !Playing; j++ )
+				Playing = Sources(j).Id == Id;
+			if( Playing )
+				continue;
+			if( Actor->IsOwnedBy( ViewTarget ) )
+			{
+				INT iAmbient = AmbientSounds.Add( 1 );
+				AmbientSounds(iAmbient).Actor		= Actor;
+				AmbientSounds(iAmbient).Priority	= SoundPriority( Viewport, Actor->Location, Actor->SoundVolume/255.f, Actor->SoundRadius, SF_Looping | SF_No3D | SF_UpdatePitch );
+				AmbientSounds(iAmbient).Flags		= SF_Looping | SF_No3D | SF_UpdatePitch;
+				AmbientSounds(iAmbient).Id			= Id;
+			}
+			else
+			{
+				// Sound occlusion.
+				FLOAT RM = 1.f;
+				if( !Level->IsAudibleAt( Actor->Location, ViewLocation, Actor, (ESoundOcclusion) Actor->SoundOcclusion ) )
+				{
+					FPointRegion RegionSource = Level->Model->PointRegion( Actor->Level, Actor->Location );
+					RM *= Level->CalculateRadiusMultiplier( RegionSource.ZoneNumber, RegionListener.ZoneNumber );
+				}
+				if( FDistSquared(ViewLocation,Actor->Location) <= Square(RM*Actor->SoundRadius*GAudioMaxRadiusMultiplier) )
+				{
+					INT iAmbient = AmbientSounds.Add( 1 );
+					AmbientSounds(iAmbient).Actor		= Actor;
+					AmbientSounds(iAmbient).Priority	= SoundPriority( Viewport, Actor->Location, Actor->SoundVolume/255.f, RM*Actor->SoundRadius, SF_Looping | SF_UpdatePitch );
+					AmbientSounds(iAmbient).Flags		= SF_Looping | SF_UpdatePitch;
+					AmbientSounds(iAmbient).Id			= Id;
+				}
+			}
+		}
+
+		// Sort ambient sounds by priority to avoid thrashing of channels.
+		if( AmbientSounds.Num() )
+		{
+			Sort( &AmbientSounds(0), AmbientSounds.Num() );
+			for( INT iAmbient=0; iAmbient<AmbientSounds.Num(); iAmbient++ )
+			{
+				AActor* Actor = AmbientSounds(iAmbient).Actor;
+				// Early out if sound couldn't be played because of priority.
+				if( PlaySound( Actor, AmbientSounds(iAmbient).Id, Actor->AmbientSound, Actor->Location, Actor->SoundVolume/255.f,
+					Actor->SoundRadius, Actor->SoundPitch / 64.f, AmbientSounds(iAmbient).Flags, 0.f, AmbientSounds(iAmbient).Priority ) == -1 )
+					break;
+			}
+		}
+	}
+	unguard;
+
+	// Update all playing ambient sounds.
+	guard(UpdateAmbience);
+	for( INT i=0; i<Sources.Num(); i++ )
+	{
+		if( (Sources(i).Id&14) == SLOT_Ambient*2 && Sources(i).Actor )
+		{
+			FLOAT NewDist = FDistSquared( ViewLocation, Sources(i).Actor->Location );
+			if( (NewDist > Square(Sources(i).ZoneRadius*GAudioMaxRadiusMultiplier)) || (Sources(i).Actor->AmbientSound != Sources(i).Sound) )
+				StopSoundSource( i );
+		}
+	}
+	unguard;
+
+	// Update all active sounds.
+	guard(UpdateSounds);
+	for( INT i=0; i<Sources.Num(); i++ )
+	{
+		if( Sources(i).Actor && !Sources(i).Actor->IsValid() )
+			Sources(i).Actor = NULL;
+		if( !Sources(i).Id )
+			continue;
+
+		// If sounds are paused, we need to let the lip sync mgr adjust.
+		if( Sources(i).Paused )
+		{
+			if( Sources(i).LipSyncAnimMgr )
+				Sources(i).LipSyncAnimMgr->EatPauseTime( DeltaTime );
+			continue;
+		}
+
+		// Update lip sync data if present.
+		if( Sources(i).LipSyncAnimMgr )
+			Sources(i).LipSyncAnimMgr->Update( CurrentTime.GetFloat() );
+
+		// Update position, velocity, pitch and volume from actor (if wanted).
+		FVector Velocity	= FVector(0,0,0);
+		FLOAT Volume		= Sources(i).Volume;
+		if( Sources(i).Actor && !(Sources(i).Flags & SF_NoUpdates) )
+		{
+			// Set location.
+			Sources(i).Location = Sources(i).Actor->Location;
+			if( !(Sources(i).Flags & SF_No3D) )
+				Velocity = Sources(i).Actor->Velocity;
+
+			// Set pitch.
+			if( Sources(i).Flags & SF_UpdatePitch )
+				alSourcef( Sources(i).Source, AL_PITCH, Clamp<FLOAT>( Sources(i).Actor->SoundPitch / 64.f, 0.1f, 2.0f ) );
+
+			// Set Volume.
+			if( (Sources(i).Id&14) == SLOT_Ambient*2 )
+			{
+				Volume = Sources(i).Actor->SoundVolume / 255.f;
+				Sources(i).Volume = Volume;
+			}
+			if( Sources(i).Actor->LightType != LT_None )
+				Volume *= Sources(i).Actor->LightBrightness / 255.f;
+		}
+
+		if( Sources(i).FadeMode == FADE_In )
+		{
+			// Disregard initial loading time.
+			if( DeltaTime < 1.f )
+				Sources(i).FadeTime += DeltaTime;
+			if( Sources(i).FadeTime >= Sources(i).FadeDuration )
+				Sources(i).FadeMode = FADE_None;
+			else
+				Volume *= Sources(i).FadeTime / Sources(i).FadeDuration;
+		}
+		if( Sources(i).FadeMode == FADE_Out )
+		{
+			// Disregard initial loading time.
+			if( DeltaTime < 1.f )
+				Sources(i).FadeTime += DeltaTime;
+			if( Sources(i).FadeTime >= Sources(i).FadeDuration )
+			{
+				// Stop sound.
+				StopSoundSource( i );
+				continue;
+			}
+			Volume *= (1.f - Sources(i).FadeTime / Sources(i).FadeDuration);
+		}
+
+		alSourcef( Sources(i).Source, AL_GAIN, SourceGain( i, Volume ) );
+
+		if( !(Sources(i).Flags & SF_No3D) )
+		{
+			// Sound occlusion.
+			FLOAT Radius = Sources(i).Radius;
+			if( !Level->IsAudibleAt( Sources(i).Location, ViewLocation, Sources(i).Actor,
+				Sources(i).Actor ? (ESoundOcclusion) Sources(i).Actor->SoundOcclusion : OCCLUSION_Default ) )
+			{
+				FPointRegion RegionSource = Level->Model->PointRegion( Viewport->Actor->Level, Sources(i).Location );
+				Radius *= Level->CalculateRadiusMultiplier( RegionSource.ZoneNumber, RegionListener.ZoneNumber );
+				Sources(i).ZoneRadius = Radius;
+				Radius *= OCCLUSION_FACTOR;
+			}
+			else
+				Sources(i).ZoneRadius = Radius;
+
+			// Smooth transition between radii.
+			if( Sources(i).WantedRadius != Radius )
+			{
+				Sources(i).LastChange	= CurrentTime;
+				Sources(i).WantedRadius	= Radius;
+			}
+			if( (CurrentTime - Sources(i).LastChange) < 1.f )
+				Radius = Lerp( Sources(i).UsedRadius, Radius, CurrentTime - Sources(i).LastChange );
+			else
+				Sources(i).UsedRadius = Radius;
+
+			// Set Radius.
+			alSourcef( Sources(i).Source, AL_REFERENCE_DISTANCE, Radius * DISTANCE_FACTOR );
+		}
+
+		// Update the priority.
+		Sources(i).Priority = SoundPriority( Viewport, Sources(i).Location, Sources(i).Volume * SoundVolume, Sources(i).ZoneRadius, Sources(i).Flags );
+
+		if( !(Sources(i).Flags & SF_No3D) )
+		{
+			const FVector ALLocation = ToALSpace( Sources(i).Location );
+			const FVector ALVelocity = ToALSpace( Velocity );
+			alSourcefv( Sources(i).Source, AL_POSITION, (ALfloat*)&ALLocation );
+			if( ALVelocity.Size() < MAX_SOURCE_VELOCITY )
+				alSourcefv( Sources(i).Source, AL_VELOCITY, (ALfloat*)&ALVelocity );
+		}
+	}
+	unguard;
+
+	guard(UpdateListenerVelocityAndPos);
+	// Listener: position and velocity in AL space, orientation from the view axes (Coords: X right, Y down,
+	// Z forward) the template's way -- at = Z, up = -Y, both with Z negated into the right-handed frame (§11.2
+	// A8). ReverseStereo flips "up", which mirrors left and right (an escape hatch, as ALAudio's was).
+	const FVector At = SceneNode->Coords.ZAxis;
+	const FVector Up = ReverseStereo ? SceneNode->Coords.YAxis : -SceneNode->Coords.YAxis;
+	const ALfloat Orientation[6] = { At.X, At.Y, -At.Z, Up.X, Up.Y, -Up.Z };
+	const FVector ALVelocity = ToALSpace( (ViewLocation - LastPosition) / DeltaTime );
+	LastPosition = ViewLocation;
+	const FVector ALPosition = ToALSpace( ViewLocation );
+	alListenerfv( AL_POSITION, (ALfloat*)&ALPosition );
+	alListenerfv( AL_ORIENTATION, Orientation );
+	if( ALVelocity.Size() < MAX_LISTENER_VELOCITY )
+		alListenerfv( AL_VELOCITY, (ALfloat*)&ALVelocity );
+	unguard;
+
+	// Zone reverb (template; retail's I3DL2 listener was compiled out).
+	if( ReverbKind != NAL_REVERB_NONE )
+		UpdateReverb( RegionListener.Zone );
 
 	unguard;
 }
 
-void UNOpenALAudioSubsystem::ClearMusicBuffers()
+/*------------------------------------------------------------------------------------
+	Reverb (template's EFX EAX reverb, default off).
+------------------------------------------------------------------------------------*/
+
+void UNOpenALAudioSubsystem::UpdateReverb( AZoneInfo* Zone )
 {
-	guard(UNOpenALAudioSubsystem::ClearMusicBuffers)
+	guard(UNOpenALAudioSubsystem::UpdateReverb);
+	if( ReverbKind == NAL_REVERB_NONE )
+		return;
 
-	FScopedLock Lock( MusicMutex );
-
-	appMemset( (void*)MusicBufferData, 0, sizeof(MusicBufferData) );
-
-	ALint BuffersProcessed = 0;
-	alGetSourcei( MusicSource, AL_BUFFERS_PROCESSED, &BuffersProcessed );
-	if( BuffersProcessed > 0 && NumFreeMusicBuffers < NUM_MUSIC_BUFFERS )
-	{
-		const INT NumToUnqueue = Min( NUM_MUSIC_BUFFERS - NumFreeMusicBuffers, BuffersProcessed );
-		alSourceUnqueueBuffers( MusicSource, NumToUnqueue, &FreeMusicBuffers[NumFreeMusicBuffers] );
-		NumFreeMusicBuffers += NumToUnqueue;
-	}
-
-	for( INT i = 0; i < NumFreeMusicBuffers; ++i )
-		alBufferData( FreeMusicBuffers[i], AL_FORMAT_STEREO16, MusicBufferData, sizeof( MusicBufferData ), OutputRate );
-
-	unguard;
-}
-
-void UNOpenALAudioSubsystem::UpdateReverb( FPointRegion& Region )
-{
-	guard(UNOpenALAudioSubsystem::UpdateReverb)
-
-	if( ReverbKind == REVERB_NONE )
-		return;   // ufront 2.76: no EFX in this library — there is no slot to point at a zone
-
-	const UBOOL bNewReverb = ( Viewport->Actor && Viewport->Actor->Region.Zone && Viewport->Actor->Region.Zone->bReverbZone );
-
+	const UBOOL bNewReverb = Zone && Zone->bReverbZone;
 	if( !bNewReverb && ReverbOn )
 	{
-		// Just turn it off.
-		ReverbOn = false;
-		ReverbZone = NULL;
-		// TODO: is there a better way to toggle this?
+		ReverbOn	= false;
+		ReverbZone	= NULL;
 		Efx.AuxiliaryEffectSloti( ReverbSlot, AL_EFFECTSLOT_EFFECT, AL_EFFECT_NULL );
 		return;
 	}
-
 	ReverbOn = bNewReverb;
-
-	if( ReverbOn )
+	if( ReverbOn && Zone != ReverbZone )
 	{
-		AZoneInfo* NewReverbZone = Viewport->Actor->Region.Zone;
-		if( NewReverbZone != ReverbZone )
+		// Reverb zone changed: unbind the effect, change parameters, bind again.
+		ReverbZone = Zone;
+		Efx.AuxiliaryEffectSloti( ReverbSlot, AL_EFFECTSLOT_EFFECT, AL_EFFECT_NULL );
+#if !NOPENAL_NO_EAX
+		Efx.Effectf( ReverbEffect, AL_EAXREVERB_GAIN, ReverbZone->MasterGain / 255.f );
+#endif
+		Efx.AuxiliaryEffectSloti( ReverbSlot, AL_EFFECTSLOT_EFFECT, ReverbEffect );
+		static UBOOL LoggedReverb = 0;
+		if( !LoggedReverb )
 		{
-			// Reverb zone changed.
-			ReverbZone = NewReverbZone;
-			// Unbind effect, change parameters, then bind again.
-			Efx.AuxiliaryEffectSloti( ReverbSlot, AL_EFFECTSLOT_EFFECT, AL_EFFECT_NULL );
-			Efx.Effectf( ReverbEffect, AL_EAXREVERB_GAIN, ReverbZone->MasterGain / 255.f );
-			Efx.AuxiliaryEffectSloti( ReverbSlot, AL_EFFECTSLOT_EFFECT, ReverbEffect );
-			// ufront 2.61: reverb used to be unreachable on the web; say once that it really engages.
-			static UBOOL LoggedReverb = 0;
-			if( !LoggedReverb )
-			{
-				debugf( TEXT("NOpenALDrv: EAX reverb applied for zone %s (MasterGain %d)"), ReverbZone->GetName(), ReverbZone->MasterGain );
-				LoggedReverb = 1;
-			}
+			debugf( TEXT("NOpenALDrv: EAX reverb applied for zone %s (MasterGain %i)"), ReverbZone->GetName(), ReverbZone->MasterGain );
+			LoggedReverb = 1;
 		}
 	}
-
 	unguard;
 }
 
 void UNOpenALAudioSubsystem::InitReverbEffect()
 {
-	guard(UNOpenALAudioSubsystem::InitReverbEffect)
-
-	if( ReverbKind == REVERB_NONE )
-		return;   // ufront 2.76: no EFX — no effect object was created
-
+	guard(UNOpenALAudioSubsystem::InitReverbEffect);
+	if( ReverbKind == NAL_REVERB_NONE )
+		return;
 #if !NOPENAL_NO_EAX
 	EFXEAXREVERBPROPERTIES Reverb = EFX_REVERB_PRESET_GENERIC;
 	Efx.Effecti( ReverbEffect, AL_EFFECT_TYPE, AL_EFFECT_EAXREVERB );
@@ -1100,7 +1836,7 @@ void UNOpenALAudioSubsystem::InitReverbEffect()
 	Efx.Effectf( ReverbEffect, AL_EAXREVERB_DECAY_TIME, Reverb.flDecayTime );
 	Efx.Effectf( ReverbEffect, AL_EAXREVERB_DECAY_HFRATIO, Reverb.flDecayHFRatio );
 	Efx.Effectf( ReverbEffect, AL_EAXREVERB_DECAY_LFRATIO, Reverb.flDecayLFRatio );
-	Efx.Effectf( ReverbEffect, AL_EAXREVERB_REFLECTIONS_GAIN, Reverb.flReflectionsGain);
+	Efx.Effectf( ReverbEffect, AL_EAXREVERB_REFLECTIONS_GAIN, Reverb.flReflectionsGain );
 	Efx.Effectf( ReverbEffect, AL_EAXREVERB_REFLECTIONS_DELAY, Reverb.flReflectionsDelay );
 	Efx.Effectfv( ReverbEffect, AL_EAXREVERB_REFLECTIONS_PAN, Reverb.flReflectionsPan );
 	Efx.Effectf( ReverbEffect, AL_EAXREVERB_LATE_REVERB_GAIN, Reverb.flLateReverbGain );
@@ -1116,40 +1852,290 @@ void UNOpenALAudioSubsystem::InitReverbEffect()
 	Efx.Effectf( ReverbEffect, AL_EAXREVERB_ROOM_ROLLOFF_FACTOR, Reverb.flRoomRolloffFactor );
 	Efx.Effecti( ReverbEffect, AL_EAXREVERB_DECAY_HFLIMIT, Reverb.iDecayHFLimit );
 #endif
-
 	unguard;
 }
+
+/*------------------------------------------------------------------------------------
+	Exec (ALAudio's commands).
+------------------------------------------------------------------------------------*/
 
 UBOOL UNOpenALAudioSubsystem::Exec( const TCHAR* Cmd, FOutputDevice& Ar )
 {
-	guard(UNOpenALAudioSubsystem::Exec)
-
-	if( ParseCommand( &Cmd, TEXT("MusicOrder") ) )
+	guard(UNOpenALAudioSubsystem::Exec);
+	const TCHAR* Str = Cmd;
+	if( ParseCommand(&Str,TEXT("ASTAT")) )
 	{
-		if( Music && MusicCtx )
+		if( ParseCommand(&Str,TEXT("AUDIO")) )
+			return 1;
+	}
+	else if( ParseCommand(&Str,TEXT("PAUSESOUNDS")) )
+	{
+		PauseSounds();
+		return 1;
+	}
+	else if( ParseCommand(&Str,TEXT("UNPAUSESOUNDS")) )
+	{
+		UnpauseSounds();
+		return 1;
+	}
+	else if( ParseCommand(&Str,TEXT("RESTARTSOUNDS")) )
+	{
+		RestartSounds = true;
+		return 1;
+	}
+	else if( ParseCommand(&Str,TEXT("WEAPONRADIUS")) )
+	{
+		GAudioDefaultRadius = appAtof(Str);
+		return 1;
+	}
+	else if( ParseCommand(&Str,TEXT("ROLLOFF")) )
+	{
+		RollOff = appAtof(Str);
+		if( RollOff <= 0.f )
+			RollOff = 1.f;
+		StopSound( NULL, NULL );
+		return 1;
+	}
+	else if( ParseCommand(&Str,TEXT("NOPENALSTATS")) )
+	{
+		INT Playing = 0, OpenStreams = 0;
+		for( INT i=0; i<Sources.Num(); i++ )
+			Playing += Sources(i).Id != 0;
+		for( INT i=0; i<Streams.Num(); i++ )
+			OpenStreams += Streams(i).Kind != NALSTREAM_None;
+		Ar.Logf( TEXT("NOpenALDrv: %i/%i voices, %i/%i streams, %i buffers; XA streams %i, Ogg streams %i, PCM buffers %i, lip-sync lines %i, underruns %i"),
+			Playing, Sources.Num(), OpenStreams, Streams.Num(), Buffers.Num(), StatXaStreams, StatOggStreams, StatWavBuffers, StatLipSync, StatUnderruns );
+		return 1;
+	}
+	else if( ParseCommand(&Str,TEXT("PLAYINGSOUNDSTATS")) )
+	{
+		INT iTotalMem = 0, iOverhead = 0;
+		for( INT i=0; i<Sources.Num(); i++ )
 		{
-			FScopedLock Lock( MusicMutex );
-			INT Pos = appAtoi( Cmd );
-			Ar.Logf( TEXT("Set music position to %d"), Pos );
-			xmp_set_position( MusicCtx, Pos );
-			MusicSection = Pos;
-			return true;
+			USound* Sound = Sources(i).Sound;
+			if( !Sound || !Sources(i).Id )
+				continue;
+			const INT iSoundDataSize = Sound->Data.Num();
+			INT iALBufferSize = 0;
+			FNALStream* Stream = StreamForSource( i );
+			if( Stream )
+			{
+				for( INT j=0; j<Stream->NumBuffers; j++ )
+				{
+					ALint iTemp = 0;
+					alGetBufferi( Stream->Buffer[j], AL_SIZE, &iTemp );
+					iALBufferSize += iTemp;
+				}
+				iOverhead += StreamChunkSize;
+				Ar.Logf( TEXT("Streaming Sound:  Name = %s  Sound data = %iK  ALAudio buffer = %iK  Streaming buffer = %iK"),
+					Sound->GetName(), iSoundDataSize / 1024, iALBufferSize / 1024, StreamChunkSize / 1024 );
+			}
+			else if( Sound->GetHandle() > 0 && Sound->GetHandle() <= Buffers.Num() )
+			{
+				ALint iTemp = 0;
+				alGetBufferi( Buffers( Sound->GetHandle() - 1 ).Buffer, AL_SIZE, &iTemp );
+				iALBufferSize = iTemp;
+				Ar.Logf( TEXT("Sound:  Name = %s  Sound data = %iK  ALAudio buffer = %iK"), Sound->GetName(), iSoundDataSize / 1024, iALBufferSize / 1024 );
+			}
+			iOverhead += iALBufferSize;
+			iTotalMem += iALBufferSize + iSoundDataSize;
 		}
+		Ar.Logf( TEXT("Total memory = %iK  Overhead = %iK"), (iTotalMem + iOverhead) / 1024, iOverhead / 1024 );
+		return 1;
 	}
-	else if( ParseCommand( &Cmd, TEXT("MusicInterp") ) )
-	{
-		FScopedLock Lock( MusicMutex );
-		MusicInterpolation = Clamp( appAtoi( Cmd ), 0, XMP_INTERP_SPLINE );
-		if( MusicCtx )
-			xmp_set_player( MusicCtx, XMP_PLAYER_INTERP, MusicInterpolation );
-		return true;
-	}
-
-	return false;
-
+	return 0;
 	unguard;
 }
 
-// ufront 2.12: no background music thread — StartMusicThread/StopMusicThread/MusicThreadProc were removed.
-// Music is decoded incrementally in UpdateMusicBuffers(), pumped from Update() each frame (web + native).
+/*------------------------------------------------------------------------------------
+	Internals.
+------------------------------------------------------------------------------------*/
 
+//-----------------------------------------------------------------------------
+//	ALAudio's wrapper: UnregisterSound for streaming sounds (frees the stream) and the plain stop for others.
+//-----------------------------------------------------------------------------
+void UNOpenALAudioSubsystem::StopSoundSource( INT i )
+{
+	guard(UNOpenALAudioSubsystem::StopSoundSource);
+	if( Sources(i).Sound )
+		UnregisterSound( Sources(i).Sound, Sources(i).Id );
+	else
+		OldStopSound( i );
+	unguard;
+}
+
+void UNOpenALAudioSubsystem::OldStopSound( INT i )
+{
+	guard(UNOpenALAudioSubsystem::OldStopSound);
+	if( Sources(i).Id != 0 || Sources(i).Sound )
+	{
+		if( Sources(i).Source )
+		{
+			alSourceStop( Sources(i).Source );
+			alSourcei( Sources(i).Source, AL_BUFFER, 0 );	// unqueues a stream's buffers too
+		}
+		if( Sources(i).LipSyncAnimMgr )
+		{
+			delete Sources(i).LipSyncAnimMgr;
+			Sources(i).LipSyncAnimMgr = NULL;
+		}
+		Sources(i).Sound	= NULL;
+		Sources(i).Actor	= NULL;
+		Sources(i).Flags	= 0;
+		Sources(i).Priority	= 0;
+		Sources(i).Id		= 0;
+		Sources(i).Started	= 0;
+		Sources(i).Paused	= 0;
+		Sources(i).FadeMode	= FADE_None;
+	}
+	unguard;
+}
+
+FLOAT UNOpenALAudioSubsystem::SoundPriority( UViewport* InViewport, FVector Location, FLOAT Volume, FLOAT Radius, INT Flags )
+{
+	guard(UNOpenALAudioSubsystem::SoundPriority);
+	FLOAT RadiusFactor = 1.f;
+	if( Radius && InViewport && InViewport->Actor )
+	{
+		AActor *ViewTarget = InViewport->Actor->ViewTarget ? InViewport->Actor->ViewTarget : InViewport->Actor;
+		RadiusFactor = 1 - FDistSquared(Location, ViewTarget->Location) / Square(GAudioMaxRadiusMultiplier*Radius);
+	}
+	RadiusFactor = Clamp( RadiusFactor, 0.01f, 1.f );
+	return Volume * RadiusFactor + ((Flags & SF_HasLipSync)? 4 : 0) + ((Flags & SF_Music)? 2 : 0) + ((Flags & SF_No3D)? 1 : 0);
+	unguard;
+}
+
+UBOOL UNOpenALAudioSubsystem::alError( const TCHAR* Text, UBOOL Log )
+{
+	ALenum Error = alGetError();
+	if( Error == AL_NO_ERROR )
+		return false;
+	if( Log )
+	{
+		switch( Error )
+		{
+		case AL_INVALID_NAME:		debugf( TEXT("NOpenALDrv: AL_INVALID_NAME in %s"), Text ); break;
+		case AL_INVALID_ENUM:		debugf( TEXT("NOpenALDrv: AL_INVALID_ENUM in %s"), Text ); break;
+		case AL_INVALID_VALUE:		debugf( TEXT("NOpenALDrv: AL_INVALID_VALUE in %s"), Text ); break;
+		case AL_INVALID_OPERATION:	debugf( TEXT("NOpenALDrv: AL_INVALID_OPERATION in %s"), Text ); break;
+		case AL_OUT_OF_MEMORY:		debugf( TEXT("NOpenALDrv: AL_OUT_OF_MEMORY in %s"), Text ); break;
+		default:					debugf( TEXT("NOpenALDrv: Unknown error in %s"), Text );
+		}
+	}
+	return true;
+}
+
+#define INITIAL_MIN_COUNT	3	// we need to find at least this many playing instances of a sound before we'll kill it
+
+INT UNOpenALAudioSubsystem::FindLeastImportantSound( USound *pIncomingSound )
+{
+	guard(UNOpenALAudioSubsystem::FindLeastImportantSound);
+	INT					iRet = -1;
+	TMap<USound*, INT>	SoundInstances;
+	INT					iMaxCount = INITIAL_MIN_COUNT;
+	USound*				pMaxCountSound = NULL;
+
+	// Count the number of instances of each playing sound.
+	for( INT i=0; i<Sources.Num(); i++ )
+	{
+		if( Sources(i).Id != 0 && Sources(i).Sound )
+		{
+			INT iNumInstances = SoundInstances.FindRef( Sources(i).Sound ) + 1;
+			SoundInstances.Set( Sources(i).Sound, iNumInstances );
+			if( iNumInstances > iMaxCount )
+			{
+				iMaxCount = iNumInstances;
+				pMaxCountSound = Sources(i).Sound;
+			}
+		}
+	}
+
+	// If we found a sound with enough playing instances AND it's not the same sound we're trying to play,
+	// determine the most distant instance and return its Sources() index.
+	if( pMaxCountSound && pMaxCountSound != pIncomingSound )
+	{
+		FLOAT fLowestPriority = 1000.f;
+		for( INT i=0; i<Sources.Num(); i++ )
+		{
+			// Don't even check sounds that are playing in SLOT_Talk - we never want to kill them.
+			if( Sources(i).Id != 0 && ((Sources(i).Id & 14) != (SLOT_Talk * 2)) && pMaxCountSound == Sources(i).Sound )
+			{
+				FLOAT fPriority = SoundPriority( Viewport, Sources(i).Location, Sources(i).Volume, Sources(i).Radius, Sources(i).Sound->WorkingFlags );
+				if( fPriority < fLowestPriority )
+				{
+					fLowestPriority = fPriority;
+					iRet = i;
+				}
+			}
+		}
+	}
+	return iRet;
+	unguard;
+}
+
+/*-----------------------------------------------------------------------------
+	FLipSyncAnimMgr (ALAudioSubsystem.cpp:2142-2222).
+-----------------------------------------------------------------------------*/
+
+FLipSyncAnimMgr::FLipSyncAnimMgr( AActor *ParentActor, FLipSyncData *pLipSyncData )
+{
+	m_ParentActor		= ParentActor;
+	m_pLipSyncData		= pLipSyncData;
+	m_StartTime			= 0.f;
+	m_LastElapsedTime	= 0.f;
+	m_LastAmp			= 0;
+	m_LipSyncAnimChan	= NULL;		// retail left it uninitialised until Start()
+}
+
+FLipSyncAnimMgr::~FLipSyncAnimMgr( )
+{
+	if( m_LipSyncAnimChan && !m_LipSyncAnimChan->bDeleteMe )
+		m_LipSyncAnimChan->PlayAnim( TEXT("mouth_rest"), false, 1.0, 1.0, 1.0 );
+	m_ParentActor = NULL;
+	m_pLipSyncData = NULL;
+}
+
+// Tells a lip sync animation manager object that the sound is starting.
+UBOOL FLipSyncAnimMgr::Start( FLOAT fTime )
+{
+	m_StartTime			= fTime;
+	m_LastElapsedTime	= 0.0;
+	m_LastAmp			= 0;
+	m_LipSyncAnimChan	= NULL;
+
+	// (Retail first did LoadObject<UClass>(AActor::StaticClass(), "AnimChannel", ...): a lookup of an object
+	// that does not exist -- AnimChannel is a native Engine class, registered at boot. Dropped.)
+	if( m_ParentActor && !m_ParentActor->bDeleteMe )
+		m_LipSyncAnimChan = m_ParentActor->CreateAnimChannel( AAnimChannel::StaticClass(), AT_Replace, TEXT("mouth_root"), false, true );
+	if( m_LipSyncAnimChan )
+		m_LipSyncAnimChan->PlayAnim( TEXT("mouth_anim"), false, 0.0 );
+	return m_LipSyncAnimChan != NULL;
+}
+
+// Updates the actor's animation state based on time elapsed from beginning of sound.
+#define LIP_SYNC_UPDATE_INTERVAL	(0.05f)
+
+void FLipSyncAnimMgr::Update( FLOAT fTime )
+{
+	// Bail if we failed to get an anim channel earlier.
+	if( !m_LipSyncAnimChan || !m_pLipSyncData )
+		return;
+
+	FLOAT ElapsedTime		= fTime - m_StartTime;
+	FLOAT fFrameDeltaTime	= ElapsedTime - m_LastElapsedTime;
+	if( fFrameDeltaTime >= LIP_SYNC_UPDATE_INTERVAL )
+	{
+		m_LastElapsedTime = ElapsedTime;
+		m_LipSyncAnimChan->AnimFrame = m_pLipSyncData->GetMouthPos( ElapsedTime );
+	}
+}
+
+// Called while the parent sound is paused.
+void FLipSyncAnimMgr::EatPauseTime( FLOAT fDeltaTime )
+{
+	m_StartTime += fDeltaTime;
+}
+
+/*-----------------------------------------------------------------------------
+	The End.
+-----------------------------------------------------------------------------*/
