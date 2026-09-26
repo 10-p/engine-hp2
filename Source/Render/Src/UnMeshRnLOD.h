@@ -163,6 +163,7 @@ void URender::DrawLodMesh
 		AllSamples[i].ComputeOutcode( Frame );
 		WeaponOutcode &= AllSamples[i].Flags;
 	}
+	INT i;
 	for( i=0; i<VertexSubset; i++ )
 	{
 		Samples[i].Light.X = 0;  // Indicate unprocessed vertex.
@@ -280,6 +281,7 @@ void URender::DrawLodMesh
 			}
 		}
 		// Render any special/weapon triangles: for debugging purposes only.
+		INT i;
 		for( i=0; i<Mesh->SpecialFaces.Num(); i++ )
 		{			
 			// Draw only if FaceLevel indicates this face falls within our vertex budget.

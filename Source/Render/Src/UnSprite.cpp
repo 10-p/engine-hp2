@@ -161,7 +161,8 @@ void URender::SetupDynamics( FSceneNode* Frame, AActor* Exclude )
 			{
 				// Add the dynamic light.
 				FLOAT MaxRadius = Max( Actor->WorldLightRadius(), Actor->WorldVolumetricRadius() );
-				for( int i=0; i<4; i++ )
+				INT i;
+				for( i=0; i<4; i++ )
 					if( Frame->ViewPlanes[i].PlaneDot(Actor->Location) < -MaxRadius )
 						break;
 				if( i==4 )
@@ -487,6 +488,7 @@ void FDynamicChunk::Filter( UViewport* Viewport, FSceneNode* Frame, INT iNode, I
 			FRasterSpan* SourceLine	= &Raster->Lines    [0];
 			FRasterSpan* Line		= &TopRaster->Lines [0];
 
+			INT i;
 			for( i=TopRaster->StartY; i<Y0; i++ )
 				*Line++ = *SourceLine++;
 		}
@@ -499,6 +501,7 @@ void FDynamicChunk::Filter( UViewport* Viewport, FSceneNode* Frame, INT iNode, I
 			FRasterSpan* SourceLine	= &Raster->Lines       [Y1 - Raster->StartY];
 			FRasterSpan* Line       = &BottomRaster->Lines [Y1 - BottomRaster->StartY];
 
+			INT i;
 			for( i=Y1; i<BottomRaster->EndY; i++ )
 				*Line++ = *SourceLine++;
 		}
@@ -589,7 +592,8 @@ FDynamicFinalChunk::FDynamicFinalChunk( INT iNode, FDynamicSprite* InSprite, FRa
 	MaxZ = InSprite->MaxZ;
 
 	// Add into list z-sorted.
-	for( FDynamicItem** Item=&GRender->Dynamic( iNode, IsBack ); *Item && (*Item)->MinZ+(*Item)->MaxZ < MinZ+MaxZ; Item=&(*Item)->FilterNext );
+	FDynamicItem** Item;
+	for( Item=&GRender->Dynamic( iNode, IsBack ); *Item && (*Item)->MinZ+(*Item)->MaxZ < MinZ+MaxZ; Item=&(*Item)->FilterNext );
 	FilterNext = *Item;
 	*Item      = this;
 
@@ -612,7 +616,8 @@ void FDynamicFinalChunk::PreRender( UViewport* Viewport, FSceneNode* Frame, FSpa
 			// Span buffer is non-empty, so keep it and put it on the to-draw list.
 			STAT(GStat.ChunksDrawn++);
 			Drawn                = 1;
-			for( FDynamicSprite** Item=&Frame->Sprite; *Item && (*Item)->MinZ+(*Item)->MaxZ > Sprite->MinZ+Sprite->MaxZ; Item=&(*Item)->RenderNext );
+			FDynamicSprite** Item;
+			for( Item=&Frame->Sprite; *Item && (*Item)->MinZ+(*Item)->MaxZ > Sprite->MinZ+Sprite->MaxZ; Item=&(*Item)->RenderNext );
 			Sprite->RenderNext = *Item;
 			*Item      = Sprite;
 		}
@@ -648,7 +653,8 @@ void FDynamicFinalChunk::PreRender( UViewport* Viewport, FSceneNode* Frame, FSpa
 		{
 			if( Volumetrics->Volumetric )
 			{
-				for( FActorLink* Link=Sprite->Volumetrics; Link; Link=Link->Next )
+				FActorLink* Link;
+				for( Link=Sprite->Volumetrics; Link; Link=Link->Next )
 					if( Link->Actor==Volumetrics->Actor )
 						break;
 				if( !Link )
@@ -721,7 +727,8 @@ void FDynamicLight::Filter( UViewport* Viewport, FSceneNode* Frame, INT iNode, I
 				&&	(Actor->bSpecialLit ? (Surf.PolyFlags&PF_SpecialLit) : !(Surf.PolyFlags&PF_SpecialLit)) )
 				{
 					// Don't apply a light twice.
-					for( FActorLink* Link = GRender->SurfLights[Node.iSurf]; Link; Link=Link->Next )
+					FActorLink* Link;
+					for( Link = GRender->SurfLights[Node.iSurf]; Link; Link=Link->Next )
 						if( Link->Actor == Actor )
 							break;
 					if( !Link )
@@ -911,7 +918,7 @@ void URender::DrawActorSprite( FSceneNode* Frame, FDynamicSprite* Sprite )
 			INT Count=1;
 			for( UTexture* Test=Texture->AnimNext; Test && Test!=Texture; Test=Test->AnimNext )
 				Count++;
-			INT Num = Clamp( appFloor(Sprite->Actor->LifeFraction()*Count), 0, Count-1 );
+			INT Num = Clamp<INT>( appFloor(Sprite->Actor->LifeFraction()*Count), 0, Count-1 );
 			while( Num-- > 0 )
 				Texture = Texture->AnimNext;
 			SavedNext         = Texture->AnimNext;//sort of a hack!!

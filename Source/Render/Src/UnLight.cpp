@@ -357,6 +357,7 @@ static void SetupTable( FLOAT* ManTbl, FLOAT* ExpTbl, FLOAT Power )
 	}
 
 	Temp.F = 1.0f;
+	INT i;
 	for( i=0; i<(1<<APPROX_MAN_BITS); i++ )
 	{
 		Temp.D = (Temp.D & 0xff800000 ) + (i << (32-APPROX_EXP_BITS-APPROX_MAN_BITS));
@@ -409,6 +410,7 @@ void FLightManager::Init()
 	SetupTable(DivManTbl,    DivExpTbl,    -1.0f);
 	
 	// Init square roots.
+	INT i;
 	for( i=0; i<ARRAY_COUNT(LightDist); i++ )
 	{
 		FLOAT S = appSqrt((FLOAT)(i+1) * (1.0f/ARRAY_COUNT(LightDist)));
@@ -543,9 +545,7 @@ void FLightManager::LightAndFog( FTransSample& Vert, DWORD PolyFlags )
 
 	// Lit.
 	STAT(GStat.MeshVertLightCount += LastLight-FirstLight);
-#if !__PSX2_EE__
 	FLOAT PointSquared(Vert.Point.SizeSquared());
-#endif
 	for( FLightInfo* Light=FirstLight; Light<LastLight; Light++ )
 	{
 		if( Light->Opt != ALO_NotLight )
@@ -579,7 +579,6 @@ void FLightManager::LightAndFog( FTransSample& Vert, DWORD PolyFlags )
 			if( G < 0.0f)
 				G = 0.0f;
 
-#if !__PSX2_EE__
 			// Specular lighting.
 			if( Specular > 0.f )
 			{
@@ -592,7 +591,6 @@ void FLightManager::LightAndFog( FTransSample& Vert, DWORD PolyFlags )
  						G += Specular * S;
 				}
 			}
-#endif
 
 			// Update result color.
 			if( G > 0.0f )
@@ -658,7 +656,8 @@ void FLightManager::LightAndFog( FTransSample& Vert, DWORD PolyFlags )
 	Light merging.
 ------------------------------------------------------------------------------------*/
 
-#if _MSC_VER
+// One Merge for every compiler: HP2's Loki-era GCC copy (#else of #if _MSC_VER) had no bDarkLight
+// branch, so dark lights brightened on GCC/clang builds. At ASM=0 the #else below is the C loop.
 void FLightManager::Merge( FTextureInfo& Tex, BYTE Effect, INT Key, FLightInfo* Info, DWORD* Stream, DWORD* Dest )
 {
 	guardSlow(FLightManager::Merge);
@@ -844,204 +843,6 @@ void FLightManager::Merge( FTextureInfo& Tex, BYTE Effect, INT Key, FLightInfo* 
 	unguardSlow;
 }
 
-#else
-
-void FLightManager::Merge( FTextureInfo& Tex, BYTE Effect, INT Key, FLightInfo* Info, DWORD* StreamParam, DWORD* DestParam )
-{
-	guardSlow(FLightManager::Merge);
-
-	static INT Inputs[6];
-	FColor*& Palette = (FColor*&)Inputs[0];
-	INT& Skip = Inputs[1];
-	INT& Count = Inputs[2];
-	DWORD*& Stream = (DWORD*&)Inputs[3];
-	DWORD*& Dest = (DWORD*&)Inputs[4];
-	BYTE*& NewSrc = (BYTE*&)Inputs[5];
-
-	Stream = StreamParam;
-	Dest = DestParam;
-
-	// Merge the two streams of light.
-	BYTE* Src = Info->IlluminationMap;
-	Palette   = Info->Palette;
-	Skip      = Info->MinU;
-	Count     = Info->MaxU - Info->MinU;
-
-	if( Count<=0 ) return;
-
-	UBOOL FXDetect = ( (Effect==LE_TorchWaver) || (Effect==LE_FireWaver) || (Effect==LE_WateryShimmer) );
-
-	Src    += Info->MinV * Tex.UClamp;
-	Dest   += Info->MinV * Tex.USize;
-	Stream += Info->MinV * Tex.USize;
-
-	for( INT i=Info->MinV; i<Info->MaxV; i++ )
-	{
-		NewSrc = Src;
-
-		// Execute merge-time effects.
-		if( FXDetect )
-		{
-			BYTE Temp[1024];
-			NewSrc = Temp;
-			if( Effect==LE_TorchWaver )
-			{
-				for( INT i=Info->MinU; i<Info->MaxU; i++ )
-					Temp[i] = appFloor((FLOAT)Src[i] * (0.95f + 0.05f * GRandoms->RandomBase(Key++)));
-			}
-			else if( Effect==LE_FireWaver )
-			{
-				for( INT i=Info->MinU; i<Info->MaxU; i++ )
-					Temp[i] = appFloor((FLOAT)Src[i] * (0.80f + 0.20f * GRandoms->RandomBase(Key++)));
-			}
-			else if( Effect==LE_WateryShimmer )
-			{
-				for( INT i=Info->MinU; i<Info->MaxU; i++ )
-					Temp[i] = appFloor((FLOAT)Src[i] * (0.60f + 0.40f * GRandoms->Random(Key++)));
-			}
-		}
-
-		// Scale and merge the lighting.
-    #if ASMLINUX
-		// Dummy output variables.
-		int D0, D1, D2, D3, D4;
-
-		asm volatile ("
-			# Registers:
-			# %0    = Byte-accessible temp.
-			# %1    = Temp.
-			# %2    = Loop counter.
-			# %3    = Stream.
-			# %4    = Dest.
-			# %%esp = NewSrc.
-			# %%ebp = Count / Light element.
-			#
-			# Memory:
-			# %5    = SavedESP.
-			# %6    = SavedEBP.
-			# %7    = Inputs[0]: Palette.
-			# 4+%7  = Inputs[1]: Skip.
-			# 8+%7  = Inputs[2]: Count.
-			# 12+%7 = Inputs[3]: Stream.
-			# 16+%7 = Inputs[4]: Dest.
-			# 20+%7 = Inputs[5]: NewSrc.
-
-			# Setup.
-			movl	%%esp, %5;         # Save esp.
-			movl	%%ebp, %6;         # Save ebp.
-			movl	4+%7, %0;          # Load Skip.
-			movl	8+%7, %%ebp;       # Load Count.
-			movl	12+%7, %3;         # Load Stream.
-			movl	16+%7, %4;         # Load Dest.
-			movl	20+%7, %%esp;      # Load NewSrc.
-			xorl	%2, %2;            # Clear loop counter.
-			leal	(%3,%0,4), %3;     # Stream += Skip.
-			leal	(%4,%0,4), %4;     # Dest += Skip.
-			leal	(%%esp,%0), %%esp; # NewSrc += Skip.
-
-			# Lead-in.
-			xorl	%0, %0;
-			decl	%%ebp; # Compensate for leadin/out plus test for 1.
-			movb	(%%esp,%2), %b0;
-			jz		LeadOut;
-
-			.align 16;
-			# Get scaled light element.
-			LightLoop:
-			movl	%7, %1;          # Get palette.
-			movl	(%1,%0,4), %0;   # Get color from palette.
-			movl	(%3,%2,4), %1;   # Get stream.
-			addl	%0, %1;          # Add stream and color.
-			xorl	%0, %0;
-			testl	$0x80808080, %1; # Check for saturation.
-			jnz		LightSaturate;   # Fix up after saturation.
-			movb	(%%esp,%2), %b0;
-			movl	%1, (%4,%2,4);   # Store result.
-			incl	%2;
-			cmpl	%%ebp, %2;
-			jb		LightLoop;
-
-			# Lead-out.
-			LeadOut:
-			movl	%7, %1;            # Get palette.
-			movl	(%1,%0,4), %0;     # Get color from palette.
-			movl	(%3,%2,4), %1;     # Get stream.
-			addl	%0, %1;            # Add stream and color.
-			testl	$0x80808080, %1;   # Check for saturation.
-			jnz		LastLightSaturate; # Fix up after saturation.
-			movl	%1, (%4,%2,4);     # Store result.
-			jmp		LightOut;
-
-			.align 16;
-			# Handle saturation.
-			LightSaturate:
-			movl	%1, %0;
-			andl	$0x80808080, %0;
-			movl	%0, %%ebp;
-			shrl	$7, %0;
-			andl	$0x7F7F7F7F, %1;  # Mask out all overflowed bits.
-			subl	%0, %%ebp;        # Creates 7F in each overflowing channel.
-			xorl	%0, %0;
-			orl		%%ebp, %1;        # Set saturated channels.
-			movl	8+%7, %%ebp;      # Reload end indicator.
-			movl	%1, (%4,%2,4);    # Store result.
-			movb	1(%%esp,%2), %b0;
-			decl	%%ebp;            # Compensate for leadin/out.
-			incl	%2;
-			cmpl	%%ebp, %2;
-			jb		LightLoop;
-			jmp		LeadOut;
-
-			.align 16;
-			LastLightSaturate:
-			movl	%1, %0;
-			andl	$0x80808080, %0;
-			movl	%0, %%ebp;
-			shrl	$7, %0;
-			andl	$0x7F7F7F7F, %1;
-			subl	%0, %%ebp;
-			orl		%%ebp, %1;
-			movl	%1, (%4,%2,4);
-
-			.align 16;
-			LightOut:
-			movl	%6, %%ebp;
-			movl	%5, %%esp;
-        "
-        : "=c" (D0),
-          "=S" (D1),
-          "=D" (D2),
-          "=d" (D3),
-          "=a" (D4),
-          "=m" (SavedESP),
-          "=m" (SavedEBP)
-        : "m" (Inputs[0])
-		: "memory"
-		);
-	#else
-
-		for( INT j=Info->MinU; j<Info->MaxU; j++ )
-		{
-			Dest[j] = Stream[j] + GET_COLOR_DWORD(Palette[NewSrc[j]]);
-			if( Dest[j] & 0x80808080 )
-			{
-				// Handle saturation.
-				DWORD SatMask = Dest[j] & 0x80808080;
-				SatMask -= (SatMask >>7);
-				Dest[j] = (Dest[j] & 0x7f7f7f7f) | SatMask;
-			}
-		}
-
-	#endif
-
-		Src    += Tex.UClamp;
-		Stream += Tex.USize;
-		Dest   += Tex.USize;
-	}
-
-	unguardSlow;
-}
-#endif
 
 /*------------------------------------------------------------------------------------
 	Spatial effect functions.
@@ -1947,7 +1748,8 @@ void FLightManager::SetupForSurf
 		// Volumetric mover lights.
 		for( FActorLink* Volumetrics=Draw->Volumetrics; Volumetrics && LastLight<FinalLight; Volumetrics=Volumetrics->Next )
 		{
-			for( FLightInfo* Find=FirstLight; Find<LastLight && Find->Actor!=Volumetrics->Actor; Find++ );
+			FLightInfo* Find;
+			for( Find=FirstLight; Find<LastLight && Find->Actor!=Volumetrics->Actor; Find++ );
 			Find->IsVolumetric = 1;
 			if( Find==LastLight )
 			{
@@ -1968,7 +1770,8 @@ void FLightManager::SetupForSurf
 		for( FActorLink* Link=Draw->Volumetrics; Link && LastLight<FinalLight; Link=Link->Next )
 		{
 			// See if volumetric light is already on the list as a regular light.
-			for( FLightInfo* Find=FirstLight; Find<LastLight && Find->Actor!=Link->Actor; Find++ );
+			FLightInfo* Find;
+			for( Find=FirstLight; Find<LastLight && Find->Actor!=Link->Actor; Find++ );
 			Find->IsVolumetric = 1;
 			if( Find==LastLight )
 			{
@@ -2441,7 +2244,8 @@ DWORD FLightManager::SetupForActor( FSceneNode* InFrame, AActor* InActor, FVolAc
 			// Look up actors from cache.
 			guardSlow(CacheLook);
 			Num = (INT*)Senders++;
-			for( INT i=0,NewNum=0; i<*Num; i++ )
+			INT NewNum = 0;
+			for( INT i=0; i<*Num; i++ )
 			{
 				if( NewNum!=i )
 					Senders[NewNum] = Senders[i];
@@ -2563,7 +2367,8 @@ DWORD FLightManager::SetupForActor( FSceneNode* InFrame, AActor* InActor, FVolAc
 		for( Volumetrics; Volumetrics && LastLight<FinalLight; Volumetrics=Volumetrics->Next )
 		{
 			Result |= PF_RenderFog;
-			for( FLightInfo* Find=FirstLight; Find<LastLight && Find->Actor!=Volumetrics->Actor; Find++ );
+			FLightInfo* Find;
+			for( Find=FirstLight; Find<LastLight && Find->Actor!=Volumetrics->Actor; Find++ );
 			Find->IsVolumetric = 1;
 			if( Find==LastLight )
 			{

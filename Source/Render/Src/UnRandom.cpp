@@ -116,7 +116,7 @@ void FGlobalRandoms::Tick( FLOAT TimeSeconds )
 		}
 	}
 
-	for( i=0; i<N_RANDS; i++ )
+	for( INT i=0; i<N_RANDS; i++ )
 		Randoms[i]=Clamp(Randoms[i],0.f,1.f);
 
 	// Remember tick count.

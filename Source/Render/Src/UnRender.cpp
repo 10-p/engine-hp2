@@ -65,15 +65,9 @@ URender::URender()
 		appErrorf( TEXT("Render size mismatch: C=%i U=%i"), sizeof(*this), GetClass()->GetPropertiesSize() );
 	check((INT)FBspNode::MAX_NODE_VERTICES<=(INT)FPoly::MAX_VERTICES);
 
-#if __PSX2_EE__
-	check(sizeof(FVector)==16);
-	check(sizeof(FRotator)==12);
-	check(sizeof(FCoords)==64);
-#else
 	check(sizeof(FVector)==12);
 	check(sizeof(FRotator)==12);
 	check(sizeof(FCoords)==48);
-#endif
 
 	unguard;
 }
@@ -246,13 +240,8 @@ void URender::DrawStats( FSceneNode* Frame )
 	{
 		Frame->Viewport->Canvas->CurX=Frame->X/2;
 		
-#if __PSX2_EE__
-		Frame->Viewport->Canvas->CurY=Frame->Y-40;
-		UFont* StatFont = Frame->Viewport->Canvas->BigFont;
-#else
 		Frame->Viewport->Canvas->CurY=Frame->Y-10;
 		UFont* StatFont = Frame->Viewport->Canvas->SmallFont;
-#endif
 		Frame->Viewport->Canvas->WrappedPrintf
 		(
 			StatFont,
@@ -602,11 +591,7 @@ void URender::ShowStat( FSceneNode* Frame, const TCHAR* Fmt, ... )
 	GET_VARARGS( TempStr, ARRAY_COUNT(TempStr), Fmt );
 
 	guard(URender::ShowStat);
-#if __PSX2_EE__
-	UFont* StatFont = Frame->Viewport->Canvas->BigFont;
-#else
 	UFont* StatFont = Frame->Viewport->Canvas->SmallFont;
-#endif
 	Frame->Viewport->Canvas->WrappedPrintf( StatFont, 0, TEXT(" %s\n"), TempStr );
 	unguard;
 }
@@ -868,24 +853,6 @@ UBOOL URender::Exec( const TCHAR* Cmd, FOutputDevice& Ar )
 //
 // Basic transform, outcode, project.
 //
-#if __PSX2_EE__
-static void Pipe( FTransform& Result, const FSceneNode* Frame, const FVector& InVector )
-{
-	Result.Point = InVector.TransformPointBy( Frame->Coords );
-	Result.Flags
-	=	(Frame->PrjXM * Result.Point.Z < -Result.Point.X)*FVF_OutXMin
-	+	(Frame->PrjXP * Result.Point.Z <  Result.Point.X)*FVF_OutXMax
-	+	(Frame->PrjYM * Result.Point.Z < -Result.Point.Y)*FVF_OutYMin
-	+	(Frame->PrjYP * Result.Point.Z <  Result.Point.Y)*FVF_OutYMax;
-	if( !Result.Flags )
-	{
-		Result.RZ      = Frame->Proj.Z / Result.Point.Z;
-		Result.ScreenX = Result.Point.X * Result.RZ + Frame->FX15;
-		Result.ScreenY = Result.Point.Y * Result.RZ + Frame->FY15;
-		Result.IntY    = appRound(Result.ScreenY);
-	}
-}
-#else
 static void Pipe( FTransform& Result, const FSceneNode* Frame, const FVector& InVector )
 {
 	static FLOAT Half=0.5f;
@@ -894,200 +861,13 @@ static void Pipe( FTransform& Result, const FSceneNode* Frame, const FVector& In
 	static const BYTE OutXMaxTab [2] = { 0, FVF_OutXMax };
 	static const BYTE OutYMinTab [2] = { 0, FVF_OutYMin };
 	static const BYTE OutYMaxTab [2] = { 0, FVF_OutYMax };
-#if ASM
-	__asm
-	{
-		; Load pointers.
-		mov	    esi, [Frame]
-		mov     ecx, [Result]
-		mov     eax, [InVector]
-		lea     edx, [esi]FSceneNode.Coords
-
-		; Transform the point.
-		mov		esi, [Frame]
-		mov     eax, [InVector]
-		lea     edx, [esi]FSceneNode.Coords
-		mov     ecx, [Result]
-
-		fld     dword ptr [eax+0]
-		fld     dword ptr [eax+4]
-		fld     dword ptr [eax+8]
-		fxch    st(2)
-
-		fsub    dword ptr [edx + 0]
-		fxch    st(1)
-		fsub	dword ptr [edx + 4]
-		fxch    st(2)
-		fsub	dword ptr [edx + 8]
-		fxch    st(1)
-
-		fld     st(0)
-        fmul    dword ptr [edx+12]
-        fld     st(1)
-        fmul    dword ptr [edx+24]
-		fxch    st(2)
-		fmul    dword ptr [edx+36]
-		fxch    st(4)
-
-		fld     st(0)
-		fmul    dword ptr [edx+16]     
-		fld     st(1)
-        fmul    dword ptr [edx+28]    
-		fxch    st(2)
-		fmul    dword ptr [edx+40]
-		fxch    st(1)
-
-        faddp   st(3),st(0)
-        faddp   st(5),st(0)
-        faddp   st(2),st(0)
-		fxch    st(2)
-
-		fld     st(0)
-		fmul    dword ptr [edx+20]     
-		fld     st(1)
-        fmul    dword ptr [edx+32]      
-		fxch    st(2)
-		fmul    dword ptr [edx+44]
-		fxch    st(1)
-
-		faddp   st(4),st(0)
-		faddp   st(4),st(0)
-		faddp   st(1),st(0)
-		fxch    st(1)                   ; X Y Z
-
-		fstp    dword ptr [ecx+0]       ; X
-        fstp    dword ptr [ecx+4]       ; Y                     
-        fstp    dword ptr [ecx+8]       ; Z
-
-		; Compute clipping numbers.
-		fld  [ecx]FVector.Z				; Z
-		fld  [ecx]FVector.Z				; Z Z
-		fxch							; Z Z
-		fmul [esi]FSceneNode.PrjXM		; Z*ProjZM Z
-		fxch							; Z Z*ProjXM
-		fmul [esi]FSceneNode.PrjYM		; Z*ProjYM Z*ProjXM
-		fld  [ecx]FVector.Z				; Z Z*ProjYM Z*ProjXM
-		fld  [ecx]FVector.Z				; Z Z Z*ProjYM Z*ProjXM
-		fxch                            ; Z Z Z*ProjYM Z*ProjXM
-		fmul [esi]FSceneNode.PrjXP      ; Z*ProjXP Z Z*ProjYM Z*ProjXM
-		fxch                            ; Z Z*ProjXP Z*ProjYM Z*ProjXM
-		fmul [esi]FSceneNode.PrjYP      ; Z*ProjYP Z*ProjXP Z*ProjYM Z*ProjXM
-		fxch st(3)                      ; Z*ProjXM Z*ProjXP Z*ProjYM Z*ProjYP
-		fadd [ecx]FVector.X             ; X+Z*ProjXM Z*ProjXP Z*ProjYM Z*ProjYP
-		fxch st(2)                      ; Z*ProjYM Z*ProjXP X+Z*ProjXM Z*ProjYP
-		fadd [ecx]FVector.Y             ; Y+Z*ProjYM Z*ProjXP X+Z*ProjXM Z*ProjYP
-		fxch st(1)                      ; Z*ProjXP Y+Z*ProjYM X+Z*ProjXM Z*ProjYP
-		fsub [ecx]FVector.X             ; X-Z*ProjXP Y+Z*ProjYM X+Z*ProjXM Z*ProjYP
-		fxch st(3)                      ; Z*ProjYP Z+Y*ProjYM Z+X*ProjXM Z+X*ProjXP
-		fsub [ecx]FVector.Y             ; Y-Z*ProjYP Z+Y*ProjYM Z+X*ProjXM Z+X*ProjXP
-		fxch st(2)                      ; Z+X*ProjXM Z+Y*ProjYM Z+Y*ProjYP Z+X*ProjXP
-		fstp ClipXM                     ; Z+Y*ProjYM Z+Y*ProjYP Z+X*ProjXP
-		fstp ClipYM                     ; Z+Y*ProjYP Z+X*ProjXP
-		fstp ClipYP                     ; Z+X*ProjXP
-		fstp ClipXP                     ; (empty)
-
-		; Start speculative 1/Z divide.
-		fld  [esi]FSceneNode.Proj.Z     ; ProjZ
-		fdiv [ecx]FVector.Z             ; ProjZ/Z
-
-		; Compute flags.
-		mov  ebx,ClipXM					; ebx = XM clipping number as integer
-		mov  edx,ClipYM					; edx = YM clipping number as integer
-		shr  ebx,31						; ebx = XM: 0 iff clip>=0.0f, 1 iff clip<0.0f
-		mov  edi,ClipXP					; edi = XP
-		shr  edx,31                     ; edx = YM: 0 or 1
-		mov  esi,ClipYP					; esi = YP: 0 or 1
-		shr  edi,31						; edi = XP: 0 or 1
-		mov  al,OutXMinTab[ebx]			; al = 0 or FVF_OutXMin
-		shr  esi,31						; esi = YP: 0 or 1
-		mov  bl,OutYMinTab[edx]			; bl = FVF_OutYMin
-		or   bl,al						; bl = FVF_OutXMin, FVF_OutYMin
-		mov  ah,OutXMaxTab[edi]			; ah = FVF_OutXMax
-		or   bl,ah						; bl = FVF_OutXMin, FVF_OutYMin, OutYMax
-		mov  al,OutYMaxTab[esi]			; bh = FVF_OutYMax
-		or   al,bl                      ; al = FVF_OutYMin and FVF_OutYMax
-		mov  [ecx]FOutVector.Flags, al	; Store flags
-
-		; Projection.
-		fstp [ecx]FTransform.RZ
-		jne SkipProjection
-		mov esi, [Frame]
-		fld [ecx]FVector.X
-		fld [ecx]FVector.Y
-		fxch
-		fmul [ecx]FTransform.RZ
-		fxch
-		fmul [ecx]FTransform.RZ
-		fxch
-		fadd [esi]FSceneNode.FX15
-		fxch
-		fadd [esi]FSceneNode.FY15
-		fxch
-		fstp [ecx]FTransform.ScreenX
-		fst  [ecx]FTransform.ScreenY
-		fsub [Half]
-		fistp DWORD PTR [ecx]Result.IntY
-
-		; Finished.
-		SkipProjection:
-	}
-#else
+	// C only: the MSVC __asm and the Loki AT&T asm (pre-C++11 multi-line string literals) are gone, as in
+	// the template; this is what ASM=0/ASMLINUX=0 compiled anyway.
 	Result.Point = InVector.TransformPointBy( Frame->Coords );
-	#if ASMLINUX
-		// Load member variables into local variables.
-		asm volatile ("
-			#
-			# Compute clipping numbers.
-			#
-			flds %0;				# Z
-			flds %0;				# Z Z
-			fxch;					# Z Z
-			fmuls %1;				# Z*ProjXM Z
-			fxch;					# Z Z*ProjXM
-			fmuls %2;				# Z*ProjYM Z*ProjXM
-			flds %0;				# Z Z*ProjYM Z*ProjXM
-			flds %0;				# Z Z Z*ProjYM Z*ProjXM
-			fxch;					# Z Z Z*ProjYM Z*ProjXM
-			fmuls %3;				# Z*ProjXP Z Z*ProjYM Z*ProjXM
-			fxch;					# Z Z*ProjXP Z*ProjYM Z*ProjXM
-			fmuls %4;				# Z*ProjYP Z*ProjXP Z*ProjYM Z*ProjXM
-			fxch %%st(3);			# Z*ProjXM Z*ProjXP Z*ProjYM Z*ProjYP
-			fadds %5;				# Z*ProjXM+X Z*ProjXP Z*ProjYM Z*ProjYP
-			fxch %%st(2);			# Z*ProjYM Z*ProjXP Z*ProjXM+X Z*ProjYP
-			fadds %6;				# Z*ProjYM+Y Z*ProjXP Z*ProjXM+X Z*ProjYP
-			fxch %%st(1);			# Z*ProjXP Z*ProjYM+Y Z*ProjXM+X Z*ProjYP
-			fsubs %5;				# Z*ProjXP-X Z*ProjYM+Y Z*ProjXM+X Z*ProjYP
-			fxch %%st(3);			# Z*ProjYP Z*ProjYM+Y Z*ProjXM+X Z*ProjXP-X
-			fsubs %6;				# Z*ProjYP-Y Z*ProjYM+Y Z*ProjXM+X Z*ProjXP-X
-			fxch %%st(2);			# Z*ProjXM+X Z*ProjYM+Y Z*ProjYP-Y Z*ProjXP-X
-		"
-		:
-		: "g" (Result.Point.Z),
-		  "g" (Frame->PrjXM),
-		  "g" (Frame->PrjYM),
-		  "g" (Frame->PrjXP),
-		  "g" (Frame->PrjYP),
-		  "g" (Result.Point.X),
-		  "g" (Result.Point.Y)
-		);
-		asm volatile ("
-								# Z*ProjXM+X Z*ProjYM+Y Z*ProjYP-Y Z*ProjXP-X
-			fstps %0;			# Z*ProjYM+Y Z*ProjYP-Y Z*ProjXP-X
-			fstps %1;			# Z*ProjYP-Y Z*ProjXP-X
-			fstps %2;			# Z*ProjXP-X
-			fstps %3;			# (empty)
-		"
-		: "=g" (ClipXM),
-		  "=g" (ClipYM),
-		  "=g" (ClipYP),
-		  "=g" (ClipXP)
-		);
-	#else
 	ClipXM = Frame->PrjXM * Result.Point.Z + Result.Point.X;
 	ClipXP = Frame->PrjXP * Result.Point.Z - Result.Point.X;
 	ClipYM = Frame->PrjYM * Result.Point.Z + Result.Point.Y;
 	ClipYP = Frame->PrjYP * Result.Point.Z - Result.Point.Y;
-	#endif
 	Result.Flags  =
 	(	OutXMinTab [ClipXM < 0.0f]
 	+	OutXMaxTab [ClipXP < 0.0f]
@@ -1095,47 +875,12 @@ static void Pipe( FTransform& Result, const FSceneNode* Frame, const FVector& In
 	+	OutYMaxTab [ClipYP < 0.0f]);
 	if( !Result.Flags )
 	{
-		#if LINUXASM
-		asm volatile ("
-			#
-			# Projection
-			#
-			flds %4;
-			flds %5;
-			fxch;
-			fmuls %3;
-			fxch;
-			fmuls %3;
-			fxch;
-			fadds %6;
-			fxch;
-			fadds %7;
-			fxch;
-			fstps %1;
-			fsts %2;
-			fsubs %8;
-			fistps %0;
-		"
-		: "=g" (Result.IntY)
-		  "=g" (Result.ScreenX),
-		  "=g" (Result.ScreenY)
-		: "g" (Transform.RZ),
-		  "g" (Result.Point.X),
-		  "g" (Result.Point.Y),
-		  "g" (Frame->FX15),
-		  "g" (Frame->FY15),
-		  "g" (Half)
-			);
-		#else
 		Result.RZ      = Frame->Proj.Z / Result.Point.Z;
 		Result.ScreenX = Result.Point.X * Result.RZ + Frame->FX15;
 		Result.ScreenY = Result.Point.Y * Result.RZ + Frame->FY15;
 		Result.IntY    = appFloor( Result.ScreenY );
-		#endif
 	}
-#endif
 }
-#endif
 
 //
 // Clipping helper.
@@ -1641,95 +1386,6 @@ INT URender::ClipBspSurf( INT iNode, FTransform**& Result )
 	BYTE      AllCodes  = 0;
 
 
-#if __PSX2_EE__
-	FVector UnitVector = FVector(1.f, 1.f, 1.f);
-	asm volatile ("
-		lqc2		vf1, 0x00(%0)
-		lqc2		vf3, 0x00(%1)
-		lqc2		vf4, 0x00(%2)
-		lqc2		vf5, 0x00(%3)
-		lqc2		vf6, 0x00(%4)
-	"
-	:
-	: "r" (&UnitVector),
-	  "r" (&GFrame->Coords.Origin), "r" (&GFrame->Coords.XAxis),
-	  "r" (&GFrame->Coords.YAxis), "r" (&GFrame->Coords.ZAxis)
-	);
-
-	for( INT i=0; i<NumPts; i++ )
-	{
-		INT pPoint = VertPool[i].pVertex;
-		FStampedPoint& S = PointCache[pPoint];
-		if( S.Stamp != Stamp )
-		{
-			S.Stamp = Stamp;
-			S.Point = new(VectorMem)FTransform;
-
-			FVector Point = (*GPoints)(pPoint);
-
-			asm volatile ("
-				/* Register allocation:
-				 * vf0: 0, 0, 0, 1 constant vector
-				 * vf1: 1, 1, 1, 1 unit vector
-				 * vf3: Frame origin
-				 * vf4: XAxis
-				 * vf5: YAxis
-				 * vf6: ZAxis
-				 */
-
-				/* Load 128bit values. */
-				lqc2		vf2,  0x00(%1)
-
-				/* Get subtracted vector */
-				vsub.xyz	vf7xyz, vf2xyz, vf3xyz		/* vf6 <- Temp */
-
-				/* Perform dot products */
-				vmul.xyz	vf8xyz, vf7xyz, vf4xyz		/* vf8 <- Temp | XAxis */
-				vaddax.x	ACCx, vf0x,	vf8x			/* ACCx = vf8.x */
-				vmadday.x	ACCx, vf1x, vf8y			/* ACCx = vf8.x + vf8.y */
-				vmaddaz.x	ACCx, vf1x, vf8z			/* ACCx = vf8.x + vf8.y + vf8.z */
-
-				vmul.xyz	vf8xyz, vf7xyz, vf5xyz		/* vf8 <- Temp | YAxis */
-				vaddax.y	ACCy, vf0y,	vf8x			/* ACCy = vf8.x */
-				vmadday.y	ACCy, vf1y, vf8y			/* ACCy = vf8.x + vf8.y */
-				vmaddaz.y	ACCy, vf1y, vf8z			/* ACCy = vf8.x + vf8.y + vf8.z */
-			
-				vmul.xyz	vf8xyz, vf7xyz, vf6xyz		/* vf8 <- Temp | ZAxis */
-				vaddax.z	ACCz, vf0z,	vf8x			/* ACCy = vf8.x */
-				vmadday.z	ACCz, vf1z, vf8y			/* ACCy = vf8.x + vf8.y */
-				vmaddaz.z	ACCz, vf1z, vf8z			/* ACCy = vf8.x + vf8.y + vf8.z */
-
-				vmadd		vf9, vf0, vf0				/* vf9 = ACC + 0 * 0 */
-				sqc2		vf9, 0x00(%0)				/* Result.Point <- ACC */
-			"
-			:
-			: "r" (&S.Point->Point), "r" (&Point)
-			: "memory"
-			);
-
-			S.Point->Flags
-			=	(GFrame->PrjXM * S.Point->Point.Z < -S.Point->Point.X)*FVF_OutXMin
-			+	(GFrame->PrjXP * S.Point->Point.Z <  S.Point->Point.X)*FVF_OutXMax
-			+	(GFrame->PrjYM * S.Point->Point.Z < -S.Point->Point.Y)*FVF_OutYMin
-			+	(GFrame->PrjYP * S.Point->Point.Z <  S.Point->Point.Y)*FVF_OutYMax;
-			if( !S.Point->Flags )
-			{
-				S.Point->RZ      = GFrame->Proj.Z / S.Point->Point.Z;
-				S.Point->ScreenX = S.Point->Point.X * S.Point->RZ + GFrame->FX15;
-				S.Point->ScreenY = S.Point->Point.Y * S.Point->RZ + GFrame->FY15;
-				S.Point->IntY    = appRound(S.Point->ScreenY);
-			}
-
-			STAT(GStat.NumPoints++);
-		}
-		LocalPts[i] = S.Point;
-		BYTE Flags  = S.Point->Flags; 
-		Outcode    &= Flags;
-		AllCodes   |= Flags;
-	}
-	if( Outcode )
-		return 0;
-#else
 	for( INT i=0; i<NumPts; i++ )
 	{
 		INT pPoint = VertPool[i].pVertex;
@@ -1748,7 +1404,6 @@ INT URender::ClipBspSurf( INT iNode, FTransform**& Result )
 	}
 	if( Outcode )
 		return 0;
-#endif
 
 	// Clip.
 	STAT(GStat.NumClip++);
@@ -1905,7 +1560,8 @@ FSceneNode* URender::CreateChildFrame
 	guard(URender::CreateChildFrame);
 
 	// See if the scene frame already exists.
-	for( FSceneNode* Frame=Parent->Child; Frame; Frame=Frame->Sibling )
+	FSceneNode* Frame;
+	for( Frame=Parent->Child; Frame; Frame=Frame->Sibling )
 	{
 		if
 		(	Frame->Level==Level
@@ -1973,12 +1629,21 @@ FSceneNode* URender::CreateChildFrame
 /*-----------------------------------------------------------------------------
 	World polygon rasterizer.
 -----------------------------------------------------------------------------*/
-
-FRasterSpan HackRaster[2880];//max y res!!
+// HackRaster is a shared per-scanline span table indexed by Viewport->SizeY (see SetupRaster) and used by
+// ALL render devices. Any SizeY>1200 (1440p/4K/...) overran the old [2880] cap, stomping the heap (BSP poly
+// flicker, adjacent-global corruption, then a wasm "memory access out of bounds"). Sized for 8K in any
+// orientation with margin; SetupRaster also hard-clamps EndY to this capacity so NO resolution can overflow
+// it (fail-soft, like SoftDrv's MaximumYScreenSize guard). Mirrors the engine-ut99 fix.
+#define MAX_RASTER_Y 8192
+FRasterSpan HackRaster[MAX_RASTER_Y];//max y res MAX_RASTER_Y
 INT RasterStartY, RasterEndY, RasterStartX, RasterEndX;
 static UBOOL SetupRaster( FTransform** Pts, INT NumPts, FSpanBuffer* Span, INT EndY )
 {
 	guard(SetupRaster);
+
+	// Clamp to the span-table capacity so a very tall viewport can never index HackRaster out of bounds
+	// (heap corruption / wasm OOB). A no-op at every realistic resolution (<= MAX_RASTER_Y, incl. 8K).
+	EndY = Min<INT>( EndY, MAX_RASTER_Y - 1 );
 
 	// Compute integer coords.
 	RasterStartY = RasterEndY = Pts[0]->IntY;
@@ -2578,7 +2243,8 @@ void URender::OccludeBsp( FSceneNode* Frame )
 					}
 					if( iViewZone )
 					{
-						for( INT i=0; i<NumActiveZones; i++ )
+						INT i;
+						for( i=0; i<NumActiveZones; i++ )
 						{
 							BYTE iZone = ActiveZones[i];
 							if
@@ -3044,7 +2710,8 @@ void URender::OccludeBsp( FSceneNode* Frame )
 						// Merge in the new volumetrics.
 						for( FVolActorLink* Link=FirstVolumetric; Link; Link=Link->Next )
 						{
-							for( FActorLink* Other=Merge->Volumetrics; Other; Other=Other->Next )
+							FActorLink* Other;
+							for( Other=Merge->Volumetrics; Other; Other=Other->Next )
 								if( Other->Actor == Link->Actor )
 									break;
 							if( Other==NULL && VolumetricOccludes( Link, VolCross, NumVolCross ) )
@@ -3057,7 +2724,8 @@ void URender::OccludeBsp( FSceneNode* Frame )
 					// See if filled up.
 					if( SpanBuffer->ValidLines <= 0 )
 					{
-						for( INT i=0,j=0; i<NumActiveZones; j+=ActiveZones[i++]!=iZone )
+						INT i,j;
+						for( i=0,j=0; i<NumActiveZones; j+=ActiveZones[i++]!=iZone )
 							ActiveZones[j] = ActiveZones[i];
 						NumActiveZones=j;
 						ActiveZoneMask &= ~(((QWORD)1)<<iZone);
@@ -3113,6 +2781,7 @@ void URender::OccludeBsp( FSceneNode* Frame )
 	// Update stats.
 	STAT(GStat.NumZones += Model->NumZones);
 	STAT(GStat.CurZone=iViewZone);
+	INT i;
 	for( i=0; i<FBspNode::MAX_ZONES; i++ )
 		if( ZoneSpanBuffer[i].EndY )
 			STAT(GStat.VisibleZones++);
@@ -3162,7 +2831,8 @@ static void GAddCorona( FSceneNode* Frame, FCoronaLight* CoronaLights, INT& iFre
 	&& !Light->bDeleteMe
 	&&  Frame->Level->SingleLineCheck( Hit, NULL, Light->Location, Frame->Coords.Origin, TRACE_VisBlocking, FVector(0,0,0) ) )
 	{
-		for( INT i=0; i<MAX_CORONA_LIGHTS; i++ )
+		INT i;
+		for( i=0; i<MAX_CORONA_LIGHTS; i++ )
 			if( CoronaLights[i]._Actor == Light )
 				break;
 		if( i<MAX_CORONA_LIGHTS )
@@ -3216,7 +2886,8 @@ void URender::OccludeFrame( FSceneNode* Frame )
 	OccludeBsp( Frame );
 
 	// Remember surface lights.
-	for( INT i=0; i<3; i++ )
+	INT i;
+	for( i=0; i<3; i++ )
 		for( FBspDrawList* Draw=Frame->Draw[i]; Draw; Draw=Draw->Next )
 			Draw->SurfLights = SurfLights[Draw->iSurf];
 
@@ -3262,7 +2933,8 @@ void URender::DrawFrame( FSceneNode* Frame )
 
 	// Count surfaces to draw.
 	INT Num[3]={0,0,0};
-	for( INT Pass=0; Pass<3; Pass++ )
+	INT Pass;
+	for( Pass=0; Pass<3; Pass++ )
 		for( FBspDrawList* Draw = Frame->Draw[Pass]; Draw; Draw = Draw->Next )
 			Num[Pass]++;
 
@@ -3283,7 +2955,8 @@ void URender::DrawFrame( FSceneNode* Frame )
 
 	// Sort sprites by class, for texture coherency.
 	INT NumSprites = 0;
-	for( FDynamicSprite* Sprite = Frame->Sprite; Sprite; Sprite=Sprite->RenderNext )
+	FDynamicSprite* Sprite;
+	for( Sprite = Frame->Sprite; Sprite; Sprite=Sprite->RenderNext )
 		NumSprites++;
 	FDynamicSprite** Sprites = new(GMem,NumSprites) (FDynamicSprite*);
 	NumSprites = 0;
@@ -3677,7 +3350,8 @@ void URender::DrawFrame( FSceneNode* Frame )
 		static FTime LastTime = appSeconds();
 		FLOAT Delta            = 3.0f * (appSeconds() - LastTime);
 		LastTime               = appSeconds();
-		for( INT i=0; i<MAX_CORONA_LIGHTS; i++ )
+		INT i;
+		for( i=0; i<MAX_CORONA_LIGHTS; i++ )
 			if( CoronaLights[i]._Actor && (CoronaLights[i].Bright-=Delta)<0 )
 				CoronaLights[i]._Actor = NULL;
 		INT iFree=0;
@@ -3783,18 +3457,19 @@ INT URender::ClipDecal( FSceneNode* Frame, FDecal *Decal, UModel* Model, FBspSur
 	NumPts = 4;
 	FVector Adj = SurfNormal;
 	Adj.Normalize();
-	for( INT i=0;i<NumPts;i++ )
+	INT i,j;
+	for( i=0;i<NumPts;i++ )
 		Pts[i] = Decal->Vertices[i] + SurfBase + Adj;
 	for( i=0;i<Poly->NumPts;i++)
 		PolyPts[i] = Poly->Pts[i]->Point.TransformPointBy( Frame->Uncoords );
 	guardSlow(ClipToPolyEdges);
 	INT Prev = Poly->NumPts - 1;
-	for(INT i=0;i<Poly->NumPts;i++)
+	for( i=0;i<Poly->NumPts;i++)
 	{
 		// setup clipping plane for this polygon edge
 		FPlane ClipPlane = FPlane( PolyPts[i], (PolyPts[Prev] - PolyPts[i]) ^ (Frame->Coords.Origin - PolyPts[i]) ); 
 	
-		for(INT j=0;j<NumPts;j++)
+		for( j=0;j<NumPts;j++)
 			Dots[j] = ClipPlane.PlaneDot( Pts[j] );
 		for(j=0;j<NumPts;j++)
 		{
