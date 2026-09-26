@@ -464,6 +464,13 @@ class DLL_EXPORT_CLASS UIceTexture : public UFractalTexture
     BYTE        VertPanSpeed;
 	BYTE        Frequency;
 	BYTE        Amplitude;
+	// HP2 port (layout pad, same defect as Engine's ABrush::bColoredPad): GCC/clang pack MoveIce into the two
+	// spare bytes after Amplitude (offset 230) while MSVC -- and the shipped Fire.u -- start a new DWORD at 232,
+	// so every later member was 4 bytes low and sizeof(UIceTexture) was 280 vs script 284 (the [layout] guard,
+	// ucc batchexport). MinGW lays bitfields out the MSVC way, so no pad there.
+#ifndef __MINGW32__
+	BYTE        MoveIcePad[2];
+#endif
 	BITFIELD    MoveIce:1;   // Mirrored as BOOLEAN in C++
 	FLOAT       MasterCount;
 	FLOAT       UDisplace;
