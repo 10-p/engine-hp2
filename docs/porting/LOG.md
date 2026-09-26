@@ -47,3 +47,9 @@ One dated line per green milestone (PLAN §10). Newest last.
   RSS 168–204 MB on the heaviest maps (O10: no `-LAZY`). Phase C forks compile (XOpenGL `5b376cc`, UTGLR
   `48b2681`; HP2 docs `90db56a`, `2e7c8be`) — first light pending. PLAN's `DrawWorld GetClass()` guard is
   stale (the template dropped it). Next: W1 wasm link.
+- 2026-09-26 — **Acceptance C met natively**: `Ch1Rictusempra` renders on XOpenGLDrv and UTGLR (Mesa llvmpipe
+  4.5 under Xvfb), no GL errors. **W1**: `build-wasm/SDLLaunch/{js,wasm,data,meta.json}` (targetId hp2, repo
+  HarryPotter2), depth-24 rewrite applied, no `_webrtc_deferred_open`. **W2**: headless smoke (inis only) →
+  `Name subsystem initialized` … all 15 packages bound … `LoadMap: Entry` → `FailedBrowse`; no UWeb.
+  ufrontend `targets/hp2` complete (460 files / 476 MB served, 714/714 refs, precache 231 files / 131.7 MB
+  without AllDialog.uax), `yarn gates` green; web log name fixed (`GModule="Game"`, `36e321c`).
