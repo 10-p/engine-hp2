@@ -95,6 +95,7 @@ private:
 	void FreeVertPoolIndex( DWORD i, INT NumVerts );
 	void SetupActorBrush( AMover* Actor );
 	void FlushActorBrush( AMover* Actor );
+	void FlushAllRelatedMovers( AMover* Actor );	// retail 021009
 	void ForceGroupFlush( INT iNode );
 	void FilterFPoly( INT iAddSurf, INT iNode, INT iCoplanarParent, FPoly *EdPoly, INT Outside );
 	void AddPolyFragment( INT iAddSurf, INT iNode, INT iCoplanarParent, INT IsFront, FPoly* EdPoly );
@@ -249,6 +250,35 @@ void FMovingBrushTracker::Flush( AActor* Actor )
 }
 
 //
+// Retail 021009 (Engine.dll 10394660, guard name FMovingBrushTracker::FlushAllRelatedMovers): when a mover moves,
+// also re-add every STATIONARY mover whose first Bsp node's zones are both covered by the moving mover's first node,
+// so that their Bsp fragments are rebuilt together (no Other!=Actor test: the moving one is already assimilated).
+//
+void FMovingBrushTracker::FlushAllRelatedMovers( AMover* Actor )
+{
+	guard(FMovingBrushTracker::FlushAllRelatedMovers);
+	if( GroupActors && Actor && Actor->Brush && Actor->Brush->MoverLink!=INDEX_NONE )
+	{
+		FBspNode* Node = &Level->Model->Nodes(Actor->Brush->MoverLink);
+		for( INT i=0; i<Level->Actors.Num(); i++ )
+		{
+			AMover* Other = Cast<AMover>( Level->Actors(i) );
+			if( Other && Other->Brush && Other->Brush->MoverLink!=INDEX_NONE )
+			{
+				FBspNode* OtherNode = &Level->Model->Nodes(Other->Brush->MoverLink);
+				if
+				(	(Node->ZoneMask & ((QWORD)1 << OtherNode->iZone[0]))
+				&&	(Node->ZoneMask & ((QWORD)1 << OtherNode->iZone[1]))
+				&&	Other->SavedPos==Other->Location
+				&&	Other->SavedRot==Other->Rotation )
+					AddGroupActor( Other );
+			}
+		}
+	}
+	unguard;
+}
+
+//
 // Update an actor's brush.
 //
 void FMovingBrushTracker::Update( AActor* InActor )
@@ -268,6 +298,7 @@ void FMovingBrushTracker::Update( AActor* InActor )
 	{
 		// Update the single brush.
 		AddGroupActor( Actor );
+		FlushAllRelatedMovers( Actor ); // retail 021009
 	}
 
 	// Make a complete list of all actors that need flushing.

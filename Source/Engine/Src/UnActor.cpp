@@ -1105,26 +1105,17 @@ void AActor::SetCollisionSize( FLOAT NewRadius, FLOAT NewHeight )
 //
 // Return whether this actor overlaps another.
 //
-UBOOL AActor::IsOverlapping( const AActor* Other ) const
+UBOOL AActor::IsOverlapping( AActor* Other, FLOAT Expand )
 {
 	guardSlow(AActor::IsOverlapping);
 	checkSlow(Other!=NULL);
 
-	if( !IsBrush() && !Other->IsBrush() && Other!=Level )
-	{
-		// See if cylinder actors are overlapping.
-		return
-			Square(Location.X      - Other->Location.X)
-		+	Square(Location.Y      - Other->Location.Y)
-		<	Square(CollisionRadius + Other->CollisionRadius) 
-		&&	Square(Location.Z      - Other->Location.Z)
-		<	Square(CollisionHeight + Other->CollisionHeight);
-	}
-	else
-	{
-		// We cannot detect whether these actors are overlapping so we say they aren't.
-		return 0;
-	}
+	// Retail (HPCos 021009, Engine.dll FUN_103809c0): point-check this actor's collision extent, grown by Expand on
+	// every axis, against the OTHER actor's own collision primitive (cylinder, box, mesh or BSP brush). The prototype's
+	// brush / Level special cases and cylinder-only test are gone, so a mover or shaped actor untouches correctly.
+	FCheckResult Hit(1.f);
+	FVector Extent = GetPrimitive()->GetCollisionExtent(this) + FVector(Expand,Expand,Expand);
+	return Other->GetPrimitive()->PointCheck( Hit, Other, Location, Extent, 0 )==0;
 	unguardSlow;
 }
 
