@@ -61,6 +61,8 @@ AUTOGENERATE_NAME(Possess)
 AUTOGENERATE_NAME(UnPossess)
 AUTOGENERATE_NAME(PreTeleport)
 AUTOGENERATE_NAME(PostTeleport)
+AUTOGENERATE_NAME(PreSaveGame)
+AUTOGENERATE_NAME(PostSaveGame)
 AUTOGENERATE_NAME(Login)
 AUTOGENERATE_NAME(AcceptInventory)
 AUTOGENERATE_NAME(ClientHearSound)
@@ -954,6 +956,8 @@ public:
     BITFIELD bProjTarget:1;
     BITFIELD bDoNotBlockProjectiles:1;
     BITFIELD bAlignBottom:1;
+    // retail Engine.u (HPCos 021009): honoured by the collision-size alignment
+    BITFIELD bAlignBottomAlways:1;
     BITFIELD bBlockCamera:1;
     BYTE LightType GCC_PACK(4);
     BYTE LightEffect;
@@ -1012,6 +1016,7 @@ public:
     FStringNoInit sCutNotifyCue;
     class AHUD* playerHarryHud;
     DECLARE_FUNCTION(execIsSoftwareRendering);
+    DECLARE_FUNCTION(execGetCurrentKeyState);
     DECLARE_FUNCTION(execIsOSVer2kOrXP);
     DECLARE_FUNCTION(execLoadGameSaveInfo);
     DECLARE_FUNCTION(execSaveGameSaveInfo);
@@ -1114,6 +1119,15 @@ public:
     void eventPostBeginPlay()
     {
         ProcessEvent(FindFunctionChecked(ENGINE_PostBeginPlay),NULL);
+    }
+    // Retail Engine.u (HPCos 021009): `event PreSaveGame(); event PostSaveGame();` on Actor.
+    void eventPreSaveGame()
+    {
+        ProcessEvent(FindFunctionChecked(ENGINE_PreSaveGame),NULL);
+    }
+    void eventPostSaveGame()
+    {
+        ProcessEvent(FindFunctionChecked(ENGINE_PostSaveGame),NULL);
     }
     void eventBroadcastLocalizedMessage(class UClass* Message, INT Switch, class APlayerReplicationInfo* RelatedPRI_1, class APlayerReplicationInfo* RelatedPRI_2, class UObject* OptionalObject)
     {
@@ -2050,7 +2064,9 @@ public:
     FLOAT LastMessageWindow;
     BITFIELD bactionPressed:1 GCC_PACK(4);
     FLOAT aForMove GCC_PACK(4);
-    INT TotalGameStateTokens;
+    // retail Engine.u: `var travel bool` (script offset 2348)
+    BITFIELD bShowLoadingScreen:1 GCC_PACK(4);
+    INT TotalGameStateTokens GCC_PACK(4);
     INT GameStateTokenLen;
     FStringNoInit GameStateMasterList;
     FStringNoInit CurrentGameState;
@@ -2417,6 +2433,8 @@ class ENGINE_API AInterpolationManager : public AInfo
 {
 public:
     class AInterpolationPoint* Dest;
+    // retail Engine.u: the point travelled FROM (Init / InterpolationPoint set it)
+    class AInterpolationPoint* Last;
     FLOAT PhysAlpha;
     FLOAT PhysRate;
     FLOAT RemainingPause;
@@ -3538,6 +3556,42 @@ public:
 };
 
 
+// Retail Engine.u (HPCos 021009) declares PatrolPoint `native` and the retail Engine.dll implements the class
+// (autoclassAPatrolPoint; no native functions). Layout from the retail script (PropertiesSize 1104).
+class ENGINE_API APatrolPoint : public ANavigationPoint
+{
+public:
+    FName NextPatrol_ObjectName;
+    FLOAT PauseTime;
+    BITFIELD bUseLookDir:1 GCC_PACK(4);
+    FVector lookDir GCC_PACK(4);
+    FName PatrolAnim;
+    FName PauseAnim;
+    class USound* PatrolSound;
+    BYTE numAnims;
+    INT AnimCount;
+    BITFIELD bLeadActorWaitPoint:1 GCC_PACK(4);
+    class APatrolPoint* PrevPatrolPoint GCC_PACK(4);
+    class APatrolPoint* NextPatrolPoint;
+    FName EventToSend;
+    FName ActionKeyword;
+    BITFIELD bDestroyPawn:1 GCC_PACK(4);
+    BITFIELD bUseOrientationForSplineTan:1;
+    BITFIELD bStartOfUnlinkedChain:1;
+    FName PatrolPointLinkTag GCC_PACK(4);
+    FVector vFraySplineTangent;
+    BITFIELD bHasSplineInfo:1 GCC_PACK(4);
+    FLOAT fTanLenIn GCC_PACK(4);
+    FLOAT fTanLenOut;
+    FLOAT fJumpHorizSpeed;
+    FLOAT fJumpVertSpeed;
+    FLOAT fJumpAnimMultiplier;
+    BITFIELD bStopBossEncounter:1 GCC_PACK(4);
+    DECLARE_CLASS(APatrolPoint,ANavigationPoint,0,Engine)
+    NO_DEFAULT_CONSTRUCTOR(APatrolPoint)
+};
+
+
 class ENGINE_API ADecoration : public AActor
 {
 public:
@@ -3815,6 +3869,7 @@ public:
 
 AUTOGENERATE_FUNCTION(AWind,425,execGetWind);
 AUTOGENERATE_FUNCTION(AActor,329,execIsSoftwareRendering);
+AUTOGENERATE_FUNCTION(AActor,330,execGetCurrentKeyState);
 AUTOGENERATE_FUNCTION(AActor,327,execIsOSVer2kOrXP);
 AUTOGENERATE_FUNCTION(AActor,326,execLoadGameSaveInfo);
 AUTOGENERATE_FUNCTION(AActor,325,execSaveGameSaveInfo);
