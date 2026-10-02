@@ -2090,7 +2090,17 @@ void UGameEngine::SaveGame( INT Position )
 	debugf( NAME_Log, TEXT("Saving game... filename: %s"), Filename );
 
 	GLevel->GetLevelInfo()->LevelAction=LEVACT_Saving;
-	PaintProgress();
+
+	// Retail (HPCos 021009): every actor prepares for the save (Actor.PreSaveGame) before anything is written --
+	// harry clears PreviousLevelName, SloMo(1.0), copies the status managers into himself; Characters drop vendors.
+	for( INT iActor=0; iActor<GLevel->Actors.Num(); iActor++ )
+		if( GLevel->Actors(iActor) )
+			GLevel->Actors(iActor)->eventPreSaveGame();
+
+	// Retail: no progress paint while the player's own loading screen is up.
+	if( Client && Client->Viewports.Num() && Client->Viewports(0)->Actor
+	&&	!Client->Viewports(0)->Actor->bShowLoadingScreen )
+		PaintProgress();
 	GWarn->BeginSlowTask( LocalizeProgress("Saving"), 1, 0 );
 	if( GLevel->BrushTracker )
 	{
@@ -2130,6 +2140,43 @@ void UGameEngine::SaveGame( INT Position )
 	SavePersistentActorCache();
 	// ****
 
+	// Retail: give the save slot its picture, then tell every actor the save is over (Actor.PostSaveGame;
+	// harry clears bShowLoadingScreen). Runs whether SavePackage succeeded or not, as shipped.
+	SetThumbnailForSaveSlot();
+	for( INT iActor=0; iActor<GLevel->Actors.Num(); iActor++ )
+		if( GLevel->Actors(iActor) )
+			GLevel->Actors(iActor)->eventPostSaveGame();
+
+	unguard;
+}
+
+//
+// Retail (HPCos 021009, Engine.dll 103abb00): copy the level's pre-made thumbnail into the save slot as Save0.bmp (the
+// retail PlayerPawn.SaveGame no longer screenshots). The level name is LevelInfo.LevelEnterText (HP2 keeps the map name
+// there, see LoadMap) without directory and extension: <appBaseDir>/Thumbnails/<Level>.bmp, else Thumbnails/Default.bmp.
+// False only when neither exists.
+//
+bool UGameEngine::SetThumbnailForSaveSlot()
+{
+	guard(UGameEngine::SetThumbnailForSaveSlot);
+	if( *GSys->SaveSlotPath && *GLevel->GetLevelInfo()->LevelEnterText )
+	{
+		FString LevelName = GLevel->GetLevelInfo()->LevelEnterText;
+		LevelName = LevelName.Mid( LevelName.InStr( TEXT("\\"), 1 ) + 1 );
+		if( LevelName.InStr( TEXT(".") ) >= 0 )
+			LevelName = LevelName.Left( LevelName.InStr( TEXT(".") ) );
+
+		FString Thumbnail = FString(appBaseDir()) * TEXT("Thumbnails") * LevelName + TEXT(".bmp");
+		if( GFileManager->FileSize( *Thumbnail ) <= 0 )
+		{
+			Thumbnail = FString(appBaseDir()) * TEXT("Thumbnails") * TEXT("Default.bmp");
+			if( GFileManager->FileSize( *Thumbnail ) <= 0 )
+				return false;
+		}
+		GFileManager->Copy( *(GSys->SaveSlotPath * TEXT("Save0.bmp")), *Thumbnail, 1, 1 );
+		return true;
+	}
+	return false;
 	unguard;
 }
 

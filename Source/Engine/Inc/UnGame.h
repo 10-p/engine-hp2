@@ -65,6 +65,7 @@ class ENGINE_API UGameEngine : public UEngine
 	virtual void BuildServerMasterMap( UNetDriver* NetDriver, ULevel* InLevel );
 	virtual void NotifyLevelChange();
 	void FixUpLevel();
+	bool SetThumbnailForSaveSlot();	// retail HPCos 021009 (non-virtual: vtable unchanged)
 };
 
 /*-----------------------------------------------------------------------------
