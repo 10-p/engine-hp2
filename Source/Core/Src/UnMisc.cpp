@@ -2114,6 +2114,25 @@ CORE_API void appInit( const TCHAR* InPackage, const TCHAR* InCmdLine, FMalloc* 
 }
 
 
+//
+// Retail (HPCos 021009, Core.dll 10157b90): empty <SaveSlotPath>/cache. Split out of LoadPersistentActorCache and also
+// run from appPreExit, so no session PA cache is left behind on a normal exit.
+//
+static void ClearPersistentActorCache( void )
+{
+	if( !GSys || !*GSys->SaveSlotPath )	// ours: appPreExit can run before appInit set GSys up (ucc, early exits)
+		return;
+	FString			Spec  = GSys->SaveSlotPath * TEXT("cache") * TEXT("*.*");
+	TArray<FString> Files = GFileManager->FindFiles( *Spec, true, false );
+	FString			PAFileName;
+	for( INT j=0; Files.IsValidIndex(j); j++ )
+	{
+		PAFileName = GSys->SaveSlotPath * TEXT("cache") * Files(j);
+		if( GFileManager->FileSize( *PAFileName ) > 0 )
+			GFileManager->Delete( *PAFileName, false, true );
+	}
+}
+
 CORE_API void SavePersistentActorCache( void )
 {
 	// *** Save our SavePersistent Actor Cache by copying all cached pa files into our imediate SaveSlotPath.
@@ -2129,7 +2148,7 @@ CORE_API void SavePersistentActorCache( void )
 	for( j=0; Files.IsValidIndex(j); j++ )
 	{
 		PAFileName = GSys->SaveSlotPath * Files(j);
-		if( GFileManager->FileSize( *PAFileName ) )
+		if( GFileManager->FileSize( *PAFileName ) > 0 ) // retail 021009: > 0 (a failed size query is -1)
 		{
 			GFileManager->Delete( *PAFileName, false, true );
 		}
@@ -2143,7 +2162,7 @@ CORE_API void SavePersistentActorCache( void )
 	for( j=0; Files.IsValidIndex(j); j++ )
 	{
 		PAFileName = GSys->SaveSlotPath * TEXT("cache") * Files(j);
-		if( GFileManager->FileSize( *PAFileName ) )
+		if( GFileManager->FileSize( *PAFileName ) > 0 ) // retail 021009: > 0 (a failed size query is -1)
 		{
 			GFileManager->Copy( *(GSys->SaveSlotPath * Files(j)), *PAFileName, true, true );
 		}
@@ -2158,20 +2177,11 @@ CORE_API void LoadPersistentActorCache( void )
 		return;
 	
 	// Delete all cache _pa files
-	FString			Spec  = GSys->SaveSlotPath * TEXT("cache") * TEXT("*.*");
-	TArray<FString> Files = GFileManager->FindFiles( *Spec, true, false );
+	ClearPersistentActorCache();
+	FString			Spec;
+	TArray<FString> Files;
 	FString			PAFileName;
-	
-	INT j; // MSVC6 for-scope: reused below.
-	for( j=0; Files.IsValidIndex(j); j++ )
-	{
-		PAFileName = GSys->SaveSlotPath * TEXT("cache") * Files(j);
-		if( GFileManager->FileSize( *PAFileName ) )
-		{
-			GFileManager->Delete( *PAFileName, false, true );
-		}
-	}
-	Files.Empty();
+	INT j;
 	
 	// Copy pa files from our saveGameSlot to our cache
 	Spec  = GSys->SaveSlotPath * TEXT("*_pa.*");
@@ -2181,7 +2191,7 @@ CORE_API void LoadPersistentActorCache( void )
 	for( j=0; Files.IsValidIndex(j); j++ )
 	{
 		PAFileName = GSys->SaveSlotPath * Files(j);
-		if( GFileManager->FileSize( *PAFileName ) )
+		if( GFileManager->FileSize( *PAFileName ) > 0 ) // retail 021009: > 0 (a failed size query is -1)
 		{
 			GFileManager->Copy( *(GSys->SaveSlotPath * TEXT("cache") * Files(j)), *PAFileName, true, true );
 		}
@@ -2196,6 +2206,8 @@ CORE_API void LoadPersistentActorCache( void )
 CORE_API void appPreExit()
 {
 	guard(appPreExit);
+
+	ClearPersistentActorCache();	// retail 021009: leave no session PA cache behind
 
 	debugf( NAME_Exit, TEXT("Preparing to exit.") );
 	appPlatformPreExit();
