@@ -100,4 +100,17 @@ One dated line per green milestone (PLAN §10). Newest last.
   `teleport` commands fail, so Hermione/Fred/George/Ron stay put), and `PC_Hry_Password_10` / `Pc_Hry_Password_14`
   exist in neither `hpdialog.int` nor `AllDialog.uax` (a `<?int?HPdialog.all.…?>` subtitle and silence). Still open:
   three ghosts "fell out of the world" in `Entryhall_hub` at `GSTATE010` (not reproduced at `gstate060`).
+- 2026-10-02 — **Our `Assets/` are NOT retail — a pre-release snapshot.** Compared with the retail install disc
+  (`/home/ion/hp2-ufrontend/HarryPotter2.iso`, volume `HPCOS`, InstallShield cabs dated 2002-10-15; extracted with a
+  locally built unshield into `/home/ion/hp2-ufrontend/iso-check/`, never in git): of the files both trees have, 114
+  are identical and 358 differ (41/42 maps, 182 System, 106 Music, 28 Textures); `HGame.u` 19,888,599 (ours,
+  2002-09-06) vs 17,559,707 (retail `setup/hgame.u`); retail packs every sound effect into a 44 MB `System/HPSounds.u`
+  (no `Sounds/*.uax` but `AllDialog`), and ships no dev leftovers (`Maps/Oldfiles/E3Demo.unr`, `BioRifle.uax`, ...).
+  The cut-scene bugs are FIXED in retail data: `CUTSCENES/1040Password.int` is rewritten (3,209 -> 6,019 bytes; no
+  `PC_Hry_Password_10`/`_14`, Hermione/Ron teleport to `HermioneLoc`/`RonLOC`), and retail `Entryhall_hub.unr` names
+  the markers (`CutMark12/13/14/16` CutName `HermioneLOC/FredLoc/GeorgeLoc/RonLOC`). The source tree matches OUR
+  snapshot: against retail `Engine.u` the layout guard flags `PlayerPawn` (+`bShowLoadingScreen`), `Camera` (its
+  subclass) and `InterpolationManager` (2396/796 vs 2400/800), and retail maps use HGame classes ours lack
+  (`ResolveHPointTies`). Moving to retail assets = engine header updates + frontend target data regeneration
+  (manifests, precache, `assetMarkers` — `Core.u` differs too) + re-verification. Owner decision pending.
 
