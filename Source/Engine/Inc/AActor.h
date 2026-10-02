@@ -68,7 +68,8 @@
 	// AActor collision functions.
 	virtual UPrimitive* GetPrimitive() const;
 	FVector GetCylinderExtent() const;
-	UBOOL IsOverlapping( const AActor *Other ) const;
+	// Retail (HPCos 021009): ?IsOverlapping@AActor@@QAEHPAV1@M@Z -- non-const, the extent grown by Expand.
+	UBOOL IsOverlapping( AActor *Other, FLOAT Expand );
 
 	// AActor general functions.
 	void BeginTouch(AActor *Other);

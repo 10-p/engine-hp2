@@ -1137,7 +1137,8 @@ void AActor::CheckHearSound(APawn* Hearer, INT Id, USound* Sound, FVector Parame
 	FLOAT DistSq = (HearSource-Location).SizeSquared();
 	if( DistSq < NewRadiusSquared )
 	{
-		if ( !GetLevel()->Model->FastLineCheck(HearSource,Location) )
+		// Retail 021009 (Engine.dll 10418a84): SLOT_Talk sounds are never occluded ((Id & 0xE) == SLOT_Talk*2).
+		if ( (Id & 0x0E) != (SLOT_Talk << 1) && !GetLevel()->Model->FastLineCheck(HearSource,Location) )
 		{
 			// if no line of sight, reduce radius and volume
 			if ( Instigator != Hearer )

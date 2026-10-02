@@ -1107,6 +1107,9 @@ void APawn::physWalking(FLOAT deltaTime, INT Iterations)
 					((APawn *)this)->startSwimming(Velocity, timeTick, remainingTime, Iterations);
 					return;
 				}
+				// Retail 021009 (Engine.dll 103f6cc9): the step-down / SetBase may have started a fall -- stop walking this tick.
+				if ( IsA(APawn::StaticClass()) && (Physics == PHYS_Falling) )
+					return;
 			}
 			else if ( FloorDist < 1.9 )
 			{
@@ -2771,15 +2774,17 @@ void AInterpolationManager::performPhysics(FLOAT DeltaTime)
 				eventUpdateCamera(OldAlpha);
 				FCoords OldCoords;
 				FVector StartControlPoint;
-				if( Dest->Prev )
+				// Retail 021009 (Engine.dll 104044d4): the point travelled FROM is Last (set by script: Init /
+				// InterpolationPoint), not Dest->Prev -- they differ after a path switch.
+				if( Last )
 				{
-					//if( Dest->Prev->bDontAlterRotation )
+					//if( Last->bDontAlterRotation )
 					//	OldCoords = GMath.UnitCoords / Owner->Rotation;
 					//else
-						OldCoords = GMath.UnitCoords / Dest->Prev->Rotation;
+						OldCoords = GMath.UnitCoords / Last->Rotation;
 
-					OldCoords.Origin = Dest->Prev->Location;
-					StartControlPoint = Dest->Prev->StartControlPoint;
+					OldCoords.Origin = Last->Location;
+					StartControlPoint = Last->StartControlPoint;
 				}
 				else
 				{
@@ -2830,12 +2835,12 @@ void AInterpolationManager::performPhysics(FLOAT DeltaTime)
 				OldDesiredZ = DesiredCoords.ZAxis;
 
 				FLOAT Smoothing = 1.f;
-				if ( Dest->Prev )
+				if ( Last ) // retail 021009: Last, not Dest->Prev
 				{
-					if ( Dest->Prev->Smoothing == 0.f )
+					if ( Last->Smoothing == 0.f )
 						Smoothing = 0.f;
 					else
-						Smoothing = 1.f/Dest->Prev->Smoothing;
+						Smoothing = 1.f/Last->Smoothing;
 				}
 				// check if actual desired rate is in same direction as unsmoothed desired rate
 				FVector SmoothedDesiredRateX = (DesiredCoords.XAxis - CurrentCoords.XAxis)/Smoothing;
