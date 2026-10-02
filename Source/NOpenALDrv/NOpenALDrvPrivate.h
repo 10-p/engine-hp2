@@ -34,8 +34,13 @@
 #define DEFAULT_STREAM_BUFFERS     4
 #define DEFAULT_STREAM_CHUNKSIZE   32768
 
-// Occlusion factor.
-#define OCCLUSION_FACTOR 0.35f
+// (Retail ALAudio dropped the prototype's sound occlusion -- IsAudibleAt / CalculateRadiusMultiplier /
+// OCCLUSION_FACTOR 0.35 -- from PlaySound, ModifySound and Update; so does this driver.)
+
+// Retail: ambient sounds are (re)considered every AMBIENT_UPDATE_INTERVAL seconds, not every frame, and at
+// most MAX_AMBIENT_INSTANCES voices play one AmbientSound at a time (the highest priorities).
+#define AMBIENT_UPDATE_INTERVAL 0.2f
+#define MAX_AMBIENT_INSTANCES   3
 
 // Priority modifier for playing sounds.
 #define PLAYING_PRIORITY_MULTIPLIER 1.0f
@@ -138,13 +143,15 @@ struct FNALStream
 	void*			Ogg;			// OggVorbis_File* (heap; opaque so only NOpenALDrv.cpp includes vorbisfile, under pack(8))
 };
 
-// An ambient sound candidate (ALAudio's ALAmbient).
+// An ambient sound candidate (ALAudio's ALAmbient; retail added SourceIndex, 16 -> 20 bytes: the ambient
+// sounds already playing are listed too, so each AmbientSound can be capped at MAX_AMBIENT_INSTANCES).
 struct FNALAmbient
 {
 	AActor*		Actor;
 	FLOAT		Priority;
 	DWORD		Flags;
 	INT			Id;
+	INT			SourceIndex;	// the voice it plays on, or -1 for a candidate not yet started
 };
 
 /*------------------------------------------------------------------------------------
@@ -179,7 +186,9 @@ class DLL_EXPORT UNOpenALAudioSubsystem : public UAudioSubsystem
 	UBOOL		Initialized;
 	UBOOL		LastRealtime;
 	UBOOL		LastPaused;
+	FLOAT		AmbientTimer;		// retail (+0x54): seconds since the last ambient pass (AMBIENT_UPDATE_INTERVAL)
 	UBOOL		RestartSounds;
+	UBOOL		Muted;				// retail (+0x5C): MUTESOUNDS/UNMUTESOUNDS -- every voice's gain held at 0
 	UBOOL		OggUsable;			// libvorbisfile's struct layout matches ours (Init, VorbisLayout.c)
 	FPointRegion RegionListener;
 
@@ -241,7 +250,7 @@ class DLL_EXPORT UNOpenALAudioSubsystem : public UAudioSubsystem
 	FLOAT SoundPriority( UViewport* Viewport, FVector Location, FLOAT Volume, FLOAT Radius, INT Flags );
 	INT GetNewStreamStruct();
 	UBOOL alError( const TCHAR* Text, UBOOL Log = true );
-	INT FindLeastImportantSound( USound *pIncomingSound );
+	INT FindLeastImportantSound( USound *pIncomingSound, INT Id, FLOAT Priority );	// retail signature
 
 	// Internals (the port's).
 	FLOAT SourceGain( INT Index, FLOAT Volume );
