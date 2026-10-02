@@ -885,28 +885,35 @@ ULevel* UGameEngine::LoadMap( const FURL& URL, UPendingLevel* Pending, const TMa
 	guard(LoadingScreen);
 	if( Client && Client->Viewports.Num() && GLevel )
 	{
-		GLevel->GetLevelInfo()->Pauser = TEXT("");
-		APlayerPawn* PP = Client->Viewports(0)->Actor;
+		// Retail (HPCos 021009) order: hide the menu, fade out, THEN flag the old level as loading and draw one more
+		// frame so the console paints its loading screen (LevelAction==LEVACT_Loading); the proto set LEVACT_None
+		// before the fade and never showed it.
+		UViewport* Viewport=Client->Viewports(0);
+		APlayerPawn* PP = Viewport->Actor;
 		if( PP )
 			PP->bShowMenu = 0;
 
-		// Fade out if needed.
-		UViewport* Viewport=Client->Viewports(0);
-		GLevel->GetLevelInfo()->LevelAction = LEVACT_None;
-
-		if( Viewport->Console->FadeoutTime > 0.f && Viewport->Console->DrewWorld() )
+		if( Viewport )
 		{
-			FTime Prev = appSeconds();
-			while( Viewport->Actor->FlashFog.W > 0.f )
+			// Fade out if needed.
+			if( Viewport->Console->FadeoutTime > 0.f && Viewport->Console->DrewWorld() )
 			{
-				Draw( Viewport );
-				FTime Cur = appSeconds();
-				Viewport->Actor->FlashFog.W -= (Cur-Prev) / Viewport->Console->FadeoutTime;
-				Prev = Cur;
+				FTime Prev = appSeconds();
+				while( Viewport->Actor->FlashFog.W > 0.f )
+				{
+					Draw( Viewport );
+					FTime Cur = appSeconds();
+					Viewport->Actor->FlashFog.W -= (Cur-Prev) / Viewport->Console->FadeoutTime;
+					Prev = Cur;
+				}
 			}
+
+			Viewport->Actor->FlashFog.W = 0.f;
+			Draw( Viewport );
 		}
 
-		Viewport->Actor->FlashFog.W = 0.f;
+		GLevel->GetLevelInfo()->Pauser = TEXT("");
+		GLevel->GetLevelInfo()->LevelAction = LEVACT_Loading;
 		Draw( Viewport );
 
 		if( Audio )
@@ -1107,22 +1114,8 @@ ULevel* UGameEngine::LoadMap( const FURL& URL, UPendingLevel* Pending, const TMa
 		// Save the original map name in LevelInfo, so that it's retrievable from save games.
 		if( Info->LevelEnterText == TEXT("") )
 			Info->LevelEnterText = URL.Map;
-		if( Client && Client->Viewports.Num() )
-		{
-			// Draw level info.
-			UViewport* Viewport = Client->Viewports(0);
-			DWORD LockFlags=0;
-			if( Viewport->Lock(FPlane(0.f),FPlane(0.f),FPlane(0.f),LockFlags,NULL,NULL) )
-			{
-				Viewport->RenDev->EndFlash();
-				if( Viewport->Console && Viewport->Canvas )
-				{
-					// Let console display any level info.
-					Viewport->Console->eventDrawLevelInfo( Viewport->Canvas, Info->LevelEnterText );
-				}
-				Viewport->Unlock( 1 );
-			}
-		}
+		// Retail (HPCos 021009) dropped the "Draw level info" frame here (Lock with a black ScreenClear, EndFlash,
+		// Console.DrawLevelInfo, Unlock+blit): it presented a cleared frame over the LEVACT_Loading screen drawn above.
 	}
 
 	guard(LoadLevel);
@@ -2254,9 +2247,15 @@ UBOOL UGameEngine::Key( UViewport* Viewport, EInputKey Key )
 
 UBOOL UGameEngine::InputEvent( UViewport* Viewport, EInputKey iKey, EInputAction State, FLOAT Delta )
 {
-	// Nasty nasty hack for special pause
+	// Nasty nasty hack for special pause.
+	// Retail (HPCos 021009): only in debug mode -- [HGame.baseConsole] bDebugMode=True in the system ini
+	// (GConfig->GetStr, case-insensitive compare). Shipped retail ini has no such key, so Delete does nothing there.
 	if (State == IST_Press && iKey == IK_Delete)
-		GLevel->bInSpecialPauseMode = !GLevel->bInSpecialPauseMode;
+	{
+		FString DebugMode = GConfig->GetStr( TEXT("HGame.baseConsole"), TEXT("bDebugMode") );
+		if( DebugMode == TEXT("True") )
+			GLevel->bInSpecialPauseMode = !GLevel->bInSpecialPauseMode;
+	}
 
 
 
