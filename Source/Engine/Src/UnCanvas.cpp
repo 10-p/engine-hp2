@@ -314,7 +314,9 @@ static INT DrawString
 						if( X+CUSize > Canvas->ClipX ) { CUSize=(INT) (Canvas->ClipX-X); }
 						if( Y+CVSize > Canvas->ClipY ) { CVSize=(INT) (Canvas->ClipY-Y); } 
 					}
-					DrawChar( Flags, Canvas, Info, (INT) (Canvas->OrgX+X), (INT) (Canvas->OrgY+Y), CUSize, CVSize, CU, CV, CUSize, CVSize, Color );
+					// Retail (HPCos 021009): glyphs are sampled one texel row higher (V = Clamp(CV-1,0,9999)),
+					// same size -- i.e. the retail font pages' StartV sits one row below the glyph top.
+					DrawChar( Flags, Canvas, Info, (INT) (Canvas->OrgX+X), (INT) (Canvas->OrgY+Y), CUSize, CVSize, CU, Clamp(CV-1,0,9999), CUSize, CVSize, Color );
 				}
 
 				// Update underline status.

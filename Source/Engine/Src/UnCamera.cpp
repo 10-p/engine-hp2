@@ -1091,6 +1091,24 @@ UBOOL UViewport::Exec( const TCHAR* Cmd, FOutputDevice& Ar )
 			Actor->ShowFlags &= ~SHOW_Bounds;
 		return 1;
 	}
+	else if( ParseCommand(&Cmd,TEXT("SHOWCOLL")) )
+	{
+		// Retail: collision cylinders got their own flag (were drawn under SHOW_Bounds).
+		if (appAtoi(Cmd))
+			Actor->ShowFlags |= SHOW_Collision;
+		else
+			Actor->ShowFlags &= ~SHOW_Collision;
+		return 1;
+	}
+	else if( ParseCommand(&Cmd,TEXT("SHOWPATHS")) )
+	{
+		// Retail: in-game path display (interpolation / patrol paths, URender::DrawActorSprite).
+		if (appAtoi(Cmd))
+			Actor->ShowFlags |= SHOW_Paths;
+		else
+			Actor->ShowFlags &= ~SHOW_Paths;
+		return 1;
+	}
 	else if( Console && Console->ScriptConsoleExec(Cmd,Ar,Actor) )
 	{
 		return 1;

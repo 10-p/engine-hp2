@@ -39,7 +39,11 @@ void URender::SetupDynamics( FSceneNode* Frame, AActor* Exclude )
 		{
 			if
 			(	(Actor != Exclude)
-			&&	(GIsEditor ? !Actor->bHiddenEd : !Actor->bHidden)
+			// Retail: with SHOWPATHS, hidden path markers (Keypoints incl. InterpolationPoints, PatrolPoints)
+			// still get a sprite proxy so DrawActorSprite can draw their paths.
+			&&	(	(GIsEditor ? !Actor->bHiddenEd : !Actor->bHidden)
+				||	(	(Frame->Viewport->Actor->ShowFlags & SHOW_Paths)
+					&&	(Actor->IsA(AKeypoint::StaticClass()) || Actor->IsA(APatrolPoint::StaticClass())) ) )
 			// Call PlayerPawn Render Control Interface (RCI) to assess visible actors.
 			&&	( ( GIsEditor && !( Frame->Viewport->Actor->ShowFlags & SHOW_PlayerCtrl ) )
 				|| ( Frame->Viewport->Actor->IsA( APlayerPawn::StaticClass() ) 
@@ -1091,7 +1095,8 @@ void URender::DrawActorSprite( FSceneNode* Frame, FDynamicSprite* Sprite )
 		unguard;
 	}
 
-	if( ((ShowFlags & SHOW_Bounds) && (Owner->bCollideWorld || Owner->bCollideActors) )
+	// Retail: collision cylinders are keyed on SHOW_Collision (SHOWCOLL); SHOW_Bounds keeps only the box below.
+	if( ((ShowFlags & SHOW_Collision) && (Owner->bCollideWorld || Owner->bCollideActors) )
 	|| (GIsEditor && Owner->bSelected /*&& !Frame->Viewport->IsOrtho()*/) )
 	{
 		// Draw collision cylinder.
@@ -1145,8 +1150,118 @@ void URender::DrawActorSprite( FSceneNode* Frame, FDynamicSprite* Sprite )
 
 	}
 
+	// Retail (HPCos 021009): in-game path display (SHOWPATHS).
+	if( ShowFlags & SHOW_Paths )
+	{
+		AInterpolationPoint* IP = Cast<AInterpolationPoint>(Owner);
+		if( IP )
+		{
+			// Same colour scheme as UEditorEngine::DrawInterpolationPath, using the already-resolved switch links.
+			FLOAT fForwardChance = 0.f;
+			FLOAT fReverseChance = 0.f;
+			INT i;
+			if( IP->bEndOfPath )
+			{
+				for( i=0; i<8; i++ )
+				{
+					fForwardChance += IP->Switches_Forward[i].Chance;
+					fReverseChance += IP->Switches_Reverse[i].Chance;
+				}
+			}
+			else
+			{
+				fForwardChance = 100.f;
+				fReverseChance = 100.f;
+			}
+			FPlane SegmentColor;
+			for( i=0; i<8; i++ )
+			{
+				if( IP->Switches_Forward_Priv[i].Next )
+				{
+					if( IP->Switches_Forward[i].Chance <= 0 || IP->Switches_Forward[i].Chance > fForwardChance + 0.05 )
+						SegmentColor = FPlane(.8f,.7f,.7f,0);
+					else if( IP->Switches_Forward_Priv[i].Next->bInstantNextPath )
+						SegmentColor = FPlane(.7f,0,.5f,0);
+					else
+						SegmentColor = FPlane(1,.5f,.5f,0);
+					fForwardChance -= IP->Switches_Forward[i].Chance;
+					DrawInterpolationPathSegment( Frame, IP, IP->Switches_Forward_Priv[i].Next, SegmentColor, 0 );
+				}
+				if( IP->Switches_Reverse_Priv[i].Next )
+				{
+					if( IP->Switches_Reverse[i].Chance <= 0 || IP->Switches_Reverse[i].Chance > fReverseChance + 0.05 )
+						SegmentColor = FPlane(.8f,.8f,.7f,0);
+					else if( IP->Switches_Reverse_Priv[i].Next->bInstantNextPath )
+						SegmentColor = FPlane(.8f,0,.6f,0);
+					else
+						SegmentColor = FPlane(.9f,.7f,.5f,0);
+					fReverseChance -= IP->Switches_Reverse[i].Chance;
+					DrawInterpolationPathSegment( Frame, IP->Switches_Reverse_Priv[i].Next, IP, SegmentColor, 0 );
+				}
+			}
+			// Segment arriving from the previous point (unless that point ends a non-looping path).
+			if( IP->Prev && !IP->Prev->bEndOfPath )
+			{
+				SegmentColor = IP->bInstantNextPath ? FPlane(1,0,1,0) : FPlane(1,1,1,0);
+				DrawInterpolationPathSegment( Frame, IP->Prev, IP, SegmentColor, 0 );
+			}
+		}
+	}
+	if( ShowFlags & SHOW_Paths )
+	{
+		APatrolPoint* PP = Cast<APatrolPoint>(Owner);
+		if( PP && PP->PrevPatrolPoint )
+			Draw3DLine( Frame, FVector(1,1,1), LINE_None, PP->Location, PP->PrevPatrolPoint->Location );
+	}
+
 	// Done.
 	POP_HIT(Frame);
+	unguard;
+}
+
+//
+// Retail (HPCos 021009, Render.dll export ?DrawInterpolationPathSegment@URender@@UAEXPAUFSceneNode@@PAVAInterpolationPoint@@1ABVFPlane@@H@Z):
+// in-game twin of UEditorEngine::DrawInterpolationPathSegment. Main segment uses LINE_None (no IsOrtho test);
+// the orientation axes (32 units, LINE_DepthCued) are drawn when bShowOrientation instead of matShowPathOrientation.
+// Like the editor version it recomputes To->PathDist (read by PHYS_Interpolating's constant-speed rate).
+//
+void URender::DrawInterpolationPathSegment( FSceneNode* Frame, AInterpolationPoint* From, AInterpolationPoint* To, const FPlane& SegmentColor, UBOOL bShowOrientation )
+{
+	guard(URender::DrawInterpolationPathSegment);
+	if( !From || !To )
+		return;
+
+	UViewport* Viewport  = Frame->Viewport;
+	FLOAT      alpha     = 0.f;
+	FLOAT      alphastep = 0.02f;
+	FLOAT      arrow     = 0.f;
+	FLOAT      arrowstep = 0.02f;
+	To->PathDist = 0.f;
+
+	if( To->bInstantNextPath )
+	{
+		Viewport->RenDev->Draw3DLine( Frame, SegmentColor, LINE_None, From->Location, To->Location );
+	}
+	else
+	{
+		FCoords OldCoords = GMath.UnitCoords / From->Rotation;
+		OldCoords.Origin  = From->Location;
+		while( alpha < 1.0 - alphastep )
+		{
+			FCoords FirstCoords  = To->GetInterpolatedPosition( OldCoords, From->StartControlPoint, alpha, 0 );
+			FCoords SecondCoords = To->GetInterpolatedPosition( OldCoords, From->StartControlPoint, alpha+alphastep, 0 );
+			Viewport->RenDev->Draw3DLine( Frame, SegmentColor, LINE_None, FirstCoords.Origin, SecondCoords.Origin );
+			To->PathDist += (SecondCoords.Origin - FirstCoords.Origin).Size();
+			if( bShowOrientation && arrow <= alpha )
+			{
+				Viewport->RenDev->Draw3DLine( Frame, FPlane(1,0,0,0), LINE_DepthCued, FirstCoords.Origin, FirstCoords.Origin + FirstCoords.XAxis * 32 );
+				Viewport->RenDev->Draw3DLine( Frame, FPlane(0,1,0,0), LINE_DepthCued, FirstCoords.Origin, FirstCoords.Origin + FirstCoords.YAxis * 32 );
+				Viewport->RenDev->Draw3DLine( Frame, FPlane(0,0,1,0), LINE_DepthCued, FirstCoords.Origin, FirstCoords.Origin + FirstCoords.ZAxis * 32 );
+				arrow += arrowstep;
+			}
+			alpha += alphastep;
+		}
+	}
 	unguard;
 }
 
