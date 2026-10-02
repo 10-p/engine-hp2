@@ -263,8 +263,15 @@ void UGameEngine::Init()
 		GFileManager->MakeDirectory( *GSys->SaveSlotPath, 1 );
 		appSprintf( Filename, TEXT("%s") PATH_SEPARATOR TEXT("Save%i.usa"), *GSys->SaveSlotPath, appAtoi(*LoadGameSlot) );
 		
-		debugf( NAME_Log, TEXT("Loading game... filename: %s"), Filename );
-		GLevel->GetLevelInfo()->eventServerTravel(Filename, 0);
+		// ufront: only continue a save that exists. The retail Windows front-end offered "Continue" (-LOAD=0) only
+		// when the slot held a save; our launcher passes -LOAD=0 on every start, and the retail engine flags the
+		// level LEVACT_Loading before the (then failing) load. No save -> just play the level we booted (new game).
+		if( GFileManager->FileSize( Filename ) > 0 )
+		{
+			debugf( NAME_Log, TEXT("Loading game... filename: %s"), Filename );
+			GLevel->GetLevelInfo()->eventServerTravel(Filename, 0);
+		}
+		else debugf( NAME_Log, TEXT("No saved game to continue (%s): starting a new game"), Filename );
 	}
 	//***************************
 
@@ -866,6 +873,26 @@ void UGameEngine::FixUpLevel( )
 //
 // Load a map.
 //
+#ifdef __EMSCRIPTEN__
+// ufront: what the native catch( const TCHAR* ) block in LoadMap does after a safely failed load -- the web build has
+// exception catching off, so its early exits must do it themselves. Without it the current level stays flagged
+// LEVACT_Loading (retail: set before the load) and the retail console paints its loading screen forever.
+static void ufrontRestoreAfterFailedLoad( UClient* Client, ULevel* Level )
+{
+	if( Client && Client->Viewports.Num()>0 && Level && Level->GetLevelInfo() )
+	{
+		UViewport* Viewport=Client->Viewports(0);
+		Level->GetLevelInfo()->LevelAction = LEVACT_None;
+		if( Viewport->Actor )
+		{
+			Viewport->Actor->FlashFog.W = 1.f;
+			Viewport->Actor->ConstantGlowFog.W = 0.f;
+			Viewport->Actor->FadeRate = 0.f;
+		}
+	}
+}
+#endif
+
 ULevel* UGameEngine::LoadMap( const FURL& URL, UPendingLevel* Pending, const TMap<FString,FString>* TravelInfo, FString& Error )
 {
 	guard(UGameEngine::LoadMap);
@@ -958,6 +985,7 @@ ULevel* UGameEngine::LoadMap( const FURL& URL, UPendingLevel* Pending, const TMa
 					Error = FString::Printf( HaveFile ? LocalizeError("PackageVersion") : LocalizeError("PackageNotFound"), Name );
 					EndLoad();
 					SetProgress( LocalizeError(TEXT("UrlFailed"),TEXT("Core")), *Error, 6.0 );
+					ufrontRestoreAfterFailedLoad( Client, GLevel );
 					return NULL;
 				}
 #endif
@@ -976,6 +1004,7 @@ ULevel* UGameEngine::LoadMap( const FURL& URL, UPendingLevel* Pending, const TMa
 		{
 			Error = FString(TEXT("Could not load map ")) + URL.Map;
 			SetProgress( LocalizeError(TEXT("UrlFailed"),TEXT("Core")), *URL.Map, 6.0 );
+			ufrontRestoreAfterFailedLoad( Client, GLevel );
 			return NULL;
 		}
 #else
