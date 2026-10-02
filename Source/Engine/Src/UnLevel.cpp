@@ -142,13 +142,27 @@ void ULevel::ScreenActorsByGameState( void )
 	if( CurGState == TEXT("NONE") )
 		return;
 
-	// If we didn't find the player or the player's CurGState is not valid then return
-	if( pPPawn == NULL || (pPPawn->GameStateMasterList.InStr( CurGState ) < 0))
+	// If we didn't find the player then return
+	if( pPPawn == NULL )
 	{
-		if( pPPawn == NULL)
-			debugf( NAME_Log, TEXT("**** Can't find a valid player!!!! ") );
-		else
-			debugf( NAME_Log, TEXT("**** Caution: The player pawn has an Invalid CurrentGameState for this package Load."));
+		debugf( NAME_Log, TEXT("**** Can't find a valid player!!!! PP == NULL ") );
+		return;
+	}
+
+	// Retail (HPCos 021009, Engine.dll 103b87ed): GAMESTATE=<token> on the command line overrides the player's
+	// CurrentGameState (a dev switch). The shipped test is "!= 0" (sic), not ">= 0": a token at the very start of the
+	// master list is ignored, a token not in it is applied and then fails the check below. Kept as shipped.
+	FString CmdLineGState;
+	if( Parse( appCmdLine(), TEXT("GAMESTATE="), CmdLineGState ) && pPPawn->GameStateMasterList.InStr( *CmdLineGState ) != 0 )
+	{
+		CurGState = CmdLineGState.Caps();
+		pPPawn->CurrentGameState = CurGState;
+	}
+
+	// If the player's CurGState is not valid then return
+	if( pPPawn->GameStateMasterList.InStr( CurGState ) < 0 )
+	{
+		debugf( NAME_Log, TEXT("**** Caution: The player pawn has an Invalid CurrentGameState for this package Load."));
 		return;
 	}
 	
@@ -232,14 +246,12 @@ void ULevel::ScreenActorsByGameState( void )
 		{
 			// Set the bInCurrentGameState boolean
 			pAct->bInCurrentGameState = bInCurGState;
-			
-			// If we are in the game then call the resolveGameState function.
-			if( !GIsEditor )
-			{
-				// Call this actor's OnResolveGameState function so it can handle itself accordingly
-				pAct->eventOnResolveGameState();
-			}
 		}
+
+		// Retail (HPCos 021009): in the game EVERY actor resolves its game state (the prototype only called the
+		// actors that have a GState group) -- e.g. a CutScene with no GState now goes to its idle state.
+		if( !GIsEditor )
+			pAct->eventOnResolveGameState();
 
 	}// end for AllActors
 }
@@ -350,6 +362,14 @@ bool ULevel::SavePersistentActors( const FString& MapName )
 			pActAr->Serialize(&buffer, iToSave );
 			IF_TRUE_MSG_AND_BREAK(pActAr->GetError(),TEXT("ULevelBase::SavePersistentActors ERROR: Saving name of actor!") ) 
 			
+			// Block 3.1i' ) Retail (HPCos 021009): then the size of the actor's CLASS name and the class name, so that
+			// LoadPersistentActors can respawn an actor that is not in the map (Case #3).
+			appSprintf( buffer, TEXT("%s"), pAct->GetClass()->GetName() );
+			iToSave = (appStrlen(buffer)+1)*sizeof(TCHAR);
+			pActAr->Serialize(&iToSave, sizeof(iToSave) );
+			IF_TRUE_MSG_AND_BREAK(pActAr->GetError(),TEXT("ULevelBase::SavePersistentActors ERROR: Saving size of name of actor!") ) 
+			pActAr->Serialize(&buffer, iToSave );
+			IF_TRUE_MSG_AND_BREAK(pActAr->GetError(),TEXT("ULevelBase::SavePersistentActors ERROR: Saving name of actor!") ) 
 			
 			// Block 3.2i ) Save a DUMMY var for the size of the taggedProperties
 			iPosSize = pActAr->Tell();
@@ -418,6 +438,7 @@ bool ULevel::LoadPersistentActors( const FString& MapName )
 	SQWORD		FileTime;
 	int			iPActorsInFile, iToLoad, iPropSize;
 	TCHAR		strName[256];
+	TCHAR		strClassName[256];	// retail: every PA record also carries its actor's class
 	bool		bError = false;
 
 	TMultiMap<FName,AActor*> ActorsToLoad;
@@ -521,9 +542,20 @@ bool ULevel::LoadPersistentActors( const FString& MapName )
 			// Block 3.1i ) Get the Persistent Actor's Name size then the name
 			pActAr->Serialize(&iToLoad, sizeof(iToLoad));
 			IF_TRUE_MSG_AND_BREAK(pActAr->GetError(),TEXT("ULevelBase::LoadPersistentActors ERROR: Loading size of actors name!") ) 
+			// ufront: bound every raw string read -- retail kept the "PA0" tag when it added the class name, so a file
+			// in the older layout would otherwise overrun the stack buffer. It now just stops this level's PA load.
+			IF_TRUE_MSG_AND_BREAK(iToLoad<=0 || iToLoad>(INT)sizeof(strName),TEXT("ULevelBase::LoadPersistentActors ERROR: Loading size of actors name!") ) 
 			
 			pActAr->Serialize(&strName, iToLoad );
 			IF_TRUE_MSG_AND_BREAK(pActAr->GetError(),TEXT("ULevelBase::LoadPersistentActors ERROR: Loading actors name!") ) 
+			strName[ARRAY_COUNT(strName)-1] = 0;
+
+			// Block 3.1i' ) Retail (HPCos 021009): then the size of the actor's class name and the class name
+			pActAr->Serialize(&iToLoad, sizeof(iToLoad));
+			IF_TRUE_MSG_AND_BREAK(pActAr->GetError() || iToLoad<=0 || iToLoad>(INT)sizeof(strClassName),TEXT("ULevelBase::LoadPersistentActors ERROR: Loading size of actors name!") ) 
+			pActAr->Serialize(&strClassName, iToLoad );
+			IF_TRUE_MSG_AND_BREAK(pActAr->GetError(),TEXT("ULevelBase::LoadPersistentActors ERROR: Loading actors name!") ) 
+			strClassName[ARRAY_COUNT(strClassName)-1] = 0;
 			
 			
 			// Block 3.2i ) Get the size of this actor's taggedProperties ( because we may need to skip it )
@@ -568,14 +600,24 @@ bool ULevel::LoadPersistentActors( const FString& MapName )
 				// Destroy our temp actor
 				TempActor.Destroy();
 */				
-				// Seek past the actor in the level_pa.usa file
-				pActAr->Seek( pActAr->Tell() + iPropSize );
-				continue;
+				// Retail (HPCos 021009): respawn it from the class the save recorded, under its saved name (e.g. beans
+				// a chest spawned), then load it like a Case #1 actor below. An unknown class is skipped as before.
+				UClass* pClass = (UClass*)StaticFindObject( UClass::StaticClass(), ANY_PACKAGE, strClassName ); // retail passes NULL (any object); classes only is safe and equivalent in practice
+				if( pClass == NULL )
+				{
+					// Seek past the actor in the level_pa.usa file
+					pActAr->Seek( pActAr->Tell() + iPropSize );
+					continue;
+				}
+				pAct = SpawnActor( pClass, FName(strName), NULL, NULL, FVector(0,0,0), FRotator(0,0,0), NULL, true );
+				IF_TRUE_MSG_AND_BREAK( pAct == NULL, TEXT("ULevelBase::LoadPersistentActors ERROR: Spawning the the actor!") )
 			}
-			
-			// Check to make sure our names match
-			IF_TRUE_MSG_AND_BREAK( appStrcmp(pAct->GetName(),strName) != 0, 
-				TEXT("Level actor's name != persistent actor's name!!!!!") ) 
+			else
+			{
+				// Check to make sure our names match
+				IF_TRUE_MSG_AND_BREAK( appStrcmp(pAct->GetName(),strName) != 0, 
+					TEXT("Level actor's name != persistent actor's name!!!!!") ) 
+			}
 		
 			// Remove this actor from the ActorsToLoad map
 			ActorsToLoad.Remove( strName );
@@ -605,7 +647,7 @@ bool ULevel::LoadPersistentActors( const FString& MapName )
 		
 		// Block 4.) Get the EOF token
 		pActAr->Serialize(&iToLoad, sizeof(iToLoad));
-		IF_TRUE_MSG_AND_BREAK(pActAr->GetError(),TEXT("ULevelBase::LoadPersistentActors ERROR: Loading size of EOF token!") ) 
+		IF_TRUE_MSG_AND_BREAK(pActAr->GetError() || iToLoad<=0 || iToLoad>(INT)sizeof(strName),TEXT("ULevelBase::LoadPersistentActors ERROR: Loading size of EOF token!") ) 
 		
 		pActAr->Serialize(&strName, iToLoad );
 		IF_TRUE_MSG_AND_BREAK(pActAr->GetError(),TEXT("ULevelBase::LoadPersistentActors ERROR: Loading EOF token!") ) 
