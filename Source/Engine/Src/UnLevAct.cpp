@@ -1065,14 +1065,15 @@ UBOOL ULevel::MoveActor
 		if( MaybeTouched || !Actor->bBlockActors || !Actor->bBlockPlayers )
 			for( FCheckResult* Test=FirstHit; Test && Test->Time<Hit.Time; Test=Test->GetNext() )
 				if
-				(	(!Test->Actor->IsBasedOn(Actor))
+				(	((TestAdjust + DeltaSize) * Test->Time < DeltaSize)	// retail 021009: not a hit found only in the TestAdjust look-ahead
+				&&	(!Test->Actor->IsBasedOn(Actor))
 				&&	(!bIgnoreBases || !Actor->IsBasedOn(Test->Actor))
 				&&	(!Actor->IsBlockedBy(Test->Actor)) )
 					Actor->BeginTouch( Test->Actor );
 
 		// UnTouch notifications.
 		for( int i=0; i<ARRAY_COUNT(Actor->Touching); i++ )
-			if( Actor->Touching[i] && !Actor->IsOverlapping(Actor->Touching[i]) )
+			if( Actor->Touching[i] && !Actor->IsOverlapping(Actor->Touching[i], 0.1f) ) // retail 021009: 0.1 slack
 				Actor->EndTouch( Actor->Touching[i], 0 );
 	}
 
@@ -1269,7 +1270,7 @@ UBOOL ULevel::CheckEncroachment
 	{
 		// UnTouch notifications.
 		for( int i=0; i<ARRAY_COUNT(Actor->Touching); i++ )
-			if( Actor->Touching[i] && !Actor->IsOverlapping(Actor->Touching[i]) )
+			if( Actor->Touching[i] && !Actor->IsOverlapping(Actor->Touching[i], 0.5f) ) // retail 021009: 0.5 slack
 				Actor->EndTouch( Actor->Touching[i], 0 );
 	}
 
