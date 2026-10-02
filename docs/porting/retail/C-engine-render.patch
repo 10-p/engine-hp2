@@ -1,0 +1,380 @@
+--- a/HarryPotter2/Source/Engine/Inc/UnCamera.h
++++ b/HarryPotter2/Source/Engine/Inc/UnCamera.h
+@@ -183,7 +183,10 @@
+ 	SHOW_NoButtons		= 0x00002000,	// No menu/view buttons.
+ 	SHOW_RealTime		= 0x00004000,	// Update window in realtime.
+ 	SHOW_Bounds			= 0x00008000,	// Show joint bounding volumes.
+-	SHOW_Bones			= 0x00010000,	// Show actor skeletons.
++	// Retail (HPCos 021009) renumbered: SHOWCOLL owns 0x10000 (collision cylinders, formerly drawn under
++	// SHOW_Bounds) and SHOW_Bones moved to 0x20000 (UViewport::Exec SHOWCOLL/SHOWBONES, URender::DrawActorSprite).
++	SHOW_Collision		= 0x00010000,	// Show actor collision cylinders.
++	SHOW_Bones			= 0x00020000,	// Show actor skeletons.
+ };
+ 
+ // Mouse buttons and commands.
+--- a/HarryPotter2/Source/Engine/Src/UnCamera.cpp
++++ b/HarryPotter2/Source/Engine/Src/UnCamera.cpp
+@@ -1097,6 +1097,24 @@
+ 			Actor->ShowFlags &= ~SHOW_Bounds;
+ 		return 1;
+ 	}
++	else if( ParseCommand(&Cmd,TEXT("SHOWCOLL")) )
++	{
++		// Retail: collision cylinders got their own flag (were drawn under SHOW_Bounds).
++		if (appAtoi(Cmd))
++			Actor->ShowFlags |= SHOW_Collision;
++		else
++			Actor->ShowFlags &= ~SHOW_Collision;
++		return 1;
++	}
++	else if( ParseCommand(&Cmd,TEXT("SHOWPATHS")) )
++	{
++		// Retail: in-game path display (interpolation / patrol paths, URender::DrawActorSprite).
++		if (appAtoi(Cmd))
++			Actor->ShowFlags |= SHOW_Paths;
++		else
++			Actor->ShowFlags &= ~SHOW_Paths;
++		return 1;
++	}
+ 	else if( Console && Console->ScriptConsoleExec(Cmd,Ar,Actor) )
+ 	{
+ 		return 1;
+--- a/HarryPotter2/Source/Engine/Src/UnCanvas.cpp
++++ b/HarryPotter2/Source/Engine/Src/UnCanvas.cpp
+@@ -313,7 +313,9 @@
+ 						if( X+CUSize > Canvas->ClipX ) { CUSize=(INT) (Canvas->ClipX-X); }
+ 						if( Y+CVSize > Canvas->ClipY ) { CVSize=(INT) (Canvas->ClipY-Y); } 
+ 					}
+-					DrawChar( Flags, Canvas, Info, (INT) (Canvas->OrgX+X), (INT) (Canvas->OrgY+Y), CUSize, CVSize, CU, CV, CUSize, CVSize, Color );
++					// Retail (HPCos 021009): glyphs are sampled one texel row higher (V = Clamp(CV-1,0,9999)),
++					// same size -- i.e. the retail font pages' StartV sits one row below the glyph top.
++					DrawChar( Flags, Canvas, Info, (INT) (Canvas->OrgX+X), (INT) (Canvas->OrgY+Y), CUSize, CVSize, CU, Clamp(CV-1,0,9999), CUSize, CVSize, Color );
+ 				}
+ 
+ 				// Update underline status.
+--- a/HarryPotter2/Source/Engine/Src/UnGame.cpp
++++ b/HarryPotter2/Source/Engine/Src/UnGame.cpp
+@@ -884,28 +884,35 @@
+ 	guard(LoadingScreen);
+ 	if( Client && Client->Viewports.Num() && GLevel )
+ 	{
+-		GLevel->GetLevelInfo()->Pauser = TEXT("");
+-		APlayerPawn* PP = Client->Viewports(0)->Actor;
++		// Retail (HPCos 021009) order: hide the menu, fade out, THEN flag the old level as loading and draw one more
++		// frame so the console paints its loading screen (LevelAction==LEVACT_Loading); the proto set LEVACT_None
++		// before the fade and never showed it.
++		UViewport* Viewport=Client->Viewports(0);
++		APlayerPawn* PP = Viewport->Actor;
+ 		if( PP )
+ 			PP->bShowMenu = 0;
+ 
+-		// Fade out if needed.
+-		UViewport* Viewport=Client->Viewports(0);
+-		GLevel->GetLevelInfo()->LevelAction = LEVACT_None;
+-
+-		if( Viewport->Console->FadeoutTime > 0.f && Viewport->Console->DrewWorld() )
++		if( Viewport )
+ 		{
+-			FTime Prev = appSeconds();
+-			while( Viewport->Actor->FlashFog.W > 0.f )
++			// Fade out if needed.
++			if( Viewport->Console->FadeoutTime > 0.f && Viewport->Console->DrewWorld() )
+ 			{
+-				Draw( Viewport );
+-				FTime Cur = appSeconds();
+-				Viewport->Actor->FlashFog.W -= (Cur-Prev) / Viewport->Console->FadeoutTime;
+-				Prev = Cur;
++				FTime Prev = appSeconds();
++				while( Viewport->Actor->FlashFog.W > 0.f )
++				{
++					Draw( Viewport );
++					FTime Cur = appSeconds();
++					Viewport->Actor->FlashFog.W -= (Cur-Prev) / Viewport->Console->FadeoutTime;
++					Prev = Cur;
++				}
+ 			}
++
++			Viewport->Actor->FlashFog.W = 0.f;
++			Draw( Viewport );
+ 		}
+ 
+-		Viewport->Actor->FlashFog.W = 0.f;
++		GLevel->GetLevelInfo()->Pauser = TEXT("");
++		GLevel->GetLevelInfo()->LevelAction = LEVACT_Loading;
+ 		Draw( Viewport );
+ 
+ 		if( Audio )
+@@ -1112,22 +1119,8 @@
+ 		// Save the original map name in LevelInfo, so that it's retrievable from save games.
+ 		if( Info->LevelEnterText == TEXT("") )
+ 			Info->LevelEnterText = URL.Map;
+-		if( Client && Client->Viewports.Num() )
+-		{
+-			// Draw level info.
+-			UViewport* Viewport = Client->Viewports(0);
+-			DWORD LockFlags=0;
+-			if( Viewport->Lock(FPlane(0.f),FPlane(0.f),FPlane(0.f),LockFlags,NULL,NULL) )
+-			{
+-				Viewport->RenDev->EndFlash();
+-				if( Viewport->Console && Viewport->Canvas )
+-				{
+-					// Let console display any level info.
+-					Viewport->Console->eventDrawLevelInfo( Viewport->Canvas, Info->LevelEnterText );
+-				}
+-				Viewport->Unlock( 1 );
+-			}
+-		}
++		// Retail (HPCos 021009) dropped the "Draw level info" frame here (Lock with a black ScreenClear, EndFlash,
++		// Console.DrawLevelInfo, Unlock+blit): it presented a cleared frame over the LEVACT_Loading screen drawn above.
+ 	}
+ 
+ 	guard(LoadLevel);
+@@ -2294,9 +2287,15 @@
+ 
+ UBOOL UGameEngine::InputEvent( UViewport* Viewport, EInputKey iKey, EInputAction State, FLOAT Delta )
+ {
+-	// Nasty nasty hack for special pause
++	// Nasty nasty hack for special pause.
++	// Retail (HPCos 021009): only in debug mode -- [HGame.baseConsole] bDebugMode=True in the system ini
++	// (GConfig->GetStr, case-insensitive compare). Shipped retail ini has no such key, so Delete does nothing there.
+ 	if (State == IST_Press && iKey == IK_Delete)
+-		GLevel->bInSpecialPauseMode = !GLevel->bInSpecialPauseMode;
++	{
++		FString DebugMode = GConfig->GetStr( TEXT("HGame.baseConsole"), TEXT("bDebugMode") );
++		if( DebugMode == TEXT("True") )
++			GLevel->bInSpecialPauseMode = !GLevel->bInSpecialPauseMode;
++	}
+ 
+ 
+ 
+--- a/HarryPotter2/Source/Engine/Src/UnSkeletalMesh.cpp
++++ b/HarryPotter2/Source/Engine/Src/UnSkeletalMesh.cpp
+@@ -34,6 +34,7 @@
+ {
+ 	UMesh	*CachedMesh;
+ 	UAnimation *CachedAnim;
++	INT		CachedAnimBone;	// Retail (HPCos 021009): AnimBone the CachedLinks were built for (header 0x98 -> 0x9c).
+ 	FLOAT	CachedFrame;
+ 	FLOAT	CachedAlpha;
+ 	FName	CachedSeq;
+@@ -279,7 +280,9 @@
+ FVector USkeletalMesh::MeshAdjust( const AActor* Owner ) const
+ {
+ 	// Adjust to align bottoms of mesh and collision cylinder.
+-	if( Owner->bAlignBottom && Owner->bCollideWorld && Owner->Physics != PHYS_None && Owner->CollideType != CT_Shape )
++	// Retail (HPCos 021009): bAlignBottomAlways forces the alignment regardless of collision/physics.
++	if( Owner->bAlignBottomAlways
++	||	(Owner->bAlignBottom && Owner->bCollideWorld && Owner->Physics != PHYS_None && Owner->CollideType != CT_Shape) )
+ 		return FVector( 0, 0, -Owner->CollisionHeight - 2.5 
+ 			+ (Origin.Z - BoundingBox.Min.Z) * Scale.Z * Owner->DrawScale );
+ 	else
+@@ -504,6 +507,7 @@
+ 		FrameHdr->CacheLoaded = false;
+ 		FrameHdr->Movement = FrameHdr->PrevRoot = FrameHdr->MovementSurplus = FVector(0);
+ 		FrameHdr->CachedAnim = NULL;
++		FrameHdr->CachedAnimBone = 0;
+ 		FrameHdr->CachedSeq = NAME_None;
+ 		FrameHdr->CachedFrame = -1.f;
+ 		FrameHdr->CachedAlpha = -1.f;
+@@ -553,7 +557,9 @@
+ 		if (SkAnim && ThisMove )
+ 		{
+ 			// Match up all bones with a uAnim : in a non-dynamic array, inside the cached temp data chunk.
+-			if ( SkAnim != FrameHdr->CachedAnim )
++			// Retail: also relink when the channel's AnimBone changed (the links of an aux channel only cover
++			// the AnimBone subtree, so a moved AnimBone with the same SkelAnim kept stale links in the proto).
++			if ( SkAnim != FrameHdr->CachedAnim || AnimOwner->AnimBone != FrameHdr->CachedAnimBone )
+ 			{		
+ 				// Handle partial-skeleton animation.
+ 				for( INT p=0; p< RefSkeleton.Num(); p++)			
+@@ -583,6 +589,7 @@
+ 					}
+ 				}
+ 				FrameHdr->CachedAnim = SkAnim; 
++				FrameHdr->CachedAnimBone = AnimOwner->AnimBone;
+ 			}
+ 		}
+ 		unguard;
+--- a/HarryPotter2/Source/Render/Inc/Render.h
++++ b/HarryPotter2/Source/Render/Inc/Render.h
+@@ -350,6 +350,9 @@
+ 	void DrawCylinder( FSceneNode* Frame, FPlane Color, DWORD LineFlags, const FCoords& Place, FLOAT Radius, FLOAT Height, FLOAT Width = -1 );
+ 	void Precache( UViewport* Viewport );
+ 
++	// Retail (HPCos 021009): new virtual after DrawCylinder (URender vtable slot 0xa4); SHOWPATHS display.
++	virtual void DrawInterpolationPathSegment( FSceneNode* Frame, AInterpolationPoint* From, AInterpolationPoint* To, const FPlane& SegmentColor, UBOOL bShowOrientation );
++
+ 	// Dynamics cache.
+ 	FVolActorLink* FirstVolumetric;
+ 
+--- a/HarryPotter2/Source/Render/Src/UnRender.cpp
++++ b/HarryPotter2/Source/Render/Src/UnRender.cpp
+@@ -128,6 +128,21 @@
+ 	// Light manager.
+ 	GLightManager->Init();
+ 
++	// Retail (HPCos 021009): mesh shape-LOD distance from an ObjectDetail-style setting. NB the retail binary reads
++	// the literal section "Engine.Engine.ViewportManager" (no ini: indirection), which no shipped ini has, so
++	// GetStr returns "" and GlobalShapeLOD stays 1.0 -- effectively inert unless that section is added by hand.
++	FString ObjectDetail = GConfig->GetStr( TEXT("Engine.Engine.ViewportManager"), TEXT("TextureDetail") );
++	if( ObjectDetail==TEXT("ObjectDetailVeryHigh") )
++		GlobalShapeLOD = 0.1f;
++	else if( ObjectDetail==TEXT("ObjectDetailHigh") )
++		GlobalShapeLOD = 0.2f;
++	else if( ObjectDetail==TEXT("ObjectDetailMedium") )
++		GlobalShapeLOD = 0.5f;
++	else if( ObjectDetail==TEXT("ObjectDetailLow") )
++		GlobalShapeLOD = 0.8f;
++	else if( ObjectDetail==TEXT("ObjectDetailVeryLow") )
++		GlobalShapeLOD = 1.0f;
++
+ 	debugf( NAME_Init, TEXT("Rendering initialized") );
+ 	unguard;
+ }
+--- a/HarryPotter2/Source/Render/Src/UnSprite.cpp
++++ b/HarryPotter2/Source/Render/Src/UnSprite.cpp
+@@ -39,7 +39,11 @@
+ 		{
+ 			if
+ 			(	(Actor != Exclude)
+-			&&	(GIsEditor ? !Actor->bHiddenEd : !Actor->bHidden)
++			// Retail: with SHOWPATHS, hidden path markers (Keypoints incl. InterpolationPoints, PatrolPoints)
++			// still get a sprite proxy so DrawActorSprite can draw their paths.
++			&&	(	(GIsEditor ? !Actor->bHiddenEd : !Actor->bHidden)
++				||	(	(Frame->Viewport->Actor->ShowFlags & SHOW_Paths)
++					&&	(Actor->IsA(AKeypoint::StaticClass()) || Actor->IsA(APatrolPoint::StaticClass())) ) )
+ 			// Call PlayerPawn Render Control Interface (RCI) to assess visible actors.
+ 			&&	( ( GIsEditor && !( Frame->Viewport->Actor->ShowFlags & SHOW_PlayerCtrl ) )
+ 				|| ( Frame->Viewport->Actor->IsA( APlayerPawn::StaticClass() ) 
+@@ -1091,7 +1095,8 @@
+ 		unguard;
+ 	}
+ 
+-	if( ((ShowFlags & SHOW_Bounds) && (Owner->bCollideWorld || Owner->bCollideActors) )
++	// Retail: collision cylinders are keyed on SHOW_Collision (SHOWCOLL); SHOW_Bounds keeps only the box below.
++	if( ((ShowFlags & SHOW_Collision) && (Owner->bCollideWorld || Owner->bCollideActors) )
+ 	|| (GIsEditor && Owner->bSelected /*&& !Frame->Viewport->IsOrtho()*/) )
+ 	{
+ 		// Draw collision cylinder.
+@@ -1145,11 +1150,121 @@
+ 
+ 	}
+ 
++	// Retail (HPCos 021009): in-game path display (SHOWPATHS).
++	if( ShowFlags & SHOW_Paths )
++	{
++		AInterpolationPoint* IP = Cast<AInterpolationPoint>(Owner);
++		if( IP )
++		{
++			// Same colour scheme as UEditorEngine::DrawInterpolationPath, using the already-resolved switch links.
++			FLOAT fForwardChance = 0.f;
++			FLOAT fReverseChance = 0.f;
++			INT i;
++			if( IP->bEndOfPath )
++			{
++				for( i=0; i<8; i++ )
++				{
++					fForwardChance += IP->Switches_Forward[i].Chance;
++					fReverseChance += IP->Switches_Reverse[i].Chance;
++				}
++			}
++			else
++			{
++				fForwardChance = 100.f;
++				fReverseChance = 100.f;
++			}
++			FPlane SegmentColor;
++			for( i=0; i<8; i++ )
++			{
++				if( IP->Switches_Forward_Priv[i].Next )
++				{
++					if( IP->Switches_Forward[i].Chance <= 0 || IP->Switches_Forward[i].Chance > fForwardChance + 0.05 )
++						SegmentColor = FPlane(.8f,.7f,.7f,0);
++					else if( IP->Switches_Forward_Priv[i].Next->bInstantNextPath )
++						SegmentColor = FPlane(.7f,0,.5f,0);
++					else
++						SegmentColor = FPlane(1,.5f,.5f,0);
++					fForwardChance -= IP->Switches_Forward[i].Chance;
++					DrawInterpolationPathSegment( Frame, IP, IP->Switches_Forward_Priv[i].Next, SegmentColor, 0 );
++				}
++				if( IP->Switches_Reverse_Priv[i].Next )
++				{
++					if( IP->Switches_Reverse[i].Chance <= 0 || IP->Switches_Reverse[i].Chance > fReverseChance + 0.05 )
++						SegmentColor = FPlane(.8f,.8f,.7f,0);
++					else if( IP->Switches_Reverse_Priv[i].Next->bInstantNextPath )
++						SegmentColor = FPlane(.8f,0,.6f,0);
++					else
++						SegmentColor = FPlane(.9f,.7f,.5f,0);
++					fReverseChance -= IP->Switches_Reverse[i].Chance;
++					DrawInterpolationPathSegment( Frame, IP->Switches_Reverse_Priv[i].Next, IP, SegmentColor, 0 );
++				}
++			}
++			// Segment arriving from the previous point (unless that point ends a non-looping path).
++			if( IP->Prev && !IP->Prev->bEndOfPath )
++			{
++				SegmentColor = IP->bInstantNextPath ? FPlane(1,0,1,0) : FPlane(1,1,1,0);
++				DrawInterpolationPathSegment( Frame, IP->Prev, IP, SegmentColor, 0 );
++			}
++		}
++	}
++	if( ShowFlags & SHOW_Paths )
++	{
++		APatrolPoint* PP = Cast<APatrolPoint>(Owner);
++		if( PP && PP->PrevPatrolPoint )
++			Draw3DLine( Frame, FVector(1,1,1), LINE_None, PP->Location, PP->PrevPatrolPoint->Location );
++	}
++
+ 	// Done.
+ 	POP_HIT(Frame);
+ 	unguard;
+ }
+ 
++//
++// Retail (HPCos 021009, Render.dll export ?DrawInterpolationPathSegment@URender@@UAEXPAUFSceneNode@@PAVAInterpolationPoint@@1ABVFPlane@@H@Z):
++// in-game twin of UEditorEngine::DrawInterpolationPathSegment. Main segment uses LINE_None (no IsOrtho test);
++// the orientation axes (32 units, LINE_DepthCued) are drawn when bShowOrientation instead of matShowPathOrientation.
++// Like the editor version it recomputes To->PathDist (read by PHYS_Interpolating's constant-speed rate).
++//
++void URender::DrawInterpolationPathSegment( FSceneNode* Frame, AInterpolationPoint* From, AInterpolationPoint* To, const FPlane& SegmentColor, UBOOL bShowOrientation )
++{
++	guard(URender::DrawInterpolationPathSegment);
++	if( !From || !To )
++		return;
++
++	UViewport* Viewport  = Frame->Viewport;
++	FLOAT      alpha     = 0.f;
++	FLOAT      alphastep = 0.02f;
++	FLOAT      arrow     = 0.f;
++	FLOAT      arrowstep = 0.02f;
++	To->PathDist = 0.f;
++
++	if( To->bInstantNextPath )
++	{
++		Viewport->RenDev->Draw3DLine( Frame, SegmentColor, LINE_None, From->Location, To->Location );
++	}
++	else
++	{
++		FCoords OldCoords = GMath.UnitCoords / From->Rotation;
++		OldCoords.Origin  = From->Location;
++		while( alpha < 1.0 - alphastep )
++		{
++			FCoords FirstCoords  = To->GetInterpolatedPosition( OldCoords, From->StartControlPoint, alpha, 0 );
++			FCoords SecondCoords = To->GetInterpolatedPosition( OldCoords, From->StartControlPoint, alpha+alphastep, 0 );
++			Viewport->RenDev->Draw3DLine( Frame, SegmentColor, LINE_None, FirstCoords.Origin, SecondCoords.Origin );
++			To->PathDist += (SecondCoords.Origin - FirstCoords.Origin).Size();
++			if( bShowOrientation && arrow <= alpha )
++			{
++				Viewport->RenDev->Draw3DLine( Frame, FPlane(1,0,0,0), LINE_DepthCued, FirstCoords.Origin, FirstCoords.Origin + FirstCoords.XAxis * 32 );
++				Viewport->RenDev->Draw3DLine( Frame, FPlane(0,1,0,0), LINE_DepthCued, FirstCoords.Origin, FirstCoords.Origin + FirstCoords.YAxis * 32 );
++				Viewport->RenDev->Draw3DLine( Frame, FPlane(0,0,1,0), LINE_DepthCued, FirstCoords.Origin, FirstCoords.Origin + FirstCoords.ZAxis * 32 );
++				arrow += arrowstep;
++			}
++			alpha += alphastep;
++		}
++	}
++	unguard;
++}
++
+ /*-----------------------------------------------------------------------------
+ 	Wireframe view drawing.
+ -----------------------------------------------------------------------------*/

@@ -115,6 +115,14 @@ One dated line per green milestone (PLAN §10). Newest last.
   subclass) and `InterpolationManager` (2396/796 vs 2400/800), and retail maps use HGame classes ours lack
   (`ResolveHPointTies`). Moving to retail assets = engine header updates + frontend target data regeneration
   (manifests, precache, `assetMarkers` — `Core.u` differs too) + re-verification. Owner decision pending.
+- 2026-10-02 — **Two branches: `prototype` (the snapshot, bugs and all) and `retail` (the retail disc).** Retail
+  tree assembled from the ISO (`tools/dev/retail/assemble-assets.sh` -> `/home/ion/hp2-ufrontend/assets-retail`).
+  Script interfaces diffed (only Engine moved: 3 C++ classes + PatrolPoint native + `GetCurrentKeyState` +
+  Pre/PostSaveGame); C++ behaviour diffed with Ghidra headless on both builds' DLLs and ported (collision/movement,
+  save/persistence/game state, loading screen/mesh/fonts, audio) — `docs/porting/retail-assets.md` has the table and
+  the reports. Retail boots into PrivetDr (its title book closes on the first frame; found with the new bytecode
+  disassembler `tools/dev/retail/ucdis.py`). Native retail: 8+ levels clean, save + thumbnail, PA round trip, audio
+  (HPSounds.u EA-XA, Ogg, lip-synced AllDialog.usa).
 - 2026-10-03 — **New machine (`~/WorkHP2`), bootstrapped from `BOOTSTRAP-NEW-MACHINE.md`.** Every toolchain piece
   workspace-local (emsdk 5.0.7, yarn shim, corepack/Playwright/npm caches, a new mkcert CA — `.tools/env.sh`);
   Playwright 1.60 has no ubuntu26.04 build (the 24.04 one runs). Retail tree reassembled from the ISO (556 files, `Core.u`
