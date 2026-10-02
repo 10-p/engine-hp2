@@ -37,6 +37,7 @@ DECLARE_NATIVE_TYPE(Engine,UScriptedTexture);
 	AZoneInfo::StaticClass();\
 	ASkyZoneInfo::StaticClass();\
 	APathNode::StaticClass();\
+	APatrolPoint::StaticClass();\
 	ANavigationPoint::StaticClass();\
 	AScout::StaticClass();\
 	AInterpolationPoint::StaticClass();\

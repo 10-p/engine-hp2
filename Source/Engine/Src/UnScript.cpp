@@ -2867,6 +2867,24 @@ void AActor::execIsSoftwareRendering( FFrame& Stack, RESULT_DECL )
 	unguardSlow;
 }
 
+// native(330) final function bool GetCurrentKeyState( EInputKey Key ) -- retail Engine.u/Engine.dll (HPCos 021009):
+// "returns 1 if key is down, 0 if key is up". Retail reads XLevel->Engine->Client->Viewports(0)->Input's key-down
+// table, clamped to IK_MAX-1 (Ghidra, retail Engine.dll FUN_10422c60), and returns 0 with no viewport.
+void AActor::execGetCurrentKeyState( FFrame& Stack, RESULT_DECL )
+{
+	guardSlow(AActor::execGetCurrentKeyState);
+	P_GET_BYTE(Key);
+	P_FINISH;
+
+	UBOOL bDown = 0;
+	UClient* Client = (XLevel && XLevel->Engine) ? XLevel->Engine->Client : NULL;
+	if( Client && Client->Viewports.Num() && Client->Viewports(0) && Client->Viewports(0)->Input )
+		bDown = Client->Viewports(0)->Input->KeyDown( Key ) != 0;
+	*(DWORD*)Result = bDown;
+
+	unguardSlow;
+}
+
 /*-----------------------------------------------------------------------------
 	The End.
 -----------------------------------------------------------------------------*/
