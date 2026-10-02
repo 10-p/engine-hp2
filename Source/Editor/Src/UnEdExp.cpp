@@ -444,9 +444,13 @@ UBOOL UClassExporterUC::ExportText( UObject* Object, const TCHAR* Type, FOutputD
 	guard(UClassExporterUC::ExportText);
 	UClass* Class = CastChecked<UClass>( Object );
 
-	// Export script text.
-	check(Class->Defaults.Num());
-	check(Class->ScriptText);
+	// Export script text. An intrinsic class (Bitmap, Texture, ...) has no script text or defaults: skip it
+	// rather than assert, so `ucc batchexport <pkg> class uc` exports every other class of the package.
+	if( !Class->ScriptText || !Class->Defaults.Num() )
+	{
+		Warn->Logf( NAME_Warning, TEXT("%s has no script text; not exported"), Class->GetName() );
+		return 0;
+	}
 	UExporter::ExportToOutputDevice( Class->ScriptText, NULL, Ar, TEXT("txt"), TextIndent );
 
 	// Export default properties that differ from parent's.

@@ -54,8 +54,8 @@ class UBatchExportCommandlet : public UCommandlet
 				FString Filename = Path * It->GetName() + TEXT(".") + Ext;
 				if( UExporter::ExportToFile(*It, NULL, *Filename, 1, 0) )
 					GWarn->Logf( TEXT("Exported %s to %s"), It->GetFullName(), *Filename );
-				else
-					appErrorf(TEXT("Can't export %s to file %s"),It->GetFullName(),*Filename);
+				else // e.g. an intrinsic class with no script text: report it and export the rest of the package
+					GWarn->Logf( NAME_Warning, TEXT("Can't export %s to file %s"), It->GetFullName(), *Filename );
 			}
 		}
 		GIsRequestingExit=1;
