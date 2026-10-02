@@ -185,7 +185,10 @@ enum EViewportShowFlags
 	SHOW_NoButtons		= 0x00002000,	// No menu/view buttons.
 	SHOW_RealTime		= 0x00004000,	// Update window in realtime.
 	SHOW_Bounds			= 0x00008000,	// Show joint bounding volumes.
-	SHOW_Bones			= 0x00010000,	// Show actor skeletons.
+	// Retail (HPCos 021009) renumbered: SHOWCOLL owns 0x10000 (collision cylinders, formerly drawn under
+	// SHOW_Bounds) and SHOW_Bones moved to 0x20000 (UViewport::Exec SHOWCOLL/SHOWBONES, URender::DrawActorSprite).
+	SHOW_Collision		= 0x00010000,	// Show actor collision cylinders.
+	SHOW_Bones			= 0x00020000,	// Show actor skeletons.
 };
 
 // Mouse buttons and commands.

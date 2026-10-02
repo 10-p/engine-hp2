@@ -34,6 +34,7 @@ struct USkeletalMesh::CFSkelHeader
 {
 	UMesh	*CachedMesh;
 	UAnimation *CachedAnim;
+	INT		CachedAnimBone;	// Retail (HPCos 021009): AnimBone the CachedLinks were built for (header 0x98 -> 0x9c).
 	FLOAT	CachedFrame;
 	FLOAT	CachedAlpha;
 	FName	CachedSeq;
@@ -279,7 +280,9 @@ void USkeletalMesh::FlipFaces()
 FVector USkeletalMesh::MeshAdjust( const AActor* Owner ) const
 {
 	// Adjust to align bottoms of mesh and collision cylinder.
-	if( Owner->bAlignBottom && Owner->bCollideWorld && Owner->Physics != PHYS_None && Owner->CollideType != CT_Shape )
+	// Retail (HPCos 021009): bAlignBottomAlways forces the alignment regardless of collision/physics.
+	if( Owner->bAlignBottomAlways
+	||	(Owner->bAlignBottom && Owner->bCollideWorld && Owner->Physics != PHYS_None && Owner->CollideType != CT_Shape) )
 		return FVector( 0, 0, -Owner->CollisionHeight - 2.5 
 			+ (Origin.Z - BoundingBox.Min.Z) * Scale.Z * Owner->DrawScale );
 	else
@@ -504,6 +507,7 @@ void USkeletalMesh::ApplyAnim
 		FrameHdr->CacheLoaded = false;
 		FrameHdr->Movement = FrameHdr->PrevRoot = FrameHdr->MovementSurplus = FVector(0);
 		FrameHdr->CachedAnim = NULL;
+		FrameHdr->CachedAnimBone = 0;
 		FrameHdr->CachedSeq = NAME_None;
 		FrameHdr->CachedFrame = -1.f;
 		FrameHdr->CachedAlpha = -1.f;
@@ -553,7 +557,9 @@ void USkeletalMesh::ApplyAnim
 		if (SkAnim && ThisMove )
 		{
 			// Match up all bones with a uAnim : in a non-dynamic array, inside the cached temp data chunk.
-			if ( SkAnim != FrameHdr->CachedAnim )
+			// Retail: also relink when the channel's AnimBone changed (the links of an aux channel only cover
+			// the AnimBone subtree, so a moved AnimBone with the same SkelAnim kept stale links in the proto).
+			if ( SkAnim != FrameHdr->CachedAnim || AnimOwner->AnimBone != FrameHdr->CachedAnimBone )
 			{		
 				// Handle partial-skeleton animation.
 				for( INT p=0; p< RefSkeleton.Num(); p++)			
@@ -583,6 +589,7 @@ void USkeletalMesh::ApplyAnim
 					}
 				}
 				FrameHdr->CachedAnim = SkAnim; 
+				FrameHdr->CachedAnimBone = AnimOwner->AnimBone;
 			}
 		}
 		unguard;
