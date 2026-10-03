@@ -109,9 +109,10 @@ docs/          SOURCE-LAYOUT.md (drop → repository mapping) and the porting re
   `#ifndef PLATFORM_WIN32`, with the Win32 spelling in the `#else` or in `UnMinGW.cpp`. New file I/O is binary
   (`"rb"`/`"wb"`); path literals use `PATH_SEPARATOR` or `/`.
 - `EngineClasses.h` is generated; its hand edits are the layout pads (`bColoredPad`, `bTwoWayPad`), the
-  `PTRINT` members (`AStatLog.Context`, `AStatLogFile.LogAr`; `AInternetLink.PrivateResolveInfo` in `IpDrvClasses.h`)
-  and the unconditional `#pragma pack`. Regenerate
-  `EngineLayoutAsserts.cpp` with `tools/dev/layout/emit_asserts.py` after any change to it, and run
-  `tools/dev/layout/layout-sweep.gdb` on a 32-bit and a 64-bit build.
+  `PTRINT` members (`AStatLog.Context`, `AStatLogFile.LogAr`; `AInternetLink.PrivateResolveInfo` in `IpDrvClasses.h`),
+  the unconditional `#pragma pack` and, on this branch, the members that match the retail `Engine.u`
+  (`docs/porting/retail-assets.md`). Regenerate `EngineLayoutAsserts.cpp` with `tools/dev/layout/emit_asserts.py` from
+  the retail `Core.u`/`Engine.u` after any change to it, and run `tools/dev/layout/layout-sweep.gdb` on a 32-bit and
+  a 64-bit build.
 - Do not subtract pointers that may point into different buffers (GCC compiles it as an exact division); use a byte
   difference and check it.
