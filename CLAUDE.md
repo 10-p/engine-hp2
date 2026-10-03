@@ -14,6 +14,8 @@ NullDrv, SoundDrv null), web-friendly inis and the WebRTC net driver. Read that 
 `BUILD.md` for the reasoning behind every convention; this file records only where HP2 differs.
 
 ## Start here
+0. On a NEW machine: **`docs/porting/BOOTSTRAP-NEW-MACHINE.md`** (clone layout, inputs not in git, publish + serve
+   both variants). Branches: `main`/`prototype` = the pre-release snapshot assets; `retail` = the retail disc.
 1. **`docs/porting/PLAN.md`** — the work queue: phases A–G, the decisions already made, acceptance
    lines, the progress checklist. Read it before touching anything.
 2. `docs/porting/analysis/00-critique.md`, then the analysis report for the phase you are in.
