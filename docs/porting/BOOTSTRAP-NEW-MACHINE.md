@@ -1,12 +1,18 @@
-# Bootstrap on a new machine — reach "prototype on :8092, retail on :8095"
+# Bootstrap on a new machine — both HP2 variants published side by side
 
 This file is the hand-over for a fresh Claude Code client on another machine. Goal: rebuild the HP2 web port from the
-repositories and serve **both** variants exactly as on the original box (2026-10-02/03):
+repositories and publish **both** variants side by side as two separate frontend TARGETS (since 2026-10-03):
 
-| Variant | Engine branch | Frontend branch | Assets | Publish folder | Served on |
-|---|---|---|---|---|---|
-| prototype (the 2002-09-06 snapshot, bugs and all) | `main` (= `prototype`) | `hp2-prototype` (= `hp2`) | `HarryPotter2/Assets/` | `publish-hp2` | `https://<host>:8092/hp2/` |
-| retail (the retail disc, retail engine behaviour) | `retail` | `hp2-retail` | `assets-retail/` (built from the ISO) | `publish-hp2-retail` | `https://<host>:8095/hp2/` |
+| Target id (= publish folder) | What | Engine checkout (branch) | Assets |
+|---|---|---|---|
+| `hp2-proto` | the PROTOTYPE: the 2002-09-06 snapshot, original and unfinished but "proven" | `HarryPotter2` (`main` = `prototype`) | `HarryPotter2/Assets/` |
+| `hp2-retail-exp` | the RETAIL disc + the retail engine behaviour: experimental, "unproven" | `HarryPotter2-retail` (`retail`, a git worktree) | `assets-retail/` (built from the ISO) |
+
+Both targets live on the frontend branch `hp2-retail` (`hp2-prototype` = `hp2` carries `hp2-proto` only; `hp2-retail` is
+rebased on it and adds `hp2-retail-exp`; both are rebased on ufrontend `main`, the project's master). One `publish-all`
+writes `publish-hp2-site/{hp2-proto,hp2-retail-exp}/`; each target has its own storage prefixes (IndexedDB
+`hp2-proto-user-data` / `hp2-retail-exp-user-data`), so the two never share saves (they are not interchangeable). The
+publish folder carries NO root `index.html` (the owner keeps the two versions low-profile).
 
 ## 1. What this project is (read before touching anything)
 
@@ -54,12 +60,13 @@ gcc 15 + `gcc-multilib g++-multilib`, i386 dev libs `libsdl2-dev:i386 libopenal-
 ```bash
 W=~/hp2-ufrontend; mkdir -p $W && cd $W
 git clone https://github.com/10-p/engine-hp2.git HarryPotter2          # folder name MUST be HarryPotter2
+git -C HarryPotter2 checkout main && git -C HarryPotter2 worktree add ../HarryPotter2-retail retail   # hp2-retail-exp's engine
 git clone -b hp2-v433-compat https://github.com/10-p/XOpenGLDrv.git XOpenGLDrv
 git clone -b hp2 https://github.com/10-p/utglr-copy.git utglr-copy
 git clone -b fix/cubemap-bind-active-unit https://github.com/10-p/gl4es.git gl4es
 git clone https://github.com/10-p/unreal-frontend-arch-private.git ufrontend
 cd HarryPotter2 && git fetch origin && git branch -a                   # main, prototype, retail
-cd ../ufrontend && git fetch origin hp2 hp2-prototype hp2-retail && yarn install
+cd ../ufrontend && git fetch origin hp2 hp2-prototype hp2-retail && git checkout hp2-retail && yarn install
 ```
 openal-soft comes from `https://github.com/10-p/openal-soft-web` (`ufront/web`) via FetchContent automatically.
 Reference only (READ-ONLY; `CLAUDE.md` cites them at `/home/ion/engines/engine-ut99` and `/home/ion/epic-sources`):
@@ -72,7 +79,8 @@ accordingly; docs mention `/home/ion/hp2-ufrontend` (the original box) — read 
 
 `ufrontend/.ufront/publish.local.json`:
 ```json
-{ "out": "<W>/publish-hp2", "assets": { "hp2": "<W>/HarryPotter2/Assets" }, "enginesRoot": "<W>", "emsdk": "<HOME>/emsdk" }
+{ "out": "<W>/publish-hp2-site", "enginesRoot": "<W>", "emsdk": "<W>/emsdk",
+  "assets": { "hp2-proto": "<W>/HarryPotter2/Assets", "hp2-retail-exp": "<W>/assets-retail" } }
 ```
 TLS certificate for the servers (the browser only honours COOP/COEP — needed for threads — on https or localhost):
 ```bash
@@ -90,55 +98,52 @@ HarryPotter2/tools/dev/retail/assemble-assets.sh HarryPotter2.iso iso-check asse
 ```
 Expect `retail tree: assets-retail (556 files, 463M)`; `System/Core.u` 61,684 B, sha256 `c480e9a6…`.
 
-## 8. Publish both variants (one after the other — publish-all builds the CHECKED-OUT engine branch and refuses a
-mismatch with the descriptor's `publish.engine.branch`: prototype descriptor says `main`, retail says `retail`)
+## 8. Publish both targets (one run; each target builds its OWN engine checkout and refuses a branch mismatch)
 
 ```bash
 source ~/emsdk/emsdk_env.sh; cd $W
-# prototype
-git -C HarryPotter2 checkout main && git -C ufrontend checkout hp2-prototype
-(cd ufrontend && yarn publish-all --out $W/publish-hp2 --target targets/hp2/target.json \
-    --asset-path-hp2=$W/HarryPotter2/Assets)
-# retail
-git -C HarryPotter2 checkout retail && git -C ufrontend checkout hp2-retail
-(cd ufrontend && yarn publish-all --out $W/publish-hp2-retail --target targets/hp2/target.json \
-    --asset-path-hp2=$W/assets-retail)
+# Configure each engine's web trees OUTSIDE yarn first: inside `yarn` CMake caches yarn's temporary node shim as
+# NODE_EXECUTABLE (/tmp/xfs-*/node) and the next build fails with "node: not found".
+for e in HarryPotter2 HarryPotter2-retail; do (cd $e/Source && cmake --preset wasm-perf -DNODE_EXECUTABLE=$(command -v node) \
+    && cmake --preset wasm -DNODE_EXECUTABLE=$(command -v node)); done
+cd ufrontend && yarn publish-all --out $W/publish-hp2-site --compress zstd \
+    --target targets/hp2-proto/target.json --target targets/hp2-retail-exp/target.json
+rm $W/publish-hp2-site/index.html        # the portal phase always writes one; this site has none on purpose
 ```
-Each run builds the web engine (`build-wasm-perf`, `build-wasm` debug), assembles the app, writes zstd-compressed
-assets and verifies every manifest entry (prototype: 460 files; retail: 515 files). The first run takes a while
-(emscripten port builds, zstd -19 of ~0.5 GB). Check `publish-*/publish-provenance.json`: engine sha/branch as expected,
-`dirty: false`.
+Expect `hp2-proto/: 460 manifest entries` and `hp2-retail-exp/: 515 manifest entries`, `no duplicate engines`, and in
+`publish-provenance.json` engine `HarryPotter2 main` / `HarryPotter2-retail retail`, `dirty: false`.
 
-## 9. Serve them (detached, TLS, all interfaces)
+## 9. Serve them locally (detached, TLS, all interfaces)
 
+`ufront-serve` refuses a root without `index.html`, so serve a LOCAL root that symlinks the two folders (never published):
 ```bash
-cd $W/ufrontend
-setsid nohup node packages/build/bin/ufront-serve.mjs --tls --host 0.0.0.0 --port 8092 --root $W/publish-hp2 > $W/serve-8092.log 2>&1 < /dev/null &
-setsid nohup node packages/build/bin/ufront-serve.mjs --tls --host 0.0.0.0 --port 8095 --root $W/publish-hp2-retail > $W/serve-8095.log 2>&1 < /dev/null &
-NODE_EXTRA_CA_CERTS="$(mkcert -CAROOT)/rootCA.pem" node packages/build/bin/ufront-verify-site.mjs --url https://localhost:8092 --out $W/publish-hp2
-NODE_EXTRA_CA_CERTS="$(mkcert -CAROOT)/rootCA.pem" node packages/build/bin/ufront-verify-site.mjs --url https://localhost:8095 --out $W/publish-hp2-retail
+mkdir -p $W/serve-hp2-site && cd $W/serve-hp2-site && ln -sfn ../publish-hp2-site/hp2-proto && ln -sfn ../publish-hp2-site/hp2-retail-exp
+printf '<!doctype html><meta charset="utf-8"><p><a href="hp2-proto/">hp2-proto</a> · <a href="hp2-retail-exp/">hp2-retail-exp</a>\n' > index.html
+cd $W/ufrontend && setsid nohup node packages/build/bin/ufront-serve.mjs --tls --host 0.0.0.0 --port 8093 --root $W/serve-hp2-site > $W/serve-8093.log 2>&1 < /dev/null &
+NODE_EXTRA_CA_CERTS="$(mkcert -CAROOT)/rootCA.pem" node packages/build/bin/ufront-verify-site.mjs --url https://localhost:8093 --out $W/publish-hp2-site
 ```
-Expected: `ok 485 … missing 0` and `ok 540 … missing 0`. Pages: `https://<host>:8092/hp2/` and `…:8095/hp2/`.
-Different ports = different browser origins on purpose: prototype and retail save files are NOT interchangeable.
+Expected: `ok 1019 … missing 2` — the two missing are the publish bookkeeping files at the root
+(`.ufront-publish-root.json`, `publish-provenance.json`), which the local root does not expose.
+Pages: `https://<host>:8093/hp2-proto/` and `https://<host>:8093/hp2-retail-exp/`.
 
 ## 10. What "where we were" looks like (acceptance)
 
-- prototype (:8092): a plain Start boots the title level (logo + "Start" + fly-through, title music); `-LOAD=0` (the
-  default engine option) continues `Save/Save0.usa` when it exists. E2E (`git -C ufrontend checkout hp2-prototype`,
-  `yarn build --target hp2`, `yarn e2e --target hp2`): 14/14.
-- retail (:8095): a plain Start is a NEW GAME — the Privet Drive intro (narration + subtitles); retail never shows the
+- `hp2-proto`: a plain Start boots the title level (logo + "Start" + fly-through, title music); `-LOAD=0` (the
+  default engine option) continues `Save/Save0.usa` when it exists. E2E (on `hp2-retail`, which carries both targets):
+  `yarn build --target hp2-proto --engine-artifact $W/HarryPotter2/build-wasm-perf/SDLLaunch`, `yarn e2e --target hp2-proto`: 15/15.
+- `hp2-retail-exp`: a plain Start is a NEW GAME — the Privet Drive intro (narration + subtitles); retail never shows the
   in-game title book (its Windows front-end launched `PrivetDr.unr` or `-LOAD=0`), so `LocalMap=PrivetDr.unr`; with a
-  save, Start continues it. E2E on `hp2-retail` with `yarn build --target hp2 --assets $W/assets-retail
-  --engine-artifact $W/HarryPotter2/build-wasm-perf/SDLLaunch` then `yarn e2e --target hp2`: 14/14.
+  save, Start continues it. E2E: `yarn build --target hp2-retail-exp --engine-artifact
+  $W/HarryPotter2-retail/build-wasm-perf/SDLLaunch` then `yarn e2e --target hp2-retail-exp`: 15/15.
 - Both: WebGL 2 (XOpenGL) default renderer, UTGLR/SoftDrv/Null selectable, OpenAL audio (Ogg music, EA-XA sounds,
-  lip-synced dialog), AutoFOV (Hor+ on wide windows), saves persisted in IndexedDB `hp2-user-data`.
+  lip-synced dialog), AutoFOV (Hor+ on wide windows), saves persisted in IndexedDB `hp2-proto-user-data` / `hp2-retail-exp-user-data`.
 - New game over an existing save = Storage -> Clear User Data, then RELOAD the page (generic launcher gap, reported).
 
 ## 11. Gotchas we already paid for
 
 - `yarn e2e` uses Playwright's webServer on :8080 with `reuseExistingServer`: if anything else listens there it tests
   THAT server. The hp2 spec reads `UFRONT_E2E_BASE_URL`; point it at a server of your own when :8080 is taken.
-- After changing an engine web ini, clear the `hp2-user-data` store (a persisted Game.ini shadows Default.ini).
+- After changing an engine web ini, clear that target's `<id>-user-data` store (a persisted Game.ini shadows Default.ini).
 - Wine's file lookup is case-insensitive: Windows runs prove nothing about path case; test natively or on the web.
 - The 32-bit native build (`cmake --preset native`) is the oracle: run trees via `tools/dev/mkrun-hp2.sh`
   (`HP2_ASSETS_DIR=$W/assets-retail` for retail); `EXEC=<file>` runs console commands at startup.
