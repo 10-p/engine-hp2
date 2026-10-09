@@ -33,7 +33,7 @@ NullDrv, SoundDrv null), web-friendly inis and the WebRTC net driver. Read that 
 | Its `retail` worktree | `$W/HarryPotter2-retail` (`git worktree add ../HarryPotter2-retail retail`) | the RETAIL engine (`hp2-retail-exp`), built side by side |
 | The frontend clone (branch `hp2-retail`) | `$W/ufrontend` | consumes the artifacts; `targets/hp2-proto/` + `targets/hp2-retail-exp/` descriptors; storage prefixes = the ids (DBs `hp2-proto-user-data`, `hp2-retail-exp-user-data`) |
 | Renderer forks (branches `hp2-v433-compat` / `hp2`) | `$W/XOpenGLDrv`, `$W/utglr-copy`, `$W/gl4es` | fetched by CMake; edited here, never in `/home/ion/engines/*` |
-| Game assets (never in git) | `Assets/` (prototype) · `$W/assets-retail` (retail, from the ISO) | frozen copies per target: `$W/asset-folders/{hp2-proto,hp2-retail-exp}` (README + SHA256SUMS each) |
+| Game assets (never in git) | `Assets/` (prototype) · `$W/assets-retail` (retail, from the ISO) | frozen per target, game assets only: `$W/asset-folders/{hp2-proto,hp2-retail-exp}` (README inside, `<id>.sha256` beside) |
 | The template engine (READ ONLY) | `/home/ion/engines/engine-ut99` | the pattern every port decision mirrors |
 | Epic reference sources (READ ONLY) | `/home/ion/epic-sources/ut99-v400` | the v400 base HP2's 433 tree diverged from; the 3-way-merge base |
 

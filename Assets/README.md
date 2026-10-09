@@ -4,7 +4,8 @@ Everything in this folder except this file is **gitignored**. It is the retail H
 of Secrets (PC, Unreal Engine 1 build 433) content plus the binary import sources that the UnrealScript
 packages were built from. The engine reads the runtime tree from here (the launcher's `Paths=` are the
 stock relative `../Maps/*.unr` etc.), and `yarn publish-all` in the `ufrontend` clone points at it as the
-`hp2-proto` asset path. A frozen copy (+ README, SHA256SUMS) is `$W/asset-folders/hp2-proto`; the retail disc's tree
+`hp2-proto` asset path. Its runtime part (the game assets: `System Maps Textures Sounds Music Save`,
+without this folder's source material) is frozen as `$W/asset-folders/hp2-proto`; the retail disc's tree
 is `$W/asset-folders/hp2-retail-exp` (engine branch `retail`).
 
 | Folder | What | Origin in the raw drop |

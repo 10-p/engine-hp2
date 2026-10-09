@@ -44,9 +44,11 @@ every prototype->retail difference and the commit porting it), then on the front
 
 ## 3. Inputs that are NOT in git (the owner copies them over)
 
-Since 2026-10-09 both asset trees also exist FROZEN, one folder per target, each with a README (provenance,
-fingerprints) and a `SHA256SUMS`: `$W/asset-folders/hp2-proto` (= `HarryPotter2/Assets/`) and
-`$W/asset-folders/hp2-retail-exp` (= the §7 retail tree). With those, §7 is optional and `publish.local.json` can
+Since 2026-10-09 both asset trees also exist FROZEN, one folder per target, game assets only, each with a README
+(provenance, fingerprints) inside and its checksums beside it (`<id>.sha256` — a file inside would be served):
+`$W/asset-folders/hp2-proto` (= the runtime part of `HarryPotter2/Assets/`, 637 files; the drop's import sources,
+dialog database, fonts, help and other-language files stay in `Assets/`) and `$W/asset-folders/hp2-retail-exp`
+(= the §7 retail tree, 556 files). With those, §7 is optional and `publish.local.json` can
 point `assets.<id>` straight at them.
 
 - The prototype asset tree -> `~/hp2-ufrontend/HarryPotter2/Assets/` (≈796 MiB, 3,059 files; `System/Core.u` sha256

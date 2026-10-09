@@ -134,8 +134,10 @@ One dated line per green milestone (PLAN §10). Newest last.
   prefixes; `retail` is built from the worktree `$W/HarryPotter2-retail` (its `publish.engine.repo`). One `publish-all`
   wrote `publish-hp2-site/{hp2-proto,hp2-retail-exp}` (460 + 515 manifest entries, zstd -19, no root `index.html` by
   the owner's choice); E2E 15/15 on each.
-- 2026-10-09 — **Assets frozen and the work handed to the ufrontend owner.** `$W/asset-folders/hp2-proto` (3,058 files =
-  `Assets/`) and `$W/asset-folders/hp2-retail-exp` (556 files = the ISO's tree), each with README + SHA256SUMS; the
+- 2026-10-09 — **Assets frozen and the work handed to the ufrontend owner.** `$W/asset-folders/hp2-proto` (637 files =
+  the runtime part of `Assets/`: game assets only, the drop's source material stays in `Assets/`) and
+  `$W/asset-folders/hp2-retail-exp` (556 files = the ISO's tree), each with a README inside and `<id>.sha256` beside
+  it; regenerating each manifest from them gives the committed one (sizes, GUIDs; only `mtime` differs); the
   targets' `assetMarkers` accept each and refuse the other. Handover + the full list of ufrontend changes: ufrontend
   `docs/migration/steps/2.81-hp2-HANDOVER.md` and `2.81-hp2-CHANGES.md` (branch `hp2-retail`). Living docs (CLAUDE,
   BUILD, README, bootstrap, retail-assets) updated to the two-target layout.
