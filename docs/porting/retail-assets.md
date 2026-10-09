@@ -1,14 +1,17 @@
 # The retail branch: the HP2 port on the RETAIL assets
 
 **Why.** `Assets/` (and the source tree) are a **pre-release snapshot** dated 2002-09-06. The retail disc
-(`/home/ion/hp2-ufrontend/HarryPotter2.iso`, volume `HPCOS`, build string `HPCos_021009_1205-1`, InstallShield cabs
+(`$W/HarryPotter2.iso`, sha256 `b5267c81…a590f898`, volume `HPCOS`, build string `HPCos_021009_1205-1`, InstallShield cabs
 2002-10-15) fixes shipped-data bugs the snapshot has (the `Entryhall_hub` password cut scene: markers without
 `CutName`, two dialog lines with neither text nor audio) — see LOG 2026-10-02. The owner chose two branches:
 
 | Branch (engine / frontend) | Assets | Purpose |
 |---|---|---|
-| `prototype` / `hp2-prototype` (= `main` / `hp2`) | `Assets/` (snapshot) | the original prototype, bugs and all |
-| `retail` / `hp2-retail` | `/home/ion/hp2-ufrontend/assets-retail` | the retail packages + the retail engine behaviour |
+| `prototype` (= `main`) / ufrontend target `hp2-proto` | `Assets/` (snapshot); frozen: `$W/asset-folders/hp2-proto` | the original prototype, bugs and all — "proven" |
+| `retail` (worktree `$W/HarryPotter2-retail`) / ufrontend target `hp2-retail-exp` | `$W/assets-retail`; frozen: `$W/asset-folders/hp2-retail-exp` | the retail packages + the retail engine behaviour — experimental, "unproven" |
+
+(`$W` = the workspace, `~/WorkHP2` on the current machine. Both ufrontend targets live on its branch `hp2-retail`; until
+2026-10-03 the two variants were one target id `hp2` on the branches `hp2-prototype` / `hp2-retail`.)
 
 ## The retail asset tree
 
@@ -48,10 +51,12 @@ limited to classes, null checks in `FlushAllRelatedMovers`, the dead `IPSnitch` 
 
 ## Building and running the retail branch
 
-Separate build trees keep the prototype's untouched: `cmake --preset native -B ../build-native-retail`,
-`cmake --preset wasm-perf -B ../build-wasm-perf-retail`, `cmake --preset windows -B ../build-windows-retail`.
-Run tree: `HP2_ASSETS_DIR=/home/ion/hp2-ufrontend/assets-retail tools/dev/mkrun-hp2.sh build-native-retail <run-dir>`.
-Frontend (`hp2-retail`): `yarn build --target hp2 --assets /home/ion/hp2-ufrontend/assets-retail --engine-artifact
-<build-wasm-perf-retail>/SDLLaunch`; publish with `--asset-path-hp2=/home/ion/hp2-ufrontend/assets-retail --out
-/home/ion/hp2-ufrontend/publish-hp2-retail`. Serve it on its own origin (port) — retail and prototype saves are not
-interchangeable.
+The `retail` branch is checked out in its own worktree, `$W/HarryPotter2-retail`, so its build trees
+(`build-native`, `build-wasm-perf`, `build-wasm`, `build-windows`) never touch the prototype's in `$W/HarryPotter2`.
+Run tree: `HP2_ASSETS_DIR=$W/asset-folders/hp2-retail-exp tools/dev/mkrun-hp2.sh build-native <run-dir>`.
+Frontend (ufrontend branch `hp2-retail`, target `hp2-retail-exp`; its `publish.engine.repo` is `HarryPotter2-retail`):
+`yarn build --target hp2-retail-exp --engine-artifact $W/HarryPotter2-retail/build-wasm-perf/SDLLaunch` (assets from
+`.ufront/publish.local.json` `assets.hp2-retail-exp`); one `yarn publish-all --target targets/hp2-proto/target.json
+--target targets/hp2-retail-exp/target.json --out $W/publish-hp2-site` publishes both targets side by side. Each target
+has its own storage prefix (`hp2-retail-exp-user-data` vs `hp2-proto-user-data`), so retail and prototype saves — not
+interchangeable — never mix, even on one origin.
