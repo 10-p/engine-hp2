@@ -3,8 +3,8 @@
 **What this is:** the **private** engine repo for **Harry Potter and the Chamber of Secrets (PC, 2002)**,
 **Unreal Engine 1 build 433** (`Source/Core/Inc/UnObjVer.h`: `ENGINE_VERSION 433`, `PACKAGE_FILE_VERSION`
 runtime-set), web port. It holds engine source only and produces a **WASM artifact** (+ native binaries).
-It is **not** the product on its own — the sibling `ufrontend` clone (`/home/ion/hp2-ufrontend/ufrontend`,
-branch `hp2`) consumes this engine's WASM artifact, owns the host page / UI / build assembly, and owns the
+It is **not** the product on its own — the sibling `ufrontend` clone (`$W/ufrontend`, branch `hp2-retail`, targets
+`hp2-proto` + `hp2-retail-exp`) consumes this engine's WASM artifact, owns the host page / UI / build assembly, and owns the
 browser glue behind the thin **ABI shim** vendored at `vendor/glue/` (`ABI_VERSION 1`).
 
 Templated on **`/home/ion/engines/engine-ut99`** (UT99 v400 → web, base import maximqaxd/ut99dc): the same
@@ -14,6 +14,9 @@ NullDrv, SoundDrv null), web-friendly inis and the WebRTC net driver. Read that 
 `BUILD.md` for the reasoning behind every convention; this file records only where HP2 differs.
 
 ## Start here
+`$W` = the workspace that holds every repo of this port side by side: `~/WorkHP2` on the current machine
+(`/home/ion/hp2-ufrontend` on the original box — LOG/PLAN entries and older reports use that path).
+
 0. On a NEW machine: **`docs/porting/BOOTSTRAP-NEW-MACHINE.md`** (clone layout, inputs not in git, publish + serve
    both variants). Branches: `main`/`prototype` = the pre-release snapshot assets; `retail` = the retail disc.
 1. **`docs/porting/PLAN.md`** — the work queue: phases A–G, the decisions already made, acceptance
@@ -26,16 +29,17 @@ NullDrv, SoundDrv null), web-friendly inis and the WebRTC net driver. Read that 
 ## Map of the world
 | Thing | Path | Role |
 |-------|------|------|
-| This engine repo | `/home/ion/hp2-ufrontend/HarryPotter2` | HP2 build-433 source → WASM/native artifacts |
-| The frontend clone (branch `hp2`) | `/home/ion/hp2-ufrontend/ufrontend` | consumes the artifact; `targets/hp2/` descriptor; storage prefix `hp2` (DB `hp2-user-data`) |
-| Renderer forks (branches `hp2-v433-compat` / `hp2`) | `/home/ion/hp2-ufrontend/XOpenGLDrv`, `…/utglr-copy`, `…/gl4es` | fetched by CMake; edited here, never in `/home/ion/engines/*` |
-| Game assets (never in git) | `Assets/` | retail HP2 tree + package import sources (see `Assets/README.md`) |
+| This engine repo | `$W/HarryPotter2` (branch `main`) | HP2 build-433 source → WASM/native artifacts; the PROTOTYPE engine (`hp2-proto`) |
+| Its `retail` worktree | `$W/HarryPotter2-retail` (`git worktree add ../HarryPotter2-retail retail`) | the RETAIL engine (`hp2-retail-exp`), built side by side |
+| The frontend clone (branch `hp2-retail`) | `$W/ufrontend` | consumes the artifacts; `targets/hp2-proto/` + `targets/hp2-retail-exp/` descriptors; storage prefixes = the ids (DBs `hp2-proto-user-data`, `hp2-retail-exp-user-data`) |
+| Renderer forks (branches `hp2-v433-compat` / `hp2`) | `$W/XOpenGLDrv`, `$W/utglr-copy`, `$W/gl4es` | fetched by CMake; edited here, never in `/home/ion/engines/*` |
+| Game assets (never in git) | `Assets/` (prototype) · `$W/assets-retail` (retail, from the ISO) | frozen copies per target: `$W/asset-folders/{hp2-proto,hp2-retail-exp}` (README + SHA256SUMS each) |
 | The template engine (READ ONLY) | `/home/ion/engines/engine-ut99` | the pattern every port decision mirrors |
 | Epic reference sources (READ ONLY) | `/home/ion/epic-sources/ut99-v400` | the v400 base HP2's 433 tree diverged from; the 3-way-merge base |
 
 ⚠ **`/home/ion/ufrontend`, `/home/ion/engines/*`, `/home/ion/epic-sources` are another agent's working
-copies. Read them; never write, build in, or `git` in them.** Every repo this port needs is cloned fresh
-under `/home/ion/hp2-ufrontend/`.
+copies. Read them; never write, build in, or `git` in them.** (They exist on the original box only; on another machine
+clone them OUTSIDE the workspace if you need the "why".) Every repo this port needs is cloned fresh under `$W`.
 
 ## Layout (the clean-up, first commit)
 ```
@@ -96,7 +100,7 @@ docs/          SOURCE-LAYOUT.md (raw-drop → repo mapping), porting notes as th
 - Do NOT change the ABI (`vendor/glue/ue_abi.h`, `ABI_VERSION 1`).
 - Do NOT commit game assets or build trees — gitignored.
 - Do NOT build the other engines from here, or this one from the other repos: this game is standalone.
-- Do NOT write, build or run anything outside `/home/ion/hp2-ufrontend` (run trees, wine prefix, publish output and
+- Do NOT write, build or run anything outside the workspace `$W` (run trees, wine prefix, publish output and
   screenshots included) — the owner's rule.
 - Do NOT use `git commit -a` / `git add -A` while an agent works in this tree: commit by explicit path.
 - Do NOT confuse the platform keys: `#if _MSC_VER` = the MSVC compiler, `#ifdef PLATFORM_WIN32` = Windows the OS,

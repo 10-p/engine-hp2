@@ -113,4 +113,29 @@ One dated line per green milestone (PLAN §10). Newest last.
   subclass) and `InterpolationManager` (2396/796 vs 2400/800), and retail maps use HGame classes ours lack
   (`ResolveHPointTies`). Moving to retail assets = engine header updates + frontend target data regeneration
   (manifests, precache, `assetMarkers` — `Core.u` differs too) + re-verification. Owner decision pending.
-
+- 2026-10-03 — **New machine (`~/WorkHP2`), bootstrapped from `BOOTSTRAP-NEW-MACHINE.md`.** Every toolchain piece
+  workspace-local (emsdk 5.0.7, yarn shim, corepack/Playwright/npm caches, a new mkcert CA — `.tools/env.sh`);
+  Playwright 1.60 has no ubuntu26.04 build (the 24.04 one runs). Retail tree reassembled from the ISO (556 files, `Core.u`
+  `c480e9a6…`). Found: CMake caches yarn's temporary node shim as `NODE_EXECUTABLE` when a web tree is first configured
+  inside `yarn publish-all` (the next build fails) — configure outside yarn (bootstrap §8). ufrontend `hp2-prototype` /
+  `hp2-retail` rebased on `main` `7fb637e` (its E2E timing fixes made the clear-all test pass); two rebase follow-ups:
+  the no-engine-specifics gate vs an upstream comment naming hp2, and the new clear-config-state test skipping the
+  PeerServer on a single-player target. Both variants published, served and E2E 15/15.
+- 2026-10-03 — **`Entryhall_hub` ghosts: shipped data, not the port.** `NHNick1`/`fatfriar0`/`bloodybaron0` are parked in
+  the `PeopleRm` group (with ~50 other characters) and are the only ones there with `bCollideWorld=False` (their class
+  defaults, prototype and retail alike) while keeping `HChar`'s `Physics=PHYS_Walking`; elsewhere the designers gave
+  floating ghosts `Physics=4` (Ch2Skurge, Grandstaircase_hub) and `PinkLady0` `Physics=0`. They fall at level start and
+  leave the BSP (zone 0). The retail `Engine.dll` (Ghidra 12.1.3, flatpak, headless) has the one "fell out of the world"
+  string referenced from `physWalking` and `physFalling`, both with our zone-0 rule (`Region.ZoneNumber==0` -> log if
+  authority + `FellOutOfWorld`). No cut scene/dialog names them. The original `Game.exe` (the oracle) is SafeDisc-
+  protected and does not run under wine, so this is static evidence only.
+- 2026-10-03 — **Two ufrontend targets side by side: `hp2-proto` (this repo's `main`, the prototype — "proven") and
+  `hp2-retail-exp` (`retail`, the retail disc — experimental, "unproven").** Own ids, publish folders and storage
+  prefixes; `retail` is built from the worktree `$W/HarryPotter2-retail` (its `publish.engine.repo`). One `publish-all`
+  wrote `publish-hp2-site/{hp2-proto,hp2-retail-exp}` (460 + 515 manifest entries, zstd -19, no root `index.html` by
+  the owner's choice); E2E 15/15 on each.
+- 2026-10-09 — **Assets frozen and the work handed to the ufrontend owner.** `$W/asset-folders/hp2-proto` (3,058 files =
+  `Assets/`) and `$W/asset-folders/hp2-retail-exp` (556 files = the ISO's tree), each with README + SHA256SUMS; the
+  targets' `assetMarkers` accept each and refuse the other. Handover + the full list of ufrontend changes: ufrontend
+  `docs/migration/steps/2.81-hp2-HANDOVER.md` and `2.81-hp2-CHANGES.md` (branch `hp2-retail`). Living docs (CLAUDE,
+  BUILD, README, bootstrap, retail-assets) updated to the two-target layout.

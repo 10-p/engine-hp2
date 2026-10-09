@@ -3,7 +3,7 @@
 Harry Potter and the Chamber of Secrets (PC, UE1 build 433), built on the engine-ut99 template. This file
 covers how to build and run the port; the reasons behind each convention are in the template's BUILD.md
 (`/home/ion/engines/engine-ut99/BUILD.md`, read-only) and in `docs/porting/`. Everything is built and run
-inside `/home/ion/hp2-ufrontend`.
+inside the workspace `$W` (`~/WorkHP2` here; layout in `docs/porting/BOOTSTRAP-NEW-MACHINE.md`).
 
 ## Build matrix (CMake presets — `Source/CMakePresets.json`, run from `Source/`)
 
@@ -12,7 +12,7 @@ inside `/home/ion/hp2-ufrontend`.
 | `native` | `../build-native/Game/Game`, `../build-native/UCC/ucc-bin` | 32-bit Linux oracle, one static binary; every renderer |
 | `wasm` | `../build-wasm/SDLLaunch/SDLLaunch.{js,wasm,data}` + `meta.json` | web dev build (-O2 + DWARF) |
 | `wasm-debug` | `../build-wasm-debug/…` | -O0, last resort |
-| `wasm-perf` | `../build-wasm-perf/SDLLaunch/…` | what the ufrontend clone consumes (`yarn build --target hp2`) |
+| `wasm-perf` | `../build-wasm-perf/SDLLaunch/…` | what the ufrontend clone consumes (`main` → target `hp2-proto`; `retail`, built in the `$W/HarryPotter2-retail` worktree → `hp2-retail-exp`) |
 | `windows` | `../build-windows/Game/Game.exe` | MinGW-w64 (PLAN Phase F) |
 
 ```bash
@@ -32,8 +32,8 @@ A software-only native tree (no GL devices) is handy for bring-up and for parall
 ## Running the native build
 
 ```bash
-tools/dev/mkrun-hp2.sh build-native /home/ion/hp2-ufrontend/run-native    # run tree (Assets/ is only read)
-cd /home/ion/hp2-ufrontend/run-native && ./run.sh            # SoftDrv, title level
+tools/dev/mkrun-hp2.sh build-native $W/run-native    # run tree (Assets/ is only read)
+cd $W/run-native && ./run.sh            # SoftDrv, title level
 ./run.sh gl Ch1Rictusempra                                   # XOpenGL straight into a level
 xvfb-run -a -s "-screen 0 1280x720x24" System/Game -SOFTWARERENDERER -NOMSGBOX -log   # headless
 ```
@@ -60,15 +60,20 @@ the `[layout]` guard prints any C++/script size mismatch).
    `Config/System/web/{Default,DefUser}.ini`, preloaded to `/System/` (see `Config/System/web/README.md`).
 2. Headless smoke without assets: `node tools/dev/analysis/smoke-coi-full.mjs build-wasm/SDLLaunch 40` →
    `LoadMap: Entry` then `FailedBrowse` (expected with no packages).
-3. In the frontend clone (`/home/ion/hp2-ufrontend/ufrontend`, branch `hp2`; paths come from its gitignored
-   `.ufront/publish.local.json`):
+3. In the frontend clone (`$W/ufrontend`, branch `hp2-retail`, which carries both targets; asset paths come from its
+   gitignored `.ufront/publish.local.json`). This checkout (`main`) is target `hp2-proto`; the `retail` worktree is
+   `hp2-retail-exp` (pass its `--engine-artifact $W/HarryPotter2-retail/build-wasm-perf/SDLLaunch`):
    ```bash
-   yarn build --target hp2          # assembles serve-web/ (frontend + SDLLaunch.* + manifests + asset symlinks)
+   yarn build --target hp2-proto --engine-artifact $W/HarryPotter2/build-wasm-perf/SDLLaunch   # assembles serve-web/
    yarn serve                       # http://localhost:8080/ with COOP/COEP
-   yarn e2e --target hp2            # headless Chromium: boot, SoftDrv, direct map load, config, saves
+   yarn e2e --target hp2-proto      # headless Chromium: boot, SoftDrv, direct map load, config, saves, AutoFOV
    ```
-   After changing the web ini, clear the `hp2-user-data` store (or the site data): a persisted `Game.ini`
+   ⚠ `yarn e2e` reuses ANY server on :8080; when another checkout owns it, run with `UFRONT_E2E_BASE_URL` and a
+   Playwright config whose webServer serves this `serve-web/` elsewhere (bootstrap doc §11).
+   After changing the web ini, clear the target's `<id>-user-data` store (or the site data): a persisted `Game.ini`
    shadows the preloaded `Default.ini`.
+   Configure the web build trees OUTSIDE `yarn` (or pass `-DNODE_EXECUTABLE=$(command -v node)`): configured inside
+   `yarn publish-all`, CMake caches yarn's temporary node shim and the next build fails (`/tmp/xfs-*/node: not found`).
 
 ## Audio (NOpenALDrv)
 
@@ -87,9 +92,9 @@ header of `Source/NOpenALDrv/Test/EAXAOracle.cpp`). Headless runs: `SDL_AUDIODRI
 
 ```bash
 cd Source && cmake --preset windows && cmake --build --preset windows -j"$(nproc)"   # build-windows/Game/Game.exe
-tools/dev/mkrun-hp2.sh build-windows /home/ion/hp2-ufrontend/run-windows --windows
-export WINEPREFIX=/home/ion/hp2-ufrontend/.wine-hp2          # keep the prefix inside the workspace
-cd /home/ion/hp2-ufrontend/run-windows/System && wine Game.exe -SOFTWARERENDERER -NOMSGBOX
+tools/dev/mkrun-hp2.sh build-windows $W/run-windows --windows
+export WINEPREFIX=$W/.wine-hp2          # keep the prefix inside the workspace
+cd $W/run-windows/System && wine Game.exe -SOFTWARERENDERER -NOMSGBOX
 ```
 
 One self-contained `Game.exe` (`-static-libgcc -static-libstdc++`); its imports must stay within the stock system

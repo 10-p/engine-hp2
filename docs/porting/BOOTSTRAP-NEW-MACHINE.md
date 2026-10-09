@@ -20,15 +20,19 @@ Harry Potter and the Chamber of Secrets (PC, 2002, Unreal Engine 1 build 433) po
 WebGL, Emscripten) on the template of the owner's UT99 port (`engine-ut99` + the `ufrontend` launcher shell). The
 engine repo is the original HP2 C++ source (proprietary — the repo is PRIVATE, keep it so) adapted to GCC/clang,
 Linux, the web and MinGW. The frontend (`ufrontend`, a monorepo shared with other targets) hosts per-game
-descriptors; hp2 lives in `targets/hp2/` on the `hp2-*` branches only.
+descriptors; HP2 lives in `targets/hp2-proto/` + `targets/hp2-retail-exp/` on the `hp2-*` branches only (until the
+ufrontend owner lands it on `main` — ufrontend `docs/migration/steps/2.81-hp2-HANDOVER.md`).
 
 Read, in this order: `HarryPotter2/CLAUDE.md` (rules), `HarryPotter2/BUILD.md` (builds), `docs/porting/PLAN.md` §12
 (phase checklist), the last ~10 entries of `docs/porting/LOG.md`, `docs/porting/retail-assets.md` (why two branches,
-every prototype->retail difference and the commit porting it), then on the frontend `targets/hp2/README.md`.
+every prototype->retail difference and the commit porting it), then on the frontend `targets/hp2-proto/README.md` and `targets/hp2-retail-exp/README.md`.
 
 ## 2. Rules the owner set (they were in the old machine's memory, which does not travel)
 
-- Write only inside the workspace directory (default `~/hp2-ufrontend`). Other projects on the machine are read-only.
+- Write only inside the workspace directory (`~/WorkHP2` on the current machine, `~/hp2-ufrontend` on the original).
+  Other projects on the machine are read-only. A tool that genuinely serves every project may keep its own settings
+  and temp files outside (e.g. the flatpak Ghidra under `~/.var/app`), but anything this port can run locally —
+  emsdk, caches, certs, wine prefixes, outputs — stays in the workspace.
 - Never push unless the owner asks. Never deploy/upload (Azure etc.) without an explicit go-ahead.
 - Game content is never in git: `HarryPotter2/Assets/` is gitignored; the retail tree and the ISO live outside every repo.
 - Commit identity: author/committer `10-p <neogcar@hotmail.com>`; conventional commits; never `git commit -a` blindly
@@ -39,6 +43,11 @@ every prototype->retail difference and the commit porting it), then on the front
 - Long-lived servers must be started detached (`setsid nohup … &`); a harness background task dies at its time limit.
 
 ## 3. Inputs that are NOT in git (the owner copies them over)
+
+Since 2026-10-09 both asset trees also exist FROZEN, one folder per target, each with a README (provenance,
+fingerprints) and a `SHA256SUMS`: `$W/asset-folders/hp2-proto` (= `HarryPotter2/Assets/`) and
+`$W/asset-folders/hp2-retail-exp` (= the §7 retail tree). With those, §7 is optional and `publish.local.json` can
+point `assets.<id>` straight at them.
 
 - The prototype asset tree -> `~/hp2-ufrontend/HarryPotter2/Assets/` (≈796 MiB, 3,059 files; `System/Core.u` sha256
   `e0812a19…d56e8`, 61,685 B). It came with the source drop.
@@ -89,7 +98,7 @@ mkcert -cert-file ufrontend/.ufront/certs/dev-cert.pem -key-file ufrontend/.ufro
        localhost 127.0.0.1 ::1 "$(hostname)" $(hostname -I)
 ```
 
-## 7. Build the retail asset tree
+## 7. Build the retail asset tree (skip it when the frozen `asset-folders/hp2-retail-exp` is available)
 
 ```bash
 cd $W && git clone --depth 1 https://github.com/twogood/unshield.git iso-check/unshield-src
@@ -137,7 +146,9 @@ Pages: `https://<host>:8093/hp2-proto/` and `https://<host>:8093/hp2-retail-exp/
   $W/HarryPotter2-retail/build-wasm-perf/SDLLaunch` then `yarn e2e --target hp2-retail-exp`: 15/15.
 - Both: WebGL 2 (XOpenGL) default renderer, UTGLR/SoftDrv/Null selectable, OpenAL audio (Ogg music, EA-XA sounds,
   lip-synced dialog), AutoFOV (Hor+ on wide windows), saves persisted in IndexedDB `hp2-proto-user-data` / `hp2-retail-exp-user-data`.
-- New game over an existing save = Storage -> Clear User Data, then RELOAD the page (generic launcher gap, reported).
+- New game over an existing save = Storage -> Clear User Data. Since ufrontend `659b18d` (on `main`, rebased in) every
+  Storage clear waits for its deletes and reloads the page itself; the hp2 help text still says "reload the page" —
+  verify on hp2 (no hp2 E2E covers it yet) and drop the manual step (handover item).
 
 ## 11. Gotchas we already paid for
 
@@ -149,10 +160,20 @@ Pages: `https://<host>:8093/hp2-proto/` and `https://<host>:8093/hp2-retail-exp/
   (`HP2_ASSETS_DIR=$W/assets-retail` for retail); `EXEC=<file>` runs console commands at startup.
 - Retail game packages ship without script source: read their bytecode with `tools/dev/retail/ucdis.py`.
 
-## 12. Open items at hand-over
+## 12. Open items at hand-over (2026-10-09)
 
-- Retail: play-test the `Entryhall_hub` password cut scene and the ghosts (prototype data bugs; retail data fixes the
-  markers/dialog) from a real save.
-- Phase G (site-root publish + Azure) waits for the owner. Generic frontend gaps were reported to the ufrontend owner:
-  Clear User Data does not clear the running page; the E2E reuses any server on :8080.
-- The web failed-load fix (`c677b8c`, retail) could also go to `prototype` if the owner wants.
+The full list, with what the ufrontend owner has to do to land HP2 on `main`, is the ufrontend
+`docs/migration/steps/2.81-hp2-HANDOVER.md`; every ufrontend change is listed in `2.81-hp2-CHANGES.md` next to it.
+Engine-side:
+- Settled: the `Entryhall_hub` ghosts (`NHNick1`, `fatfriar0`, `bloodybaron0` "fell out of the world") are SHIPPED DATA —
+  parked in the `PeopleRm` group with `bCollideWorld=False` and `HChar`'s default `Physics=PHYS_Walking`, and the retail
+  `Engine.dll` (Ghidra) applies the same zone-0 rule as our source (LOG 2026-10-03). The password cut scene runs on
+  retail data (its `CutError` overlap lines are the game's own script).
+- The web failed-load fix (`c677b8c`) is on `retail` only; `main` could take it (owner's call).
+- `Source/Game/CMakeLists.txt` `find_program(NODE_EXECUTABLE node)` caches yarn's temporary shim when first configured
+  inside `yarn` (§8 works around it); a fix would prefer the system node.
+- `WEBRTC_PEER_PREFIX` is still `"hp2"`; the targets' `peerPrefix` is now the target id. Harmless while
+  `network.multiplayer` is false; align it before P2P is ever switched on.
+- The behavioural oracle is the ORIGINAL retail `Game.exe`, not our builds — and it is SafeDisc-protected (no wine), so
+  the retail port stays "unproven" (static analysis only).
+- No native/MinGW builds were rebuilt on the current machine (the web publish does not need them).

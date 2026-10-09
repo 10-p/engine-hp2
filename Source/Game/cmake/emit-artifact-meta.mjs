@@ -62,7 +62,7 @@ const meta = {
     buildConfig: 'wasm-integrated',
     abiVersion: Number(args.abi), // from the vendored frozen ue_abi.h UE_ABI_VERSION
     loaderStyle: 'global-module', // classic <script> + bare globals (like engine-ut2004 / engine-unreal1)
-    provenance: { repo: 'HarryPotter2', gitSha, builtAt }, // == targets/hp2/target.json publish.engine.repo
+    provenance: { repo: 'HarryPotter2', gitSha, builtAt }, // == the ufrontend descriptor's publish.engine.repo
     toolchain: { emscripten: args.emcc || 'unknown', base: 'Harry Potter and the Chamber of Secrets (UE1 build 433), templated on engine-ut99', ...deps },
     buildFlags: [
     // Descriptive, hand-maintained: keep it in step with the linker block or the descriptor

@@ -3,7 +3,7 @@
 `Default.ini` + `DefUser.ini` here are the **web** configuration: the Emscripten link of `Source/Game`
 `--preload-file`s them to `/System/` (and lists them in `LINK_DEPENDS`, so editing one relinks), and HP2's
 `appInit( TEXT("Game") )` derives `/System/Game.ini` and `/System/User.ini` from them on the first boot. The
-frontend then persists the derived pair in IndexedDB (`hp2-user-data`) — so after changing this folder during
+frontend then persists the derived pair in IndexedDB (`<target-id>-user-data`: `hp2-proto-user-data` / `hp2-retail-exp-user-data`) — so after changing this folder during
 bring-up, clear that store (or the site data), or the change never reaches an existing profile.
 
 `../Default.ini` / `../DefUser.ini` are HP2's **retail** inis, used by the native run tree

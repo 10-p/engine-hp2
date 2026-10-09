@@ -33,7 +33,7 @@ IMPLEMENT_PACKAGE(WebRTCDrv);
 // registers the listen peer as "<prefix>-<room>-srv"). Engine-specific by design — engine-ut99 only ever
 // hosts UnrealTournament, exactly as engine-ut2004 hardcodes "ut2k4" (DATA-not-code governs the generic
 // frontend/glue, not the per-game engine repos).
-#define WEBRTC_PEER_PREFIX      "hp2"   // == targets/hp2/target.json network.peerPrefix
+#define WEBRTC_PEER_PREFIX      "hp2"   // was targets/hp2 network.peerPrefix; the targets are now hp2-proto / hp2-retail-exp (P2P is off: network.multiplayer false)
 
 // Packet sizing (parity with UTcpipConnection's UDP model).
 #define WEBRTC_MAX_PACKET       (512)
