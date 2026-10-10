@@ -75,6 +75,10 @@ if(EMSCRIPTEN)
   # appRequestExit's MAIN_THREAD_EM_ASM) are guarded on, and it gives every object — including the
   # FetchContent'd gl4es, XOpenGL and utglr trees — the atomics/bulk-memory features a shared-memory link expects.
   add_compile_options(-pthread)
+  # The SDL2 port must be requested at COMPILE time too: Core/NSDLDrv include <SDL2/SDL.h>, which only exists in
+  # the Emscripten cache once the port is installed. As a link-only flag a fresh emsdk fails with "'SDL2/SDL.h'
+  # file not found" (why the old bootstrap said `embuilder build sdl2` first). Ported from engine-ut99 300c7bf.
+  add_compile_options(-sUSE_SDL=2)
   # UE1 assumes Win32 /Zp4 struct packing — the reflected C++ class sizes must equal the UnrealScript
   # property sizes. wasm32 does not match by default; force it for ALL sources so every class layout is uniform.
   add_compile_options(-fpack-struct=4 -Wno-address-of-packed-member)
@@ -166,6 +170,10 @@ if(TARGET_IS_WINDOWS)
     # Link GCC's runtime statically: without this the .exe imports libgcc_s_dw2-1.dll and libstdc++-6.dll,
     # which live in the toolchain, not in a Windows install.
     add_link_options(-static-libgcc -static-libstdc++)
+    # A posix-thread-model MinGW (MSYS2, Arch/Fedora/Ubuntu's -posix packages) also pulls in libwinpthread-1.dll through
+    # libstdc++; link it statically too, or the exe does not start outside the build machine (wine: exit 53).
+    # Ported from engine-ut99 300c7bf, which this repo was templated from just before (2026-10-10).
+    add_link_options(-Wl,-Bstatic,--whole-archive -lwinpthread -Wl,--no-whole-archive,-Bdynamic)
     # UE1 assumes Win32 /Zp4 struct packing; MinGW follows the MSVC ABI (double/int64 aligned to 8), so every
     # class with a double came out long. Applied to ALL sources: packing must be uniform.
     add_compile_options(-fpack-struct=4 -Wno-address-of-packed-member)
