@@ -1,5 +1,10 @@
 # Bootstrap on a new machine — both HP2 variants published side by side
 
+> **Superseded 2026-10-10.** HP2 now lives in the WorkUnreal workspace beside the other engines (`engine-hp2`,
+> `engine-hp2-retail`) and publishes from ufrontend `main`; a new machine is that workspace's `bin/setup.sh`. This page is
+> the HP2 port's own earlier layout, kept for its history.
+
+
 This file is the hand-over for a fresh Claude Code client on another machine. Goal: rebuild the HP2 web port from the
 repositories and publish **both** variants side by side as two separate frontend TARGETS (since 2026-10-03):
 

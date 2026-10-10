@@ -3,8 +3,8 @@
 **What this is:** the **private** engine repo for **Harry Potter and the Chamber of Secrets (PC, 2002)**,
 **Unreal Engine 1 build 433** (`Source/Core/Inc/UnObjVer.h`: `ENGINE_VERSION 433`, `PACKAGE_FILE_VERSION`
 runtime-set), web port. It holds engine source only and produces a **WASM artifact** (+ native binaries).
-It is **not** the product on its own — the sibling `ufrontend` clone (`$W/ufrontend`, branch `hp2-retail`, targets
-`hp2-proto` + `hp2-retail-exp`) consumes this engine's WASM artifact, owns the host page / UI / build assembly, and owns the
+It is **not** the product on its own — ufrontend (`10-p/unreal-frontend-arch-private`, branch `main` since 2026-10-10,
+targets `hp2-proto` + `hp2-retail-exp`, published with the other four games but unlisted) consumes this engine's WASM artifact, owns the host page / UI / build assembly, and owns the
 browser glue behind the thin **ABI shim** vendored at `vendor/glue/` (`ABI_VERSION 1`).
 
 Templated on **`/home/ion/engines/engine-ut99`** (UT99 v400 → web, base import maximqaxd/ut99dc): the same
@@ -14,11 +14,19 @@ NullDrv, SoundDrv null), web-friendly inis and the WebRTC net driver. Read that 
 `BUILD.md` for the reasoning behind every convention; this file records only where HP2 differs.
 
 ## Start here
-`$W` = the workspace that holds every repo of this port side by side: `~/WorkHP2` on the current machine
-(`/home/ion/hp2-ufrontend` on the original box — LOG/PLAN entries and older reports use that path).
+`$W` = the workspace that holds every repo side by side: **`/home/ion/WorkUnreal`** since 2026-10-10, where this repo is
+cloned twice beside the other engines — `engine-hp2` (`main`) and `engine-hp2-retail` (`retail`), the same arrangement
+as `engine-ut99` / `engine-ut99-436-compat`. LOG/PLAN entries and older reports use `~/WorkHP2` and
+`/home/ion/hp2-ufrontend` (the HP2 port's own workspaces before that).
 
-0. On a NEW machine: **`docs/porting/BOOTSTRAP-NEW-MACHINE.md`** (clone layout, inputs not in git, publish + serve
-   both variants). Branches: `main`/`prototype` = the pre-release snapshot assets; `retail` = the retail disc.
+**★ `retail` is for retail-SPECIFIC changes ONLY** (the UT99 v436 rule, applied here on 2026-10-10). A general engine
+change goes to `main`, and `retail` is then rebased on top (`git fetch origin && git rebase --onto origin/main
+<old-base>`); never commit a general change directly to `retail`, or the next fix to one silently misses the other.
+ufrontend's `publish-all` enforces it: `hp2-retail-exp` declares `publish.engine.baseBranch: "main"` and a
+`retail` checkout that does not contain `origin/main` is refused.
+
+0. On a NEW machine: the workspace's `bin/setup.sh` (WorkUnreal) — `docs/porting/BOOTSTRAP-NEW-MACHINE.md` is the
+   HP2 port's own earlier layout, kept for its history. Branches: `main`/`prototype` = the pre-release snapshot assets; `retail` = the retail disc.
 1. **`docs/porting/PLAN.md`** — the work queue: phases A–G, the decisions already made, acceptance
    lines, the progress checklist. Read it before touching anything.
 2. `docs/porting/analysis/00-critique.md`, then the analysis report for the phase you are in.

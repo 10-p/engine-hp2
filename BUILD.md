@@ -22,9 +22,12 @@ source ~/emsdk/emsdk_env.sh            # sets $EMSDK for the Emscripten toolchai
 cmake --preset wasm-perf && cmake --build --preset wasm-perf -j"$(nproc)"
 ```
 
-The renderer forks come from the sibling clones in the workspace (`FETCHCONTENT_SOURCE_DIR_XOPENGLDRV` →
-`../../XOpenGLDrv`, branch `hp2-v433-compat`; `FETCHCONTENT_SOURCE_DIR_UTGLR` → `../../utglr-copy`, branch
-`hp2`; `GL4ES_SOURCE_DIR` → `../../gl4es`). `meta.json` records them as `local:<path>` until they are pushed.
+The renderer forks are fetched by branch, like the other engines': XOpenGLDrv `hp2-v433-compat`, utglr-copy `hp2`,
+gl4es `fix/cubemap-bind-active-unit` (`Source/CMakeLists.txt`). A dependency that moves and breaks the build is the
+signal to update the engine or the branch. To build an UNPUSHED renderer change, point
+`-DFETCHCONTENT_SOURCE_DIR_XOPENGLDRV=` / `-DFETCHCONTENT_SOURCE_DIR_UTGLR=` / `-DGL4ES_SOURCE_DIR=` at a local clone;
+`meta.json` then records it as `local:<path>`. (Until 2026-10-10 the presets forced the HP2 workspace's sibling
+clones.)
 
 A software-only native tree (no GL devices) is handy for bring-up and for parallel work:
 `cmake --preset native -B ../build-native-b -DBUILD_XOPENGLDRV=OFF -DBUILD_NOPENGLDRV=OFF`.
