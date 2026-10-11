@@ -91,6 +91,12 @@ The same commands, settings and log lines in every engine (ufront's UC2 merge; e
 - **`[Engine.GameEngine] FpsLogSeconds=<s>`** (0 = off) / console **`FPSLOG <s>`**: an `FPS:` log line every `<s>`
   seconds (frames, fps, frame ms avg/min/max/p99, the 1% low, the viewport size). `Source/Engine/Src/UnFpsLog.cpp`
   (HP2's `appSeconds()` is an `FTime`: only differences of two are taken).
+- **`Init: Language: <ext>`** in the log at start-up: the language this run took (`[Engine.Engine] Language`, read
+  after the `-ini:` overrides; the frontend's Language setting; `usa` on retail).
+- **The command line holds 4,096 characters** (launcher, UCC, Core's `GCmdLine`): a token that does not fit is
+  dropped whole, with a warning once the log is up. It was bounded at 1,023 and cut mid-token silently.
+- **`ucc make` saves are deterministic** (`Core/Src/UnObj.cpp`, engine-uc2's S2): stable sorts in `SavePackage`, the
+  `.int` files in Windows' (NTFS) order in `CacheDrivers`. (`FindFiles` already matched like Windows here.)
 
 ## Audio (NOpenALDrv)
 

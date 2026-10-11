@@ -106,8 +106,10 @@ int main( int argc, char* argv[] )
 		#endif
 		
 		// Parse command line.
-		TCHAR CmdLine[1024], *CmdLinePtr=CmdLine;
+		// ufront: 4096 (Core's GCmdLine), a token that does not fit dropped whole, with a warning (it cut at 1,023).
+		TCHAR CmdLine[4096], *CmdLinePtr=CmdLine;
 		*CmdLinePtr = 0;
+		UBOOL CmdLineCut = 0;
 		#if WIN32
 			ANSICHAR* Ch = GetCommandLineA();
 			while( *Ch && *Ch!=' ' )
@@ -120,9 +122,14 @@ int main( int argc, char* argv[] )
 		#else
 			for( INT i=2; i<argc; i++ )
 			{
+				if( appStrlen(CmdLine) + appStrlen(argv[i]) + 2 >= ARRAY_COUNT(CmdLine) )
+				{
+					CmdLineCut = 1;
+					break;
+				}
 				if( i>2 )
-					appStrncat( CmdLine, " ", ARRAY_COUNT(CmdLine) );
-				appStrncat( CmdLine, argv[i], ARRAY_COUNT(CmdLine) );
+					appStrcat( CmdLine, " " );
+				appStrcat( CmdLine, argv[i] );
 			}
 		#endif
 
@@ -130,6 +137,8 @@ int main( int argc, char* argv[] )
 		// HP2 retail ucc read/wrote its own HP.ini (the "HP" literal in UCC.exe), keeping `make`'s EditPackages
 		// edits out of the game's Game.ini.
 		appInit( TEXT("HP"), CmdLine, &Malloc, &Log, &Error, &Warn, &FileManager, FConfigCacheIni::Factory, 1 );
+		if( CmdLineCut )
+			debugf( NAME_Warning, TEXT("The command line is longer than %i characters: the arguments after '%s' were dropped"), ARRAY_COUNT(CmdLine), CmdLine + Max(0, appStrlen(CmdLine) - 40) );
 		UObject::SetLanguage(TEXT("int"));
 		FString Token = argc>1 ? appFromAnsi(argv[1]) : TEXT("");
 		TArray<FRegistryObjectInfo> List;

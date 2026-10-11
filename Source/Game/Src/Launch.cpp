@@ -731,15 +731,22 @@ int main( int argc, char* argv[] )
 
 	// Set the package name.
 	appStrcpy( THIS_PACKAGE, appPackage() );	
-	// Get the command line.
-	TCHAR CmdLine[1024], *CmdLinePtr=CmdLine;
+	// Get the command line. ufront (as engine-uc2's launcher and engine-ut99): 4096 characters, the size of Core's
+	// GCmdLine, and a token that does not fit is dropped whole, with a warning once the log is up. It was bounded at
+	// 1,023 characters, which the web argv (the URL plus every -ini: seed) can reach, and cut mid-token silently.
+	TCHAR CmdLine[4096], *CmdLinePtr=CmdLine;
 	*CmdLinePtr = 0;
+	UBOOL CmdLineCut = 0;
 	for( INT i=1; i<argc; i++ )
 	{
-		// Bounded: the web argv carries -ini: tokens plus the URL; 1023 chars is reachable.
+		if( appStrlen(CmdLine) + appStrlen(argv[i]) + 2 >= ARRAY_COUNT(CmdLine) )
+		{
+			CmdLineCut = 1;
+			break;
+		}
 		if( i>1 )
-			appStrncat( CmdLine, " ", ARRAY_COUNT(CmdLine) );
-		appStrncat( CmdLine, argv[i], ARRAY_COUNT(CmdLine) );
+			appStrcat( CmdLine, " " );
+		appStrcat( CmdLine, argv[i] );
 	}
 	// Init core.
 	GIsClient = 1;
@@ -765,6 +772,8 @@ int main( int argc, char* argv[] )
 	chdir( "/System" );
 #endif
 	appInit( TEXT("Game"), CmdLine, &Malloc, &Log, &Error, &Warn, &FileManager, FConfigCacheIni::Factory, 1 );
+	if( CmdLineCut )
+		debugf( NAME_Warning, TEXT("The command line is longer than %i characters: the arguments after '%s' were dropped"), ARRAY_COUNT(CmdLine), CmdLine + Max(0, appStrlen(CmdLine) - 40) );
 
 	// Init mode.
 	GIsServer		= 1;
