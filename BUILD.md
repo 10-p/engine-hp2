@@ -78,6 +78,20 @@ the `[layout]` guard prints any C++/script size mismatch).
    Configure the web build trees OUTSIDE `yarn` (or pass `-DNODE_EXECUTABLE=$(command -v node)`): configured inside
    `yarn publish-all`, CMake caches yarn's temporary node shim and the next build fails (`/tmp/xfs-*/node: not found`).
 
+## Shared with the other engines of the frontend (2026-10-11, from engine-uc2)
+
+The same commands, settings and log lines in every engine (ufront's UC2 merge; engine-uc2's
+`docs/CHEAT-COMMANDS.md` is the reference for the cheats; ported here from engine-ut99, whose code this is):
+
+- **`WHEREAMI`** prints `<x> <y> <z> <yaw> <pitch>` (the pawn's location, one decimal; the view's yaw 0..65535 and
+  pitch -32768..32767) on the console, on screen and in the log; **`TELEPORT <x> <y> <z> [<yaw> [<pitch>]]`** puts
+  Harry there. Cheats: allowed in a standalone game (HP2 is single-player), refused (logged) on a network client;
+  every use logs a `Cheat: ` line. HP2's own `ShowPos` (HPConsole, debug mode) only draws the position on screen.
+  `Source/Engine/Src/UnCheats.cpp`, first in `UGameEngine::Exec` (the web's `ue_exec_command` reaches the engine only).
+- **`[Engine.GameEngine] FpsLogSeconds=<s>`** (0 = off) / console **`FPSLOG <s>`**: an `FPS:` log line every `<s>`
+  seconds (frames, fps, frame ms avg/min/max/p99, the 1% low, the viewport size). `Source/Engine/Src/UnFpsLog.cpp`
+  (HP2's `appSeconds()` is an `FTime`: only differences of two are taken).
+
 ## Audio (NOpenALDrv)
 
 `Source/NOpenALDrv` is HP2's retail ALAudio ported to openal-soft (OpenAL 1.1; EFX, no EAX), native and web:

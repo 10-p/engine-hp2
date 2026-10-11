@@ -346,6 +346,12 @@ void UGameEngine::SetProgress( const TCHAR* Str1, const TCHAR* Str2, FLOAT Secon
 	Command line executor.
 -----------------------------------------------------------------------------*/
 
+// ufront port (from engine-uc2): WHEREAMI / TELEPORT <x> <y> <z> (UnCheats.cpp) and the frame rate in the log,
+// [Engine.GameEngine] FpsLogSeconds / FPSLOG (UnFpsLog.cpp).
+ENGINE_API UBOOL UfrontCheatExec( UEngine* Engine, const TCHAR* Cmd, FOutputDevice& Ar );
+ENGINE_API void UfrontFpsLogTick( UEngine* Engine );
+ENGINE_API UBOOL UfrontFpsLogExec( const TCHAR* Cmd, FOutputDevice& Ar );
+
 //
 // This always going to be the last exec handler in the chain. It
 // handles passing the command to all other global handlers.
@@ -354,6 +360,12 @@ UBOOL UGameEngine::Exec( const TCHAR* Cmd, FOutputDevice& Ar )
 {
 	guard(UGameEngine::Exec);
 	const TCHAR* Str=Cmd;
+	// ufront: first, because the web's ue_exec_command reaches this engine only (never the viewport); the typed
+	// console arrives here too, after the viewport, the player and the scripts.
+	if( UfrontCheatExec( this, Cmd, Ar ) )
+		return 1;
+	if( UfrontFpsLogExec( Cmd, Ar ) )
+		return 1;
 	if( ParseCommand( &Str, TEXT("OPEN") ) )
 	{
 		FString Error;
@@ -1819,6 +1831,7 @@ FLOAT UGameEngine::GetMaxTickRate()
 void UGameEngine::Tick( FLOAT DeltaSeconds )
 {
 	guard(UGameEngine::Tick);
+	UfrontFpsLogTick( this );	// ufront: FpsLogSeconds / FPSLOG; nothing unless asked for
 
 	// Read or write frame tick for replay.
 	if( Replay.Paused() )
