@@ -97,6 +97,12 @@ The same commands, settings and log lines in every engine (ufront's UC2 merge; e
   dropped whole, with a warning once the log is up. It was bounded at 1,023 and cut mid-token silently.
 - **`ucc make` saves are deterministic** (`Core/Src/UnObj.cpp`, engine-uc2's S2): stable sorts in `SavePackage`, the
   `.int` files in Windows' (NTFS) order in `CacheDrivers`. (`FindFiles` already matched like Windows here.)
+- **Game pads** (`Source/NSDLDrv`, one pad: the first connected): `[NSDLDrv.NSDLClient] UseJoystick` decides
+  whether pads are used (it was read by nothing); a pad connected after start opens on `SDL_CONTROLLERDEVICEADDED`
+  and closes on `REMOVED`, releasing every pad key (there was no hot-plug, so on the web a pad practically never
+  worked); on the web the press that made the browser list the pad, never reported by SDL, is read from
+  `navigator.getGamepads()` once at the connect and given to the game (engine-uc2's H-3). Log lines: `NSDLClient:
+  game pad connected: <name>` / `disconnected` / `buttons held at the connect given to the game: 0x<mask>`.
 
 ## Audio (NOpenALDrv)
 
