@@ -7,7 +7,7 @@ It is **not** the product on its own — ufrontend (`10-p/unreal-frontend-arch-p
 targets `hp2-proto` + `hp2-retail-exp`, published with the other four games but unlisted) consumes this engine's WASM artifact, owns the host page / UI / build assembly, and owns the
 browser glue behind the thin **ABI shim** vendored at `vendor/glue/` (`ABI_VERSION 1`).
 
-Templated on **`/home/ion/engines/engine-ut99`** (UT99 v400 → web, base import maximqaxd/ut99dc): the same
+Templated on **`engine-ut99`** (`$W/engine-ut99`) (UT99 v400 → web, base import maximqaxd/ut99dc): the same
 build system (CMake + gcc/emcc/MinGW), folder organisation, build targets, renderers (XOpenGLDrv for
 WebGL2, OpenGLDrv/UTGLR + gl4es for WebGL1, the in-tree SoftDrv), helper drivers (NSDLDrv, NOpenALDrv,
 NullDrv, SoundDrv null), web-friendly inis and the WebRTC net driver. Read that repo's `CLAUDE.md` and
@@ -30,24 +30,24 @@ ufrontend's `publish-all` enforces it: `hp2-retail-exp` declares `publish.engine
 1. **`docs/porting/PLAN.md`** — the work queue: phases A–G, the decisions already made, acceptance
    lines, the progress checklist. Read it before touching anything.
 2. `docs/porting/analysis/00-critique.md`, then the analysis report for the phase you are in.
-3. The template's `CLAUDE.md` + `BUILD.md` (`/home/ion/engines/engine-ut99`) for the *why* of every convention.
+3. The template's `CLAUDE.md` + `BUILD.md` (`$W/engine-ut99`) for the *why* of every convention.
 4. Build, run and test: **`BUILD.md`** (native + web + E2E). Three-way-merge helper: `tools/dev/merge3.sh <outdir>`;
    `docs/porting/LOG.md` is the dated progress log (newest last).
 
 ## Map of the world
 | Thing | Path | Role |
 |-------|------|------|
-| This engine repo | `$W/HarryPotter2` (branch `main`) | HP2 build-433 source → WASM/native artifacts; the PROTOTYPE engine (`hp2-proto`) |
-| Its `retail` worktree | `$W/HarryPotter2-retail` (`git worktree add ../HarryPotter2-retail retail`) | the RETAIL engine (`hp2-retail-exp`), built side by side |
-| The frontend clone (branch `hp2-retail`) | `$W/ufrontend` | consumes the artifacts; `targets/hp2-proto/` + `targets/hp2-retail-exp/` descriptors; storage prefixes = the ids (DBs `hp2-proto-user-data`, `hp2-retail-exp-user-data`) |
-| Renderer forks (branches `hp2-v433-compat` / `hp2`) | `$W/XOpenGLDrv`, `$W/utglr-copy`, `$W/gl4es` | fetched by CMake; edited here, never in `/home/ion/engines/*` |
-| Game assets (never in git) | `Assets/` (prototype) · `$W/assets-retail` (retail, from the ISO) | frozen per target, game assets only: `$W/asset-folders/{hp2-proto,hp2-retail-exp}` (README inside, `<id>.sha256` beside) |
-| The template engine (READ ONLY) | `/home/ion/engines/engine-ut99` | the pattern every port decision mirrors |
-| Epic reference sources (READ ONLY) | `/home/ion/epic-sources/ut99-v400` | the v400 base HP2's 433 tree diverged from; the 3-way-merge base |
+| This engine repo | `$W/engine-hp2` (branch `main`) | HP2 build-433 source → WASM/native artifacts; the PROTOTYPE engine (`hp2-proto`) |
+| Its retail checkout | `$W/engine-hp2-retail` (branch `retail`, a second clone of this repo) | the RETAIL engine (`hp2-retail-exp`), built side by side; retail-specific commits only, rebased on `main` |
+| The frontend | `$W/unreal-frontend-arch-private` (branch `main`) | consumes the artifacts; `targets/hp2-proto/` + `targets/hp2-retail-exp/` descriptors, published with the other games but unlisted; storage prefixes = the ids (DBs `hp2-proto-user-data`, `hp2-retail-exp-user-data`) |
+| Renderer forks | `10-p/XOpenGLDrv` @ `hp2-v433-compat`, `10-p/utglr-copy` @ `hp2`, `10-p/gl4es` @ `fix/cubemap-bind-active-unit` | fetched by CMake by branch (`BUILD.md`); to edit one, clone it into `$W` and point `FETCHCONTENT_SOURCE_DIR_XOPENGLDRV` / `_UTGLR` / `GL4ES_SOURCE_DIR` at the clone |
+| Game assets (never in git) | `$W/assets/hp2-proto-assets` · `$W/assets/hp2-retail-exp-assets` | the workspace's read-only asset image plus a writable overlay per tree (`sudo $W/assets/mount-assets.sh` after a reboot); game assets only, no saves (`Save/` is empty). `Assets/` here (gitignored) is the source drop's original tree |
+| The template engine | `$W/engine-ut99` | the pattern every port decision mirrors |
 
-⚠ **`/home/ion/ufrontend`, `/home/ion/engines/*`, `/home/ion/epic-sources` are another agent's working
-copies. Read them; never write, build in, or `git` in them.** (They exist on the original box only; on another machine
-clone them OUTSIDE the workspace if you need the "why".) Every repo this port needs is cloned fresh under `$W`.
+Everything this port builds or writes lives under `$W`; anything outside it is read-only. The HP2 port's own earlier
+workspace (`~/WorkHP2`, on this machine read-only) and the original box's `/home/ion/engines/*`, `/home/ion/ufrontend`
+and `/home/ion/epic-sources/ut99-v400` (the v400 base HP2's 433 tree diverged from; the 3-way-merge base) are history:
+LOG/PLAN entries name them.
 
 ## Layout (the clean-up, first commit)
 ```
