@@ -103,6 +103,12 @@ The same commands, settings and log lines in every engine (ufront's UC2 merge; e
   worked); on the web the press that made the browser list the pad, never reported by SDL, is read from
   `navigator.getGamepads()` once at the connect and given to the game (engine-uc2's H-3). Log lines: `NSDLClient:
   game pad connected: <name>` / `disconnected` / `buttons held at the connect given to the game: 0x<mask>`.
+  That press is a tap (released at the next tick: SDL never saw it go down, so it never reports its release). The
+  sticks and triggers are read from the pad's STATE every tick, not from axis events: SDL's Emscripten driver reports
+  no axis values when a pad is opened, so SDL took a stick's first push for its resting point and posted no event for
+  it (`SDL_PrivateJoystickAxis`); the state is right (engine-uc2 reads pads the same way). Found by the cross-engine
+  E2E (`wasm-shared.spec.js` connect-and-move). (This engine's input time is an `FTime`, so the `FLOAT` time step that
+  froze the sticks of engine-ut99 and engine-unreal1 never applied here.)
 
 ## Audio (NOpenALDrv)
 

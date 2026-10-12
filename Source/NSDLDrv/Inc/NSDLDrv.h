@@ -83,6 +83,7 @@ private:
 	INT DisplayIndex;
 	SDL_Rect DisplaySize;
 	SWORD JoyAxis[SDL_CONTROLLER_AXIS_MAX];
+	void UpdatePadAxis( INT Axis, INT NewValue );	// ufront: one stick or trigger value, read from the pad's state
 	UBOOL QuitRequested;
 	FTime InputUpdateTime; // HP2 433: appSeconds() returns FTime
 public:
