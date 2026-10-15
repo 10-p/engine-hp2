@@ -115,6 +115,16 @@ The same commands, settings and log lines in every engine (ufront's UC2 merge; e
   it (`SDL_PrivateJoystickAxis`); the state is right (engine-uc2 reads pads the same way). Found by the cross-engine
   E2E (`wasm-shared.spec.js` connect-and-move). (This engine's input time is an `FTime`, so the `FLOAT` time step that
   froze the sticks of engine-ut99 and engine-unreal1 never applied here.)
+- **Antialiasing on the web** (ufront 2.92; the launcher's Advanced "Antialiasing" sets XOpenGL's and UTGLR's
+  `UseAA`): every GL device draws on **WebGL 2** (`NSDLViewport.cpp`; gl4es's calls run on it unchanged). XOpenGLDrv
+  multisamples in framebuffers of its own. OpenGLDrv/UTGLR draws into framebuffer 0, which under
+  `-sOFFSCREEN_FRAMEBUFFER` is Emscripten's emulated, single-sample framebuffer: `Source/Game/msaa-backbuffer.js`
+  (`ufront_backbuffer_samples(n)`, a `--js-library`, the same as engine-ut99's) swaps it for a multisampled one (RGBA8 +
+  DEPTH24_STENCIL8), resolved at the present and before any read of framebuffer 0 (`SHOT`, save thumbnails); UTGLR
+  (`10-p/utglr-copy`, branch `hp2`) asks for `NumAASamples` at SetRes when `UseAA` is on, or gives it back. Log
+  lines: `AA: 4x multisampled back buffer` / `AA: off`. `-WEBGL=1` gives UTGLR WebGL 1 (no antialiasing), and a
+  browser without WebGL 2 falls back to it. Benchmarked (the frontend's opt-in `renderer-benchmark`, steps/2.92):
+  WebGL 2 costs nothing (UTGLR: 4% more frames, 4% less CPU a frame).
 
 ## Audio (NOpenALDrv)
 
