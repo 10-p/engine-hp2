@@ -12,6 +12,10 @@ Revision history:
 
 #include "CorePrivate.h"
 
+// The last None-context zero-fill: where it wrote and how many bytes (see execLet).
+static BYTE* GNullContextResult = NULL;
+static INT   GNullContextSize   = 0;
+
 /*-----------------------------------------------------------------------------
 	Globals.
 -----------------------------------------------------------------------------*/
@@ -287,7 +291,11 @@ void UObject::execClassContext( FFrame& Stack, RESULT_DECL )
 		GPropAddr = NULL;
 		GProperty = NULL;
 		if( Result )
+		{
 			appMemzero( Result, bSize );
+			GNullContextResult = (BYTE*)Result;
+			GNullContextSize   = bSize;
+		}
 	}
 	unguardexec;
 }
@@ -543,8 +551,9 @@ void UObject::execSwitch( FFrame& Stack, RESULT_DECL )
 		// Get case expression.
 		Stack.Step( Stack.Object, Buffer );
 
-		// Compare.
-		if( bSize ? (appMemcmp(SwitchBuffer,Buffer,bSize)==0) : (*(FString*)SwitchBuffer==*(FString*)Buffer) )
+		// Compare. The compiled size is the script format's (4 for an object), so compare at least a pointer's
+		// width: both buffers are zeroed past it above, so a smaller value compares as before and an object whole.
+		if( bSize ? (appMemcmp(SwitchBuffer,Buffer,Max<INT>(bSize,sizeof(UObject*)))==0) : (*(FString*)SwitchBuffer==*(FString*)Buffer) )
 			break;
 
 		// Jump to next handler.
@@ -651,14 +660,26 @@ void UObject::execLet( FFrame& Stack, RESULT_DECL )
 	// Get variable address.
 	GPropAddr = NULL;
 	Stack.Step( Stack.Object, NULL ); // Evaluate variable.
+	UProperty* DestProperty = GProperty;
 	if( !GPropAddr )
 	{
 		Stack.Logf( NAME_ScriptWarning, TEXT("Attempt to assigned variable through None") );
 		static BYTE Crud[1024];//!!temp
 		GPropAddr = Crud;
 		appMemzero( GPropAddr, sizeof(FString) );
+		DestProperty = NULL;
 	}
+	BYTE* Dest = GPropAddr;
+	GNullContextResult = NULL;
 	Stack.Step( Stack.Object, GPropAddr ); // Evaluate expression into variable.
+
+	// `X = None.Y` zero-fills X directly, as many bytes as the compiler recorded: the value's size in the
+	// 32-bit script format (4 for any object). Where the value is larger in memory (an 8-byte pointer, a struct
+	// holding one) the rest of X would keep its old bytes, so when the fill landed on this variable and fell
+	// short, zero all of it. A fill that went elsewhere (a parameter in `X = F(None.Y)`) starts zeroed anyway.
+	if( GNullContextResult==Dest && DestProperty && GNullContextSize>0 && GNullContextSize<DestProperty->ElementSize )
+		appMemzero( Dest, DestProperty->ElementSize );
+	GNullContextResult = NULL;
 
 	unguardexecSlow;
 }
@@ -725,7 +746,11 @@ void UObject::execContext( FFrame& Stack, RESULT_DECL )
 		GPropAddr = NULL;
 		GProperty = NULL;
 		if( Result )
+		{
 			appMemzero( Result, bSize );
+			GNullContextResult = (BYTE*)Result;
+			GNullContextSize   = bSize;
+		}
 	}
 	unguardexecSlow;
 }
