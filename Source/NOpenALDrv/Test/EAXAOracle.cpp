@@ -5,7 +5,6 @@
 	line's lip-sync table at import time from the original PCM: one byte every 20 ms = the peak |sample|/128
 	over a 5 ms window. Decoding the shipped EA-XA bytes and recomputing that table must give the same curve,
 	so a wrong coefficient table, shift, nibble order or history rule shows up as a collapsed correlation.
-	Reference: tools/dev/analysis/xadec.py (same windowing arithmetic, same numbers).
 
 	Checks, per run:
 	  1. Oracle  (every AllDialog.uax given): the first 50 sounds with FileType 'XA' and SF_HasLipSync, decoded
@@ -234,7 +233,7 @@ struct FOracleResult
 	int    MaxLip, MaxPred;
 };
 
-// xadec.py's lipsync_check, line for line: N = len(lips)-1 windows of [t, t+5 ms), t = 20 ms * i, the
+// The lip-sync recomputation: N = len(lips)-1 windows of [t, t+5 ms), t = 20 ms * i, the
 // window edges taken like FWaveModInfo::OffsetFromTime (byte offset rounded down to a 16-bit boundary).
 static FOracleResult LipSyncOracle( const std::vector<int16_t>& Pcm, const uint8_t* Lips, int32_t LipNum, int32_t Rate )
 {

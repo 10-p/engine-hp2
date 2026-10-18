@@ -6,7 +6,7 @@
 	for that format — no container, no per-sound header, mono 16-bit, 2,994 of the 3,289 shipped sounds
 	(FileType 'XA', CoreFlags & SF_Compressed).
 
-	Format (reference decoder tools/dev/analysis/xadec.py, checked by Test/EAXAOracle.cpp):
+	Format (checked by Test/EAXAOracle.cpp):
 	  a frame is 15 bytes -> 28 samples. Byte 0 = (predictor << 4) | shift, bytes 1..14 = 28 signed
 	  nibbles, high nibble first. With h1/h2 the previous two output samples:
 	      sample = ((nib << 28) >> (shift + 8)) + C1[p]*h1 + C2[p]*h2 + 128) >> 8,  clamped to 16 bits
