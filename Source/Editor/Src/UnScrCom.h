@@ -91,6 +91,15 @@ enum EPropertyType
 };
 
 //
+// The size a value of a struct has in the compiled-script format. The compiler records value sizes in the bytecode
+// (a None context's zero-fill, a switch's compare), and the .u format is the 32-bit one every engine reads: an object
+// reference is 4 bytes there, a string or dynamic array 12, a map 20. On a 64-bit host the linked struct is larger,
+// so its size is recomputed with the format's element sizes (every alignment is at most 4: Core/Inc/UnObjBas.h).
+//
+INT ScriptFormatStructSize( UStruct* Struct );
+enum {SCRIPT_FORMAT_OBJECT_SIZE=4};
+
+//
 // Basic information describing a type.
 //
 class FPropertyBase
@@ -112,7 +121,7 @@ public:
 
 	// Constructors.
 	FPropertyBase( EPropertyType InType )
-	:	Type(InType), ArrayDim(1), PropertyFlags(0), BitMask(0), MetaClass(NULL)
+	:	Type(InType), ArrayDim(1), PropertyFlags(0), Enum(NULL), MetaClass(NULL)	// Enum: clears the whole union
 	{}
 	FPropertyBase( UEnum* InEnum )
 	:	Type(CPT_Byte), ArrayDim(1), PropertyFlags(0), Enum(InEnum), MetaClass(NULL)
@@ -193,7 +202,7 @@ public:
 			sizeof(INT),
 			sizeof(DWORD),
 			sizeof(FLOAT),
-			sizeof(UObject*),
+			SCRIPT_FORMAT_OBJECT_SIZE,	// the format's size, not this host's pointer
 			sizeof(FName),
 			0,
 			0,
@@ -203,7 +212,7 @@ public:
 		INT ElementSize
 		=	Type!=CPT_Struct
 		?	ElementSizes[ Type ]
-		:	Struct->GetPropertiesSize();
+		:	ScriptFormatStructSize(Struct);
 		return ElementSize * ArrayDim;
 	}
 	UBOOL IsVector() const
