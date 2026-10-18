@@ -49,7 +49,7 @@ extension name); the web ini names it too. Natively `OpenGLVersion=ES_WEBGL` in 
 runs the same shader path on a desktop context.
 
 The web `[XOpenGLDrv.XOpenGLRenderDevice]` section (`Config/System/web/Default.ini`) sets, among others,
-`UseAA=True`, `NumAASamples=4`, `NoAATiles=True`, `ActorXBlending=True`, `OneXBlending=True`,
+`UseAA=True`, `NumAASamples=4`, `ActorXBlending=True`, `OneXBlending=True`,
 `GammaMultiplier=1.75`, `DetailMax=3`, and turns off what WebGL 2 cannot do (`UseBindlessTextures`,
 `UsePersistentBuffers`, `UseShaderDrawParameters`, `UseHWLighting`, `UseHWClipping`). On the web `Init` reads
 `DetailMax` from that section before the shaders are built (default 2).
