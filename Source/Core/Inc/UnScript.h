@@ -131,11 +131,11 @@ inline INT FFrame::ReadInt()
 }
 inline UObject* FFrame::ReadObject()
 {
-	// memcpy: bytecode operands are unaligned (same codegen as a deref on x86/wasm, without the UB).
-	UObject* Result;
-	__builtin_memcpy( &Result, Code, sizeof( Result ) );
+	// A 4-byte object index, not a pointer (UObject::GetScriptObject). memcpy: the operand is unaligned.
+	INT Ref;
+	__builtin_memcpy( &Ref, Code, sizeof(Ref) );
 	Code += sizeof(INT);
-	return Result;
+	return UObject::GetScriptObject( Ref );
 }
 inline FLOAT FFrame::ReadFloat()
 {

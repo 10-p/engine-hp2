@@ -487,6 +487,20 @@ public:
 	static ULinkerLoad* GetPackageLinker( UObject* InOuter, const TCHAR* Filename, DWORD LoadFlags, UPackageMap* Sandbox, FGuid* CompatibleGuid );
 	static void StaticShutdownAfterError();
 	static UObject* GetIndexedObject( INT Index );
+
+	// Script object references. Compiled UnrealScript keeps a 4-byte slot for every object it names (a property,
+	// function, struct, class or object constant), and the packages' jump, skip, label and saved-state offsets are
+	// computed around slots of that size. In memory a slot holds the object's index in the object table, so the
+	// stream has the same layout on every pointer width. UStruct::SerializeExpr converts on load and save; the VM
+	// resolves here. INDEX_NONE is None.
+	static UObject* GetScriptObject( INT Ref )
+	{
+		return Ref!=INDEX_NONE ? ((UObject**)GObjObjects.GetData())[Ref] : NULL;
+	}
+	static INT GetScriptRef( UObject* Obj )
+	{
+		return Obj ? Obj->Index : INDEX_NONE;
+	}
 	static void GlobalSetProperty( const TCHAR* Value, UClass* Class, UProperty* Property, INT Offset, UBOOL Immediate );
 	static void ExportProperties( FOutputDevice& Out, UClass* ObjectClass, BYTE* Object, INT Indent, UClass* DiffClass, BYTE* Diff );
 	static void ResetConfig( UClass* Class );

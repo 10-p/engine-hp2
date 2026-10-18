@@ -713,7 +713,7 @@ public:
 	FArchive& operator<<( class FName& N )
 		{Serialize(&N,sizeof(N));return *this;}
 	FArchive& operator<<( class UObject*& Res )
-		{DWORD D = (DWORD)Res; return *this << D;}
+		{INT Ref = UObject::GetScriptRef( Res ); return *this << Ref;}	// a 4-byte object index (UObject::GetScriptObject)
 	FArchive& operator<<( TCHAR* S )
 		{Serialize(S,appStrlen(S)+1); return *this;}
 	FArchive& operator<<( enum EExprToken E )
