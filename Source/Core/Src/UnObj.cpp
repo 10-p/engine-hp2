@@ -3486,10 +3486,9 @@ UObject* UObject::StaticConstructObject
 	UObject* Result = StaticAllocateObject( InClass, InOuter, InName, InFlags, InTemplate, Error );
 	if( Result )
 	{
-#ifndef __EMSCRIPTEN__
 		// Safety net: if the constructor of a native CLASS_Config class wipes the UObject header (Class == NULL,
-		// as a value-initialising `new(X)TClass()` would), restore the whole header and reload its config. A wiped
-		// header crashes at shutdown in ~UObject.
+		// as a value-initialising `new(X)TClass()` would), restore the whole header and reload its config: a wiped
+		// header crashes at shutdown in ~UObject, and its CPF_Config properties would otherwise be zero.
 		INT      SavedIndex = Result->Index;
 		UClass*  SavedClass = Result->Class;
 		UObject* SavedOuter = Result->Outer;
@@ -3505,16 +3504,6 @@ UObject* UObject::StaticConstructObject
 			Result->ObjectFlags = SavedFlags;
 			Result->LoadConfig();
 		}
-#else
-		(*InClass->ClassConstructor)( Result );
-		// A lighter safety net: a native CLASS_Config object whose constructor wiped Class gets it back and reloads
-		// its config (its CPF_Config properties would otherwise be zero). An object whose Class survived is untouched.
-		if( Result->Class==NULL && (InClass->GetFlags() & RF_Native) && (InClass->ClassFlags & CLASS_Config) )
-		{
-			Result->Class = InClass;
-			Result->LoadConfig();
-		}
-#endif
 	}
 	return Result;
 	unguard;
