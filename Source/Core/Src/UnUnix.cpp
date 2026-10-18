@@ -28,6 +28,7 @@
 #include <ctype.h>
 #include <float.h>
 #include <time.h>
+#include <signal.h>
 
 // System includes.
 #include <unistd.h>
@@ -792,6 +793,78 @@ void appPlatformPreInit()
 {
 }
 
+/*-----------------------------------------------------------------------------
+	Exit signals.
+-----------------------------------------------------------------------------*/
+
+// SIGTERM, SIGHUP and SIGINT ask the main loop to exit cleanly. Before the main loop runs there is nothing to
+// leave cleanly, so the process ends at once; a second signal while an exit is pending is reported and ignored.
+#ifndef __EMSCRIPTEN__
+static volatile INT GExitSignals = 0;
+
+static void appWriteSignalText( const char* A, const char* B )
+{
+#ifdef PLATFORM_WIN32
+	fputs( A, stdout ); fputs( B, stdout ); fflush( stdout );
+#else
+	// Async-signal-safe: the signal can interrupt any thread inside malloc or the log.
+	write( 1, A, strlen(A) );
+	write( 1, B, strlen(B) );
+#endif
+}
+
+static UBOOL appHandleExitSignal( const char* Name )
+{
+	if( !GIsRunning )
+	{
+		appWriteSignalText( Name, ": before the main loop, exiting now.\n" );
+		_exit( 1 );
+	}
+	if( GExitSignals++ )
+	{
+		appWriteSignalText( Name, ": exit already requested; this one is ignored.\n" );
+		return 1;
+	}
+	appWriteSignalText( Name, ": requesting exit.\n" );
+	GIsRequestingExit = 1;
+	return 1;
+}
+
+#ifdef PLATFORM_WIN32
+// The console's Ctrl-C, Ctrl-Break and close events, on a thread of their own.
+static BOOL WINAPI appConsoleCtrlHandler( DWORD CtrlType )
+{
+	switch( CtrlType )
+	{
+		case CTRL_C_EVENT:     return appHandleExitSignal( "Signal: Ctrl-C" );
+		case CTRL_BREAK_EVENT: return appHandleExitSignal( "Signal: Ctrl-Break" );
+		case CTRL_CLOSE_EVENT: return appHandleExitSignal( "Signal: console closed" );
+		default:               return 0;
+	}
+}
+#else
+static void appExitSignalHandler( int Signal )
+{
+	appHandleExitSignal( Signal==SIGTERM ? "Signal: SIGTERM" : Signal==SIGHUP ? "Signal: SIGHUP" : "Signal: SIGINT" );
+}
+#endif
+#endif
+
+static void appInstallExitSignalHandlers()
+{
+#if defined(PLATFORM_WIN32)
+	SetConsoleCtrlHandler( appConsoleCtrlHandler, 1 );
+#elif !defined(__EMSCRIPTEN__)
+	struct sigaction Action;
+	memset( &Action, 0, sizeof(Action) );
+	Action.sa_handler = appExitSignalHandler;
+	sigemptyset( &Action.sa_mask );
+	sigaction( SIGTERM, &Action, NULL );
+	sigaction( SIGHUP,  &Action, NULL );
+	sigaction( SIGINT,  &Action, NULL );
+#endif
+}
+
 void appPlatformInit()
 {
 	guard(appPlatformInit);
@@ -801,6 +874,9 @@ void appPlatformInit()
 	GSys->AddToRoot();
 	for( INT i=0; i<GSys->Suppress.Num(); i++ )
 		GSys->Suppress(i).SetFlags( RF_Suppress );
+
+	// Exit signals request a clean exit.
+	appInstallExitSignalHandlers();
 
 	// Randomize.
 	srand( (unsigned)time( NULL ) );
