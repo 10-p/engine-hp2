@@ -6,8 +6,7 @@ Building and testing it for the browser is in [`WEB_INTEGRATION.md`](WEB_INTEGRA
 
 ## What this folder holds
 
-- [`CMakeLists.txt`](CMakeLists.txt), the build glue. The driver source is fetched.
-- [`XOpenGLDrv.int`](XOpenGLDrv.int), a copy of the fork's localisation file. No build or run step installs it.
+- [`CMakeLists.txt`](CMakeLists.txt), the build glue. The driver source, and its `XOpenGLDrv.int`, are fetched.
 
 | | |
 |---|---|
