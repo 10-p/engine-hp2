@@ -25,7 +25,8 @@ mouse stops (the script's default keeps turning for up to `MouseSmoothThreshold`
   line would be the one replaced; the music folder is opened by path (`../Music/<Song>.ogg`), not through
   `Paths=`. `appInit` also sets `GSys->Paths[5]` to a per-user save folder when `appUserDir()` is non-empty; on
   every target built here (`Source/Core/Src/UnUnix.cpp`) it returns an empty string, so saves stay under `../Save`.
-- On-disk file case (`LocalMap=startup.unr`); no `CdPath`.
+- On-disk file case (`LocalMap=PrivetDr.unr`: this branch boots the first level, as the retail front-end's new
+  game does); no `CdPath`. `Language=usa`, as in `../Default.ini`.
 - `GameRenderDevice=XOpenGLDrv.XOpenGLRenderDevice`. On every boot the launcher writes its choice of device to
   `GameRenderDevice`, `WindowedRenderDevice` and `RenderDevice` before the engine reads them, so the SoftDrv values
   of the other two keys never take effect.
