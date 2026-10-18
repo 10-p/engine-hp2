@@ -3,7 +3,6 @@
 # SoftDrv Editor). Deletes and recreates <outdir>; only reads the three source trees.
 #
 #   tools/dev/merge3.sh <outdir> [Pkg ...]
-#   with EPIC_SOURCE=/home/ion/WorkUnreal/epic-sources/ut99-v400 UT99_SOURCE=/home/ion/WorkUnreal/engine-ut99/Source
 #
 # base   = $EPIC_SOURCE   Epic UT99 v400, the common ancestor (CRLF)
 # ours   = $HP2_SOURCE    HP2 build 433 (LF): this repo's Source/ by default; the original drop is
@@ -21,8 +20,8 @@
 #   ERROR                    git merge-file failed
 set -u
 HP2=${HP2_SOURCE:-"$(cd "$(dirname "$0")/../../Source" && pwd)"}
-EPIC=${EPIC_SOURCE:-/home/ion/epic-sources/ut99-v400}
-UT=${UT99_SOURCE:-/home/ion/engines/engine-ut99/Source}
+EPIC=${EPIC_SOURCE:-/home/ion/WorkUnreal/epic-sources/ut99-v400}
+UT=${UT99_SOURCE:-/home/ion/WorkUnreal/engine-ut99/Source}
 OUTROOT=${1:?usage: merge3.sh <outdir> [Pkg ...]}
 shift
 PKGS=("$@"); [ ${#PKGS[@]} -eq 0 ] && PKGS=(Core Engine Render Fire SoftDrv Editor)

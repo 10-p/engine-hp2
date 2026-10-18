@@ -16,7 +16,7 @@ OUT="${2:?}"
 SECS="${3:-20}"
 shift 3 || true
 
-RUN=${U1RUN:-/home/ion/native-runtrees/ut99-softenh}
+RUN=${U1RUN:?set U1RUN to a UT99 run tree (tools/dev/mkrun-ut99.sh)}
 DISP=${U1DISP:-:99}
 # Match Xvfb to the engine's own viewport size: otherwise the engine ticks two viewports and the
 # captured frame is whichever was presented last.

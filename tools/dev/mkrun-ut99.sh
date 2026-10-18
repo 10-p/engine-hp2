@@ -15,8 +15,8 @@ BUILD="${1:?usage: mkrun-ut99.sh <build-dir> <run-dir>}"
 RUN="${2:?}"
 # The reference run tree's plain asset copy is used when $UT99_ASSETS_DIR has no Maps/: the overlay is
 # unmounted after a reboot, and symlinks into it then dangle ("Failed to load 'Entry'").
-A="${UT99_ASSETS_DIR:-/home/ion/ut99-assets}"
-REF_ASSETS=${UT99_REF_RUNTREE:-/home/ion/native-runtrees/ut99}
+A="${UT99_ASSETS_DIR:-/home/ion/WorkUnreal/assets/ut99-assets}"
+REF_ASSETS=${UT99_REF_RUNTREE:-/home/ion/WorkUnreal/native-runtrees/ut99}
 [ -d "$REF_ASSETS/Maps" ] && [ ! -d "$A/Maps" ] && A="$REF_ASSETS"
 
 rm -rf "$RUN"
@@ -31,7 +31,7 @@ done
 # maps can sit alongside the stock ones without writing into shared assets.
 mkdir -p "$RUN/Maps"
 for m in "$A"/Maps/*; do [ -e "$m" ] && ln -sfn "$m" "$RUN/Maps/$(basename "$m")"; done
-for extra in /home/ion/temp/*.unr; do
+for extra in /home/ion/WorkUnreal/temp/*.unr; do
     [ -e "$extra" ] && cp -f --remove-destination "$extra" "$RUN/Maps/"
 done
 
@@ -41,7 +41,7 @@ mkdir -p "$RUN/Logs"
 
 # The retail ini names WinDrv.WindowsClient as the viewport manager, which a Linux build does not have:
 # take the reference run tree's native config when it is there, otherwise patch the one line.
-REF=${UT99_REF_RUNTREE:-/home/ion/native-runtrees/ut99}
+REF=${UT99_REF_RUNTREE:-/home/ion/WorkUnreal/native-runtrees/ut99}
 if [ -f "$REF/System/UnrealTournament.ini" ]; then
     cp -f --remove-destination "$REF/System/UnrealTournament.ini" "$RUN/System/"
     [ -f "$REF/System/User.ini" ] && cp -f --remove-destination "$REF/System/User.ini" "$RUN/System/"

@@ -14,7 +14,7 @@ const DIR = resolve(process.argv[2] || 'build-wasm/SDLLaunch');
 const SECS = Number(process.argv[3] || 20);
 const PORT = 8792;
 // Playwright is resolved from the frontend's packages/e2e; this repo has no node_modules.
-const require = createRequire('/home/ion/hp2-ufrontend/ufrontend/packages/e2e/');
+const require = createRequire('/home/ion/WorkUnreal/unreal-frontend-arch-private/packages/e2e/');
 const { chromium } = require('playwright');
 
 if (!existsSync(join(DIR, 'SDLLaunch.js'))) {

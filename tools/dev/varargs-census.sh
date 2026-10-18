@@ -5,7 +5,7 @@
 set -u
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"
 B="$REPO/build-wasm"
-source ~/emsdk/emsdk_env.sh >/dev/null 2>&1
+source /home/ion/WorkUnreal/env.sh >/dev/null 2>&1
 for P in "$@"; do
   D="$B/$P/CMakeFiles/$P.dir"
   [ -f "$D/flags.make" ] || { echo "no $D/flags.make" >&2; continue; }

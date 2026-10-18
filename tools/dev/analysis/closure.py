@@ -3,7 +3,7 @@
 import sys, os, glob, json
 sys.path.insert(0, os.path.dirname(__file__))
 from upkg import Pkg
-A = '/home/ion/hp2-ufrontend/HarryPotter2/Assets'
+A = '/home/ion/WorkUnreal/assets/hp2-proto-assets'
 # Paths order from Default.ini
 paths = [('System','.u'),('Maps','.unr'),('Textures','.utx'),('Sounds','.uax'),('Music','.umx'),('Save','.usa')]
 index = {}
