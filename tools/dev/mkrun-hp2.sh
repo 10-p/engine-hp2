@@ -30,6 +30,9 @@ done
 mkdir -p "$RUN/System"
 ( cd "$A/System" && find . -mindepth 1 -maxdepth 1 \
       ! -iname '*.dll' ! -iname '*.exe' ! -iname '*.bat' -exec cp -a --remove-destination {} "$RUN/System/" \; )
+# The copy is ours: a read-only asset tree must not make the run tree read-only too, or the game cannot write
+# its inis and log there and the next rebuild's rm -rf fails on its subfolders.
+chmod -R u+w "$RUN/System"
 cp -f --remove-destination "$REPO/Config/System/Default.ini" "$REPO/Config/System/DefUser.ini" "$RUN/System/"
 mkdir -p "$RUN/Save"
 
