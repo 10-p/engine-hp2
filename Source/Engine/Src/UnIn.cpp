@@ -56,11 +56,11 @@ void UInput::StaticInitInput()
 	guard(UInput::StaticInitInput);
 	FArchive ArDummy;
 
-	// Create input alias struct.
+	// Create input alias struct, laid out as FAlias (FString aligns to 8 on a 64-bit build).
 	UStruct* AliasStruct = new(StaticClass(),TEXT("Alias"))UStruct( NULL );
-	AliasStruct->SetPropertiesSize( sizeof(FName) + sizeof(FString));
-	new(AliasStruct,TEXT("Alias"),  RF_Public)UNameProperty( EC_CppProperty, 0,             TEXT(""), CPF_Config );
-	new(AliasStruct,TEXT("Command"),RF_Public)UStrProperty ( EC_CppProperty, sizeof(FName), TEXT(""), CPF_Config );
+	AliasStruct->SetPropertiesSize( sizeof(FAlias) );
+	new(AliasStruct,TEXT("Alias"),  RF_Public)UNameProperty( EC_CppProperty, STRUCT_OFFSET(FAlias,Alias),   TEXT(""), CPF_Config );
+	new(AliasStruct,TEXT("Command"),RF_Public)UStrProperty ( EC_CppProperty, STRUCT_OFFSET(FAlias,Command), TEXT(""), CPF_Config );
 	AliasStruct->Link( ArDummy, 0 );
 
 	// Add alias list to class.
