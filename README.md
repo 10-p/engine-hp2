@@ -8,9 +8,13 @@ shims in `vendor/glue/`.
 
 Two branches, one engine:
 
-- `main` (this checkout, `engine-hp2`) runs the September 2002 prototype content: frontend target `hp2-proto`.
-- `retail` (the second checkout, `engine-hp2-retail`) adds what the retail disc (build 021009) needs, recovered from
-  the retail DLLs: target `hp2-retail-exp`. It holds retail-specific commits only and is rebased on `main`.
+- `main` (`engine-hp2`) runs the September 2002 prototype content: frontend target `hp2-proto`.
+- `retail` (this checkout, `engine-hp2-retail`) runs the retail disc (build HPCos_021009_1205-1) with what its content
+  needs, recovered from the retail DLLs: frontend target `hp2-retail-exp`. It plays in US English (`Language=usa`) and
+  boots straight into `PrivetDr`, the first level, as the retail front-end's new game does; `-LOAD=0` continues an
+  existing save.
+
+General engine work goes to `main`; this branch holds retail-specific commits only and is rebased on `main`.
 
 Building and running: [`BUILD.md`](./BUILD.md). Agent guide: [`CLAUDE.md`](./CLAUDE.md). The documents in `docs/`:
 [`docs/README.md`](./docs/README.md).
@@ -47,6 +51,10 @@ The baseline is the restructured prototype drop (`/home/ion/WorkUnreal/epic-sour
   package, `FTime` timing, HP2's audio subsystem and process API); the template's static registry replaces HP2's own.
 - **Save games** — HP2's slot saves and persistent-actor files work on case-sensitive file systems.
 - **Languages** — `appInit` reads the language block in the ini's on-disk case, and `-ini:` overrides win.
+- **Retail content** (this branch) — the retail `Engine.u` layout and natives (`APatrolPoint`, `GetCurrentKeyState`,
+  the save events), the retail save path and persistent-actor format, collision, movement and interpolation, the
+  loading-screen flow, ALAudio's retail behaviour in NOpenALDrv, the `SHOWCOLL`/`SHOWPATHS` debug views, US English and
+  the `PrivetDr` boot; `tools/dev/retail/` holds the tools the behaviour was recovered with.
 
 ## Credits
 
