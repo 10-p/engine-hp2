@@ -13,7 +13,7 @@
 
 #if defined(PLATFORM_SDL)
 #include <SDL2/SDL.h>
-#else
+#elif !defined(PLATFORM_POSIX)
 #error "Unsupported platform."
 #endif
 
@@ -53,6 +53,17 @@
 // Core includes.
 #include "CorePrivate.h"
 #include "UnUnix.h"
+
+// A POSIX build without SDL takes its clock, CPU count and base directory from the system itself.
+#if defined(PLATFORM_POSIX) && !defined(PLATFORM_SDL)
+#define UE_POSIX_WITHOUT_SDL 1
+static QWORD PosixMonotonicNs()
+{
+	timespec Now;
+	clock_gettime( CLOCK_MONOTONIC, &Now );
+	return (QWORD)Now.tv_sec * 1000000000ull + (QWORD)Now.tv_nsec;
+}
+#endif
 /*-----------------------------------------------------------------------------
 	Globals
 -----------------------------------------------------------------------------*/
@@ -704,6 +715,19 @@ CORE_API const char* appBaseDir()
 		char* BasePath = SDL_GetBasePath();
 		appStrncpy( BaseDir, BasePath, sizeof(BaseDir) );
 		SDL_free( BasePath );
+#elif defined(UE_POSIX_WITHOUT_SDL)
+		// The executable's own directory, as SDL_GetBasePath() finds it on Linux.
+		char Exe[1024];
+		ssize_t Len = readlink( "/proc/self/exe", Exe, sizeof(Exe)-1 );
+		if( Len > 0 )
+		{
+			Exe[Len] = 0;
+			if( char* Slash = strrchr( Exe, '/' ) )
+			{
+				Slash[1] = 0;
+				appStrncpy( BaseDir, Exe, sizeof(BaseDir) );
+			}
+		}
 #endif
 		// Fallback to CWD.
 		if ( !BaseDir[0] )
@@ -795,6 +819,17 @@ void appPlatformInit()
 	// Get CPU info.
 	GPageSize = 4096; // TODO: sysconf?
 	GProcessorCount = SDL_GetCPUCount();
+#elif defined(UE_POSIX_WITHOUT_SDL)
+	debugf( NAME_Init, "Detected: POSIX" );
+
+	// The monotonic clock counts nanoseconds.
+	DOUBLE Frequency = 1000000000.0;
+	GSecondsPerCycle = 1.0 / Frequency;
+	debugf( NAME_Init, "CPU Timer Freq=%f Hz", (FLOAT)Frequency );
+
+	// Get CPU info.
+	GPageSize = sysconf( _SC_PAGESIZE );
+	GProcessorCount = sysconf( _SC_NPROCESSORS_ONLN );
 #endif // PLATFORM_SDL
 	unguard;
 }
@@ -870,7 +905,7 @@ static QWORD appReadCounter()
 #elif defined(PLATFORM_SDL)
 	return SDL_GetPerformanceCounter();
 #else
-	return 0;
+	return PosixMonotonicNs();
 #endif
 }
 CORE_API FTime appSeconds()
