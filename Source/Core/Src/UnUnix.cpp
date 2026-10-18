@@ -942,9 +942,18 @@ CORE_API const TCHAR* appUserDir()
 //
 CORE_API FTime appProcessSeconds()
 {
-#if defined(__EMSCRIPTEN__) || defined(PLATFORM_WIN32)
+#if defined(__EMSCRIPTEN__)
 	// Wall time here.
 	return appSeconds();
+#elif defined(PLATFORM_WIN32)
+	// Kernel plus user time, in 100 ns units.
+	FILETIME Creation, Exit, Kernel, User;
+	if( !GetProcessTimes( GetCurrentProcess(), &Creation, &Exit, &Kernel, &User ) )
+		return appSeconds();
+	ULARGE_INTEGER K, U;
+	K.LowPart = Kernel.dwLowDateTime; K.HighPart = Kernel.dwHighDateTime;
+	U.LowPart = User.dwLowDateTime;   U.HighPart = User.dwHighDateTime;
+	return FTime( (DOUBLE)(K.QuadPart + U.QuadPart) * 1e-7 );
 #else
 	struct timespec ts;
 	if( clock_gettime( CLOCK_PROCESS_CPUTIME_ID, &ts ) != 0 )
