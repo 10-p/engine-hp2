@@ -21,9 +21,8 @@
 // Package.
 IMPLEMENT_PACKAGE(WebRTCDrv);
 
-// Peer-ID namespace prefix. A client dials "<prefix>-<room>-srv", the id the glue registers a listen
-// server under from the frontend target's network.peerPrefix; this engine hosts HP2 under "hp2".
-#define WEBRTC_PEER_PREFIX      "hp2"   // the frontend keeps P2P off for HP2 (network.multiplayer false)
+// Peer-ID namespace prefix, WEBRTC_PEER_PREFIX (from CMake: the frontend target id, which is also the target's
+// network.peerPrefix). A client dials "<prefix>-<room>-srv", the id the glue registers a listen server under.
 
 // Packet sizing (parity with UTcpipConnection's UDP model).
 #define WEBRTC_MAX_PACKET       (512)
