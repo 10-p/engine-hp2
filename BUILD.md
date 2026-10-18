@@ -1,8 +1,8 @@
 # Building engine-hp2 (native, Windows, WebAssembly, Android)
 
-Everything is built and run inside the workspace `/home/ion/WorkUnreal` (`$W` below): this repository is
-`$W/engine-hp2` (`main`), its retail checkout `$W/engine-hp2-retail` (`retail`), the frontend
-`$W/unreal-frontend-arch-private`. `source $W/env.sh` first: it puts the workspace's emsdk on the path and sets
+Everything is built and run inside the workspace `/home/ion/WorkUnreal` (`$W` below): this checkout is
+`$W/engine-hp2-retail` (branch `retail`, the retail disc's content), the `main` checkout `$W/engine-hp2`, the frontend
+`$W/unreal-frontend-arch-private`. Everything below applies to both branches; the retail values are given here. `source $W/env.sh` first: it puts the workspace's emsdk on the path and sets
 `EMSDK`, which the web presets' toolchain file reads.
 
 ## Presets (`Source/CMakePresets.json`, run from `Source/`)
@@ -59,15 +59,16 @@ A software-only native tree (no GL devices) for parallel work:
 ## Running the native build
 
 ```bash
-UE_ASSETS_DIR=$W/assets/hp2-proto-assets tools/dev/mkrun-hp2.sh build-native $W/run/hp2-native
-cd $W/run/hp2-native && ./run.sh            # SoftDrv, the title level
+UE_ASSETS_DIR=$W/assets/hp2-retail-exp-assets tools/dev/mkrun-hp2.sh build-native $W/run/hp2-retail-native
+cd $W/run/hp2-retail-native && ./run.sh     # SoftDrv, a new game in PrivetDr
 ./run.sh gl Ch1Rictusempra                  # XOpenGLDrv, straight into a level (null, utglr, soft)
 SDL_VIDEODRIVER=dummy System/Game -NULLRENDERER -NOMSGBOX -log    # headless
 ```
 
 `mkrun-hp2.sh` links the read-only content and copies `System/` (writable), the shipped inis and the binaries.
-`Game.ini`, `User.ini` and `Game.log` land in `System/`; saves in `Save/` (`-SAVESLOT=<n>` → `Save/Slot<n>/`). A new
-game is `PrivetDr.unr -SAVESLOT=<n>`, continuing is `-LOAD=0 -SAVESLOT=<n>`. `-DEBUGMODE` turns HP2's debug console
+`Game.ini`, `User.ini` and `Game.log` land in `System/`; saves in `Save/` (`-SAVESLOT=<n>` → `Save/Slot<n>/`). The
+boot level is `PrivetDr` (`LocalMap`), so a plain start is a new game; `-LOAD=<n>` continues `Save<n>.usa` when it
+exists and otherwise logs `No saved game to continue` and plays the new game. `-DEBUGMODE` turns HP2's debug console
 and messages on. `ucc-bin` uses its own `HP.ini`: `./ucc-bin Core.SimpleCommandlet`,
 `./ucc-bin batchexport HGame.u class uc <dir>`. SIGTERM, SIGHUP and Ctrl-C ask the main loop to exit cleanly (a
 second one is ignored); before the main loop the process ends at once.
@@ -82,9 +83,9 @@ and feeds it a scenario (`move.scen`: the move stick's speed against tilt, its t
 
 - The native class layout: `UStruct::Link` stops with a fatal error when a native class's C++ size differs from its
   script size (the `[layoutdiag]` lines before it list the script layout). `Source/Engine/Src/EngineLayoutAsserts.cpp`
-  asserts every member offset of `EngineClasses.h` against the shipped `Engine.u` at compile time, for the 32-bit
-  layout; regenerate it with `tools/dev/layout/emit_asserts.py` after any `EngineClasses.h` change
-  (`tools/dev/layout/README.md`). `tools/dev/layout/layout-sweep.gdb` compares every script property with its C++
+  asserts every member offset of `EngineClasses.h` against the retail `Engine.u` at compile time, for the 32-bit
+  layout; regenerate it with `tools/dev/layout/emit_asserts.py` from the retail `Core.u`/`Engine.u` after any
+  `EngineClasses.h` change (the command is in the file's preamble; `tools/dev/layout/README.md`). `tools/dev/layout/layout-sweep.gdb` compares every script property with its C++
   member in a running engine, on 32-bit and 64-bit builds: expect `shifted=0`.
 - `tools/dev/varargs-census.sh <Pkg>…` compiles a package with clang's `-Wnon-pod-varargs` (the build silences it,
   and clang turns an `FString` passed through `...` into a run-time trap). Expect no hit.
@@ -116,15 +117,15 @@ sweep check the layout. The UTGLR fork rounds its pointers through the engine's 
 1. `cmake --build --preset wasm-perf` → `build-wasm-perf/SDLLaunch/`. The boot config is
    `Config/System/web/{Default,DefUser}.ini`, preloaded to `/System/` (`Config/System/web/README.md`). The ABI shims
    are `vendor/glue/{ue_abi.h,net-shim.js,wasmfs-shim.js}` (ABI version 2, written into `meta.json`, with
-   `targetId` `hp2-proto` from `HP2_TARGET_ID` in `Source/CMakeLists.txt`).
+   `targetId` `hp2-retail-exp` from `HP2_TARGET_ID` in `Source/CMakeLists.txt`; `main` builds `hp2-proto`).
 2. In the frontend (`$W/unreal-frontend-arch-private`; asset paths come from its gitignored
    `.ufront/publish.local.json`):
    ```bash
-   yarn build --target hp2-proto --engine-artifact $W/engine-hp2/build-wasm-perf/SDLLaunch   # assembles serve-web/
-   yarn serve                       # http://localhost:8080/ with COOP/COEP
-   yarn e2e --target hp2-proto      # headless Chromium against serve-web/
+   yarn build --target hp2-retail-exp --engine-artifact $W/engine-hp2-retail/build-wasm-perf/SDLLaunch
+   yarn serve                         # http://localhost:8080/ with COOP/COEP
+   yarn e2e --target hp2-retail-exp   # headless Chromium against serve-web/
    ```
-   The retail engine is `--target hp2-retail-exp --engine-artifact $W/engine-hp2-retail/build-wasm-perf/SDLLaunch`.
+   The prototype engine is `--target hp2-proto --engine-artifact $W/engine-hp2/build-wasm-perf/SDLLaunch`.
    `yarn e2e` reuses any server already on :8080; when another checkout owns that port, serve this tree elsewhere
    (`UFRONT_E2E_BASE_URL`, `UFRONT_E2E_SERVE_ROOT`).
 3. After changing the web inis, clear the target's `<id>-user-data` store (or the site data): a persisted `Game.ini`
@@ -281,13 +282,34 @@ adb logcat -s HP2 HP2-stdio HP2Bridge SDL
 `android-arm64` preset (`ANDROID_NDK_HOME` set; pass `-DFETCHCONTENT_SOURCE_DIR_SDL2=<checkout>` to reuse the
 Gradle project's SDL2).
 
+## The retail content (this branch)
+
+The content is the retail disc's installed tree, `$W/assets/hp2-retail-exp-assets`
+(`tools/dev/retail/assemble-assets.sh <iso> <work-dir> <out-dir> <unshield>` builds one from the disc image; the
+layout is in `docs/porting/retail-assets.md`). Both ini sets boot `LocalMap=PrivetDr.unr` with `Language=usa` (the US
+dialog recording and the `.usa` text files; every other key falls back to `.int`). What this branch adds to `main`:
+
+- Command line: `GAMESTATE=<token>` overrides the player's `CurrentGameState` when the level's actors are screened.
+- Console: `SHOWCOLL 1|0` (collision cylinders) and `SHOWPATHS 1|0` (interpolation and patrol paths, hidden path
+  markers included); `SETVOLUMES SOUND=<f> MUSIC=<f>`, `MUTESOUNDS` / `UNMUTESOUNDS` (HGame sends them while a
+  cut-scene is skipped) and `SOUNDSOURCESTATES`; `PLAYINGSOUNDSTATS` lists each voice's priority. The Delete key's
+  special pause works only with `-DEBUGMODE`.
+- Saves: `Save0.bmp` is copied from `System/Thumbnails/<Level>.bmp` (else `Default.bmp`); every persistent-actor record
+  carries its actor's class, so an actor the save holds but the map lacks is respawned.
+- Audio: NOpenALDrv follows the retail ALAudio (no occlusion, an ambient pass every 0.2 s with at most three voices per
+  ambient sound, music stopped on a map change).
+- `tools/dev/retail/`: `layout-diff.py` (script layouts, prototype vs retail packages), `func-diff.py` (exported
+  functions of two DLL builds), `ghidra/` (headless Ghidra scripts and `match.py`, which pairs two function dumps) and
+  `ucdis.py` (a bytecode disassembler for the script-stripped retail packages, with `natives.txt`). Each header says
+  how to run it.
+
 ## Windows (MinGW-w64)
 
 ```bash
 cd Source && cmake --preset windows && cmake --build --preset windows -j"$(nproc)"     # or windows64
-UE_ASSETS_DIR=$W/assets/hp2-proto-assets tools/dev/mkrun-hp2.sh build-windows $W/run/hp2-windows --windows
+UE_ASSETS_DIR=$W/assets/hp2-retail-exp-assets tools/dev/mkrun-hp2.sh build-windows $W/run/hp2-retail-windows --windows
 export WINEPREFIX=$W/.wine-hp2          # keep the prefix inside the workspace
-cd $W/run/hp2-windows/System && wine Game.exe -SOFTWARERENDERER -NOMSGBOX
+cd $W/run/hp2-retail-windows/System && wine Game.exe -SOFTWARERENDERER -NOMSGBOX
 ```
 
 One self-contained `Game.exe` (`-static-libgcc -static-libstdc++`, winpthread linked in). Its imports must stay within
