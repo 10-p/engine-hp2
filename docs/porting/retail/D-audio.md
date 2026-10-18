@@ -1,3 +1,5 @@
+Record — kept as history; the current state is in README.md, BUILD.md and the change inventory.
+
 # D-audio — retail `ALAudio.dll` vs prototype, and what NOpenALDrv should adopt
 
 Scope: `UALAudioSubsystem` in the prototype `HarryPotter2/Assets/System/ALAudio.dll` (2002-09-06) vs the retail
