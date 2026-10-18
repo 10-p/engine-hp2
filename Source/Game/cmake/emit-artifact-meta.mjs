@@ -20,7 +20,7 @@ const dir = args.out;
 
 // Provenance is resolved here, at build time: the values on the POST_BUILD command line are computed once per
 // configure, so a plain rebuild would stamp a stale SHA. The passed --gitSha is the fallback for a tree without
-// git; --builtAt is not read.
+// git.
 const _here = dirname(fileURLToPath(import.meta.url));
 const gitSha = (() => {
     try {
@@ -53,12 +53,12 @@ const deps = Object.fromEntries(
 );
 
 const meta = {
-    targetId: args.target || 'hp2',
+    targetId: args.target, // the frontend target id (HP2_TARGET_ID in Source/CMakeLists.txt)
     engineFamily: 'UE1',
     buildConfig: 'wasm-integrated',
     abiVersion: Number(args.abi), // from the vendored frozen ue_abi.h UE_ABI_VERSION
     loaderStyle: 'global-module', // classic <script> + bare globals
-    provenance: { repo: 'HarryPotter2', gitSha, builtAt }, // must equal the target descriptor's publish.engine.repo
+    provenance: { repo: 'engine-hp2', gitSha, builtAt }, // the engine repository (both branches)
     toolchain: { emscripten: args.emcc || 'unknown', base: 'Harry Potter and the Chamber of Secrets (UE1 build 433), templated on engine-ut99', ...deps },
     buildFlags: [
     // Descriptive, hand-maintained: keep it in step with the link flags in Source/Game/CMakeLists.txt. The

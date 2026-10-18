@@ -9,6 +9,10 @@ project(HP2 CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_EXTENSIONS ON)
 
+# The frontend target this engine is built for (unreal-frontend-arch-private targets/<id>): meta.json's targetId,
+# and the WebRTC peer prefix, which the hp2 targets set equal to their id (network.peerPrefix).
+set(HP2_TARGET_ID "hp2-proto")
+
 if (NOT EXISTS ${CMAKE_BINARY_DIR}/CMakeCache.txt)
   if (NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE "RelWithDebInfo" CACHE STRING "" FORCE)
