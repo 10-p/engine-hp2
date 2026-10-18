@@ -1,3 +1,5 @@
+Record — kept as history; the current state is in README.md, BUILD.md and the change inventory.
+
 --- a/HarryPotter2/Source/Engine/Inc/UnCamera.h
 +++ b/HarryPotter2/Source/Engine/Inc/UnCamera.h
 @@ -183,7 +183,10 @@

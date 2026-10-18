@@ -1,3 +1,5 @@
+Record — kept as history; the current state is in README.md, BUILD.md and the change inventory.
+
 # Common brief: retail vs prototype HP2 binaries (read this first)
 
 Harry Potter and the Chamber of Secrets (PC, UE1 build 433) is being ported. The C++ SOURCE we have
