@@ -1,5 +1,7 @@
 // UnRenderIterator.h
 
+#pragma pack (push,4)	// script-mirrored layout: 4-byte member alignment on every target
+
 class ENGINE_API URenderIterator : public UObject
 {
     DECLARE_CLASS(URenderIterator,UObject,0,Engine)
@@ -20,3 +22,5 @@ class ENGINE_API URenderIterator : public UObject
 	virtual bool IsDone();						//override to adjust iteration termination criteria (call Super recommended)
 	virtual AActor* CurrentItem();				//override to adjust actor render properties based on Index (call Super recommended)
 };
+
+#pragma pack (pop)

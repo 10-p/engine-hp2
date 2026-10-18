@@ -354,6 +354,51 @@ void UStruct::Register()
 }
 
 //
+// Native placeholders. A few script variables stand in for C++ data that script never touches: the object header,
+// the vtable pointer of a secondary C++ base, a private pointer. The packages declare them as ints, sized for 32-bit
+// pointers, so on a 64-bit build the C++ data is larger than its script stand-in and every later member would sit
+// at a different offset in C++ than in script. Link gives each one the size of its C++ counterpart instead; on
+// every 32-bit target each entry equals the script's own size. The lookup compares strings: a cached FName is
+// purged by garbage collection when unreferenced and its index reused for another name.
+//
+static INT NativePlaceholderSize( UStruct* Owner, UProperty* Property )
+{
+	if( !Cast<UIntProperty>(Property) || !Cast<UClass>(Owner) || !Owner->GetOuter() )
+		return 0;
+	static const struct { const TCHAR* Package; const TCHAR* Struct; const TCHAR* Property; INT Size; } Placeholders[] =
+	{
+		// vtable, Index, HashNext, StateFrame, _Linker, _LinkerIndex: everything before Outer.
+		{ TEXT("Core"),   TEXT("Object"),          TEXT("ObjectInternal"),     (INT)(sizeof(UObject) - sizeof(UObject*) - sizeof(DWORD) - sizeof(FName) - sizeof(UClass*)) },
+		{ TEXT("Core"),   TEXT("Subsystem"),       TEXT("ExecVtbl"),           (INT)sizeof(FExec) },
+		{ TEXT("Engine"), TEXT("Console"),         TEXT("vtblOut"),            (INT)sizeof(FOutputDevice) },
+		{ TEXT("Engine"), TEXT("Player"),          TEXT("vfOut"),              (INT)sizeof(FOutputDevice) },
+		{ TEXT("Engine"), TEXT("Player"),          TEXT("vfExec"),             (INT)sizeof(FExec) },
+		{ TEXT("Engine"), TEXT("Canvas"),          TEXT("FramePtr"),           (INT)sizeof(void*) },	// FSceneNode*
+		{ TEXT("Engine"), TEXT("Canvas"),          TEXT("RenderPtr"),          (INT)sizeof(void*) },	// URenderBase*
+		{ TEXT("Engine"), TEXT("ScriptedTexture"), TEXT("Junk1"),              (INT)sizeof(void*) },	// UTexture* OldSourceTex
+		{ TEXT("Engine"), TEXT("ScriptedTexture"), TEXT("Junk2"),              (INT)sizeof(void*) },	// BYTE* LocalSourceBitmap
+		{ TEXT("Engine"), TEXT("ScriptedTexture"), TEXT("Junk3"),              (INT)sizeof(void*) },	// TMap<...>* PaletteMap
+		{ TEXT("Engine"), TEXT("StatLog"),         TEXT("Context"),            (INT)sizeof(void*) },	// FMD5Context*
+		{ TEXT("Engine"), TEXT("StatLogFile"),     TEXT("LogAr"),              (INT)sizeof(void*) },	// FArchive*
+		{ TEXT("Editor"), TEXT("EditorEngine"),    TEXT("NotifyVtbl"),         (INT)sizeof(FNotifyHook) },
+		{ TEXT("Editor"), TEXT("EditorEngine"),    TEXT("Pad"),                (INT)(4*sizeof(void*) + 4*sizeof(INT)) },	// 4 W* + AutosaveCounter + Pad[3]
+		{ TEXT("Editor"), TEXT("EditorEngine"),    TEXT("ConstraintsVtbl"),    (INT)sizeof(void*) },	// FEditorConstraints' vtable
+		{ TEXT("Fire"),   TEXT("WaterTexture"),    TEXT("SourceFields"),       (INT)sizeof(void*) },	// BYTE*
+		{ TEXT("Fire"),   TEXT("WetTexture"),      TEXT("LocalSourceBitmap"),  (INT)sizeof(void*) },	// BYTE*
+		{ TEXT("Fire"),   TEXT("IceTexture"),      TEXT("LocalSource"),        (INT)sizeof(void*) },	// BYTE*
+		{ TEXT("IpDrv"),  TEXT("InternetLink"),    TEXT("PrivateResolveInfo"), (INT)sizeof(void*) },	// FResolveInfo*
+	};
+	const TCHAR* StructName = Owner->GetName();
+	for( INT i=0; i<ARRAY_COUNT(Placeholders); i++ )
+		if
+		(	appStricmp( StructName, Placeholders[i].Struct )==0
+		&&	appStricmp( Property->GetName(), Placeholders[i].Property )==0
+		&&	appStricmp( Owner->GetOuter()->GetName(), Placeholders[i].Package )==0 )
+			return Placeholders[i].Size;
+	return 0;
+}
+
+//
 // Link offsets.
 //
 void UStruct::Link( FArchive& Ar, UBOOL Props )
@@ -384,7 +429,8 @@ void UStruct::Link( FArchive& Ar, UBOOL Props )
 			if( Property )
 			{
 				Property->Link( Ar, Prev );
-				PropertiesSize = Property->Offset + Property->GetSize();
+				INT NativeSize = NativePlaceholderSize( this, Property );
+				PropertiesSize = Property->Offset + (NativeSize ? NativeSize : Property->GetSize());
 				Prev = Property;
 			}
 		}

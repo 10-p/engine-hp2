@@ -1,5 +1,5 @@
 // GENERATED from Assets/System/{Core,Engine}.u by tools/dev/layout/emit_asserts.py -- do not edit by hand,
-// except this preamble and the -Winvalid-offsetof block below.
+// except this preamble, the -Winvalid-offsetof block and the PLATFORM_64BITS guard.
 //
 // Compile-time layout check: EngineClasses.h is frozen data that must match the shipped, never-recompiled
 // Engine.u byte for byte. Every non-bitfield member of every native class in it must sit at the offset the
@@ -8,12 +8,13 @@
 // the base's tail padding with both sizes unchanged (ABrush/AMover). These asserts see that. Offsets are
 // target-independent (i386 SysV, wasm32 with -fpack-struct=4, and MinGW's -mms-bitfields all reach the
 // script layout — the latter without the bColoredPad/bTwoWayPad pads), so a failure here is a real layout
-// defect: fix the header, never this file.
+// defect: fix the header, never this file. The offsets are the 32-bit script layout, so a 64-bit build skips them
+// (there UStruct::Link's size guard and tools/dev/layout/layout-sweep.gdb check the layout).
 //
 // Regenerate after any change to EngineClasses.h or the shipped .u, from the repo root:
 //   python3 tools/dev/layout/emit_asserts.py Source/Engine/Inc/EngineClasses.h Assets/System/Core.u Assets/System/Engine.u
 // It writes EngineLayoutAsserts.cpp into the current directory with a short header of its own: move it here
-// and put this preamble and the -Winvalid-offsetof block back.
+// and put this preamble, the -Winvalid-offsetof block and the PLATFORM_64BITS guard back.
 #include "EnginePrivate.h"
 
 // offsetof on a non-standard-layout class (they all have vtables) is conditionally supported; GCC and
@@ -22,6 +23,8 @@
 #pragma GCC diagnostic ignored "-Winvalid-offsetof"
 #endif
 #define UE_OFS(C,M) __builtin_offsetof(C,M)
+
+#if !PLATFORM_64BITS
 
 static_assert(UE_OFS(AActor,Physics)==48, "AActor::Physics must be at script offset 48");
 static_assert(UE_OFS(AActor,Role)==49, "AActor::Role must be at script offset 49");
@@ -1086,3 +1089,5 @@ static_assert(UE_OFS(ULevelSummary,RecommendedEnemies)==76, "ULevelSummary::Reco
 static_assert(UE_OFS(ULevelSummary,RecommendedTeammates)==80, "ULevelSummary::RecommendedTeammates must be at script offset 80");
 static_assert(UE_OFS(ULevelSummary,LevelEnterText)==84, "ULevelSummary::LevelEnterText must be at script offset 84");
 static_assert(sizeof(ULevelSummary)==96, "sizeof(ULevelSummary) must equal script PropertiesSize 96");
+
+#endif // !PLATFORM_64BITS

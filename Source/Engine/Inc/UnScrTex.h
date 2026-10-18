@@ -6,6 +6,8 @@
 		* Created by Jack Porter
 =============================================================================*/
 
+#pragma pack (push,4)	// script-mirrored layout: 4-byte member alignment on every target
+
 class ENGINE_API  UScriptedTexture : public UTexture
 {
 	DECLARE_CLASS(UScriptedTexture,UTexture,0,Engine)
@@ -47,3 +49,5 @@ private:
 /*-----------------------------------------------------------------------------
 	The End.
 -----------------------------------------------------------------------------*/
+
+#pragma pack (pop)

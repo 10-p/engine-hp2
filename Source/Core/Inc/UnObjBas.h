@@ -6,6 +6,14 @@
 		* Created by Tim Sweeney
 =============================================================================*/
 
+// The UnrealScript mirror contract. A native class is laid out twice: by the C++ compiler from its header, and by
+// UStruct::Link from the property list in the .u package, which puts every member on a 4-byte boundary (Win32 /Zp4,
+// what the packages were compiled against). The two must agree member for member, so every header that declares a
+// scripted native class or a struct the script mirrors packs its declarations to 4. A no-op on 32-bit targets (i386
+// aligns nothing past 4; the web and MinGW builds pass -fpack-struct=4); on 64-bit a pointer, TArray or FString
+// would otherwise align to 8.
+#pragma pack (push,4)	// script-mirrored layout: 4-byte member alignment on every target
+
 /*-----------------------------------------------------------------------------
 	Core enumerations.
 -----------------------------------------------------------------------------*/
@@ -996,3 +1004,5 @@ public:
 /*----------------------------------------------------------------------------
 	The End.
 ----------------------------------------------------------------------------*/
+
+#pragma pack (pop)

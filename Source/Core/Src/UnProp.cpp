@@ -640,7 +640,9 @@ void UObjectProperty::Link( FArchive& Ar, UProperty* Prev )
 	guard(UObjectProperty::Link);
 	Super::Link( Ar, Prev );
 	ElementSize = sizeof(UObject*);
-	Offset      = Align( GetOuterUField()->GetPropertiesSize(), sizeof(UObject*) );
+	// 4, not sizeof(UObject*): the script layout puts every member on a 4-byte boundary (Core/Inc/UnObjBas.h).
+	// The same value on every 32-bit target.
+	Offset      = Align( GetOuterUField()->GetPropertiesSize(), PROPERTY_ALIGNMENT );
 	unguardobj;
 }
 void UObjectProperty::CopySingleValue( void* Dest, void* Src ) const

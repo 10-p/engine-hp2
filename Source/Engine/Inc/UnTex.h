@@ -6,6 +6,8 @@
 		* Created by Tim Sweeney
 =============================================================================*/
 
+#pragma pack (push,4)	// script-mirrored layout: 4-byte member alignment on every target
+
 /*-----------------------------------------------------------------------------
 	Constants.
 -----------------------------------------------------------------------------*/
@@ -283,7 +285,7 @@ class ENGINE_API UTexture : public UBitmap
 	FLOAT		MipMult;			// Mipmap multiplier.
 
 	// Sounds.
-	USound*		FootstepSound;		// Footstep sound.
+	BYTE		FootstepSound;		// Footstep sound type (EFootstepSound).
 	USound*		HitSound;			// Sound when the texture is hit with a projectile.
 
 	// Flags.
@@ -503,3 +505,5 @@ class ENGINE_API UEngineTextureFactory : public UFactory
 /*----------------------------------------------------------------------------
 	The End.
 ----------------------------------------------------------------------------*/
+
+#pragma pack (pop)

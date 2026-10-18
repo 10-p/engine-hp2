@@ -16,6 +16,8 @@
 
 #include "Engine.h"
 
+#pragma pack (push,4)	// script-mirrored layout: 4-byte member alignment on every target
+
 class ULodMesh;
 class USkeletalMesh;
 struct ULODProcessInfo;
@@ -561,4 +563,6 @@ EDITOR_API UBOOL GetFSCALE( const TCHAR* Stream, FScale& Scale );
 /*-----------------------------------------------------------------------------
 	The End.
 -----------------------------------------------------------------------------*/
+#pragma pack (pop)
+
 #endif
