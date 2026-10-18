@@ -1430,7 +1430,7 @@ EExprToken UStruct::SerializeExpr( INT& iCode, FArchive& Ar )
 	if ( NextCode == EX_DebugInfo ) \
 	{	\
 		XFER(INT); \
-		GVERSION = *(INT*)&Script(iCode-sizeof(INT));	\
+		GVERSION = ReadScriptOperand<INT>( &Script(iCode-sizeof(INT)) );	\
 	}	\
 	iCode = OldiCode;	\
 	Ar.Seek( RemPos );	\
