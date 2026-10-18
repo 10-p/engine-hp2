@@ -71,7 +71,7 @@ public:
 	}
 	NAME_INDEX GetIndex() const
 	{
-		return GetEntry()->Index;
+		return Index;
 	}
 	DWORD GetFlags() const
 	{
@@ -87,21 +87,21 @@ public:
 	}
 	UBOOL operator==( const FName& Other ) const
 	{
-		return Entry==Other.Entry;
+		return Index==Other.Index;
 	}
 	UBOOL operator!=( const FName& Other ) const
 	{
-		return Entry!=Other.Entry;
+		return Index!=Other.Index;
 	}
 	UBOOL IsValid()
 	{
-		return Entry==NULL || (Entry->Index>0 && Entry->Index<Names.Num());
+		return Index==0 || (Index>0 && Index<Names.Num() && Names(Index));
 	}
 
 	// Constructors.
 	FName( enum EName N )
 	{
-		Entry = N? Names(N) : NULL;
+		Index = N;
 		checkSlow(IsValid());
 	}
 	FName()
@@ -138,12 +138,13 @@ public:
 	}
 
 private:
-	FNameEntry* Entry;
+	// The name's index in the name table, 0 for None: 4 bytes on every pointer width, as script and the script
+	// mirrored classes lay a name out.
+	NAME_INDEX Index;
 
 	FNameEntry* GetEntry() const
 	{
-		checkSlow( Entry != &HardcodedNames[0] );
-		return Entry ? Entry : &HardcodedNames[0];
+		return Index ? Names(Index) : &HardcodedNames[0];
 	}
 
 	// Static subsystem variables.

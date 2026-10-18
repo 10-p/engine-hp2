@@ -59,7 +59,7 @@ FName::FName( const TCHAR* Name, EFindName FindType )
 	// If empty or invalid name was specified, return NAME_None.
 	if( !Name[0] )
 	{
-		Entry = NULL;
+		Index = 0;
 		return;
 	}
 
@@ -70,7 +70,7 @@ FName::FName( const TCHAR* Name, EFindName FindType )
 		if( appStricmp( Name, Hash->Name )==0 )
 		{
 			// Found it in the hash.
-			Entry = Hash->Index ? Names(Hash->Index) : NULL;
+			Index = Hash->Index;
 			if( FindType==FNAME_Define )
 			{
 				// Define case of existing name.
@@ -88,24 +88,25 @@ FName::FName( const TCHAR* Name, EFindName FindType )
 	if( FindType==FNAME_Find )
 	{
 		// Not found.
-		Entry = NULL;
+		Index = 0;
 		return;
 	}
 
 	// Find an available entry in the name table.
-	INT Index;
+	INT NewIndex;
 	if( Available.Num() )
 	{
-		Index = Available( Available.Num()-1 );
+		NewIndex = Available( Available.Num()-1 );
 		Available.Remove( Available.Num()-1 );
 	}
 	else
 	{
-		Index = Names.Add();
+		NewIndex = Names.Add();
 	}
 
 	// Allocate and set the name.
-	Entry = Names(Index) = NameHash[iHash] = AllocateNameEntry( Name, Index, 0, NameHash[iHash] );
+	Names(NewIndex) = NameHash[iHash] = AllocateNameEntry( Name, NewIndex, 0, NameHash[iHash] );
+	Index = NewIndex;
 	if( FindType==FNAME_Intrinsic )
 		Names(Index)->Flags |= RF_Native;
 
