@@ -675,12 +675,9 @@ CORE_API void VARARGS appThrowf( const TCHAR* Fmt, ... )
 {
 	static TCHAR TempStr[4096];
 	GET_VARARGS(TempStr,ARRAY_COUNT(TempStr),Fmt);
-#ifdef __EMSCRIPTEN__
-	// Catching is off on the web (-fexceptions overflows V8 on the deep package loader), so a throw aborts the
-	// module with a bare "Exception thrown, catching not enabled": print the reason first.
+	// Echo the reason first: a throw that nothing catches then still names its cause.
 	printf("[appThrowf] %s\n", TempStr);
 	fflush(stdout);
-#endif
 	throw( TempStr );
 }
 
