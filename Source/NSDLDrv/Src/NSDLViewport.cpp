@@ -290,7 +290,6 @@ void UNSDLViewport::OpenWindow( PTRINT InParentWindow, UBOOL Temporary, INT NewX
 	UBOOL DoRepaint=0, DoSetActive=0;
 	UBOOL DoOpenGL=0;
 	UBOOL NoHard=ParseParam( appCmdLine(), "nohard" );
-	SDL_GLprofile GLProfile = SDL_GL_CONTEXT_PROFILE_COMPATIBILITY;
 	// The GLES major of the web GL context (2 = WebGL 1, 3 = WebGL 2), set from the render-device name below and
 	// read only by the __EMSCRIPTEN__ context code.
 	INT WebGLESMajor = 2;
@@ -345,8 +344,6 @@ void UNSDLViewport::OpenWindow( PTRINT InParentWindow, UBOOL Temporary, INT NewX
 		{
 			DoOpenGL = 1;
 		}
-		if( DoOpenGL && Temp.InStr(TEXT("GLES")) != INDEX_NONE )
-			GLProfile = SDL_GL_CONTEXT_PROFILE_COMPATIBILITY;
 		// XOpenGLDrv needs a GLES 3 (WebGL 2) context.
 		if( DoOpenGL && Temp.InStr(TEXT("XOPENGL")) != INDEX_NONE )
 			WebGLESMajor = 3;
@@ -411,13 +408,8 @@ void UNSDLViewport::OpenWindow( PTRINT InParentWindow, UBOOL Temporary, INT NewX
 			SDL_GL_SetAttribute( SDL_GL_CONTEXT_MINOR_VERSION, 0 );
 			SDL_GL_SetAttribute( SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES );
 #else
-			if( GLProfile == SDL_GL_CONTEXT_PROFILE_ES )
-			{
-				// Request GLES2.
-				SDL_GL_SetAttribute( SDL_GL_CONTEXT_MAJOR_VERSION, 2 );
-				SDL_GL_SetAttribute( SDL_GL_CONTEXT_MINOR_VERSION, 0 );
-			}
-			SDL_GL_SetAttribute( SDL_GL_CONTEXT_PROFILE_MASK, GLProfile );
+			// Every GL device here (XOpenGLDrv, OpenGLDrv/UTGLR) draws on a desktop compatibility context.
+			SDL_GL_SetAttribute( SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_COMPATIBILITY );
 #endif
 		}
 
