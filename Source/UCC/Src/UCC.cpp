@@ -82,12 +82,6 @@ void ShowBanner( FOutputDevice& Warn )
 }
 int main( int argc, char* argv[] )
 {
-	// Never compiled: nothing defines UE_LEGACY_CONTEXT, and __Context (the legacy setjmp exception context)
-	// is not part of this Core.
-	#if !_MSC_VER && defined(UE_LEGACY_CONTEXT)
-		__Context::StaticInit();
-	#endif
-
 	INT ErrorLevel = 0;
 	GIsStarted     = 1;
 #ifndef _DEBUG

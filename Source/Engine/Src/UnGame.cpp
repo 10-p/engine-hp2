@@ -1824,29 +1824,6 @@ void UGameEngine::Tick( FLOAT DeltaSeconds )
 		return;
 	}
 
-	// If game is paused, release the cursor.
-	// Epic's WinDrv path: every CMake target defines PLATFORM_SDL and takes the block below instead.
-#if !defined(__EMSCRIPTEN__) && !defined(PLATFORM_SDL)
-	static UBOOL WasPaused=1;
-	if
-	(	Client
-	&&	Client->Viewports.Num()==1
-	&&	GLevel
-	&&	!Client->Viewports(0)->IsFullscreen() )
-	{
-		UBOOL IsPaused
-		=	GLevel->GetLevelInfo()->Pauser!=TEXT("")
-		||	Client->Viewports(0)->Actor->bShowMenu
-		||	Client->Viewports(0)->bShowWindowsMouse;
-		if( IsPaused && !WasPaused )
-			Client->Viewports(0)->SetMouseCapture( 0, 0, 0 );
-		else if( WasPaused && !IsPaused && Client->CaptureMouse )
-			Client->Viewports(0)->SetMouseCapture( 1, 1, 1 );
-		WasPaused = IsPaused;
-	}
-	else WasPaused=0;
-#endif
-
 #ifdef PLATFORM_SDL
 	// Pointer capture: captured (SDL relative mode) while a live level is up and no menu shows, released
 	// in a menu. NSDLViewport::SetMouseCapture sets bWindowsMouseAvailable = !Capture, so a menu cursor follows

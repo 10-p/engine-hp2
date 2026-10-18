@@ -176,7 +176,6 @@ if(TARGET_IS_WINDOWS)
   endif()
 else()
   add_definitions(-DPLATFORM_POSIX)
-  add_definitions(-DPLATFORM_CASE_SENSITIVE_FS)
 endif()
 
 if(USE_SDL)
