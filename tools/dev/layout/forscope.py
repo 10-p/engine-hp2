@@ -1,3 +1,5 @@
+# forscope.py FILE... -- list for-init variables (for(TYPE v=...)) used after their loop in the same block:
+# code that relies on MSVC6 for-scope.
 import re,sys,glob
 TYPES=r'(?:INT|int|DWORD|UBOOL|BYTE|_WORD|WORD|FLOAT|float|unsigned(?:\s+int)?|long|SWORD|SBYTE|TCHAR\s*\*|UObject\s*\*|AActor\s*\*|\w+\s*\*)'
 decl_re=re.compile(r'\bfor\s*\(\s*'+TYPES+r'\s+(\w+)\s*=')
@@ -10,7 +12,7 @@ res=[]
 for f in sys.argv[1:]:
     try: L=open(f,encoding='latin-1').read().split('\n')
     except: continue
-    # remove block comments crudely
+    # blank out block comments, keeping line numbers
     txt='\n'.join(L)
     txt=re.sub(r'/\*.*?\*/',lambda m:'\n'*m.group(0).count('\n'),txt,flags=re.S)
     L=[strip(x) for x in txt.split('\n')]
@@ -21,18 +23,13 @@ for f in sys.argv[1:]:
     for i,l in enumerate(L):
         for m in decl_re.finditer(l):
             v=m.group(1); d0=depth[i]
-            # find end of for statement: if next non-empty line after the for has '{' at start or same line has '{', body closes when depth returns to d0
-            # simpler: scan forward; skip lines until depth returns to d0 after having gone deeper, or a line ending with ';' at same depth (single stmt)
+            # end = the loop's last line: a braced body ends when the depth returns to d0, a single statement at its ';'
             j=i; started=False
-            # determine if body is braced
             k=i
-            # find the closing paren of for(...)
             s=''.join(L[i:i+3])
             braced=False
             rest=l[m.start():]
-            # look at following lines for '{' before ';' at depth d0
             j=i+1
-            # compute end line of loop
             end=None
             if '{' in l[m.start():] or (i+1<len(L) and L[i+1].strip().startswith('{')):
                 for j in range(i+1,min(len(L),i+2000)):
@@ -46,7 +43,7 @@ for f in sys.argv[1:]:
                         if j==i and L[j].count(';')<3: continue
                         end=j;break
             if end is None: continue
-            # scan after end at depth>=d0 until depth<d0
+            # first use of v after the loop, within the enclosing block (a redeclaration ends the search)
             for j in range(end+1,min(len(L),end+400)):
                 if depth[j]<d0: break
                 lj=L[j]

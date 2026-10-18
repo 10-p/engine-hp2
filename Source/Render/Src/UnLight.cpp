@@ -656,8 +656,8 @@ void FLightManager::LightAndFog( FTransSample& Vert, DWORD PolyFlags )
 	Light merging.
 ------------------------------------------------------------------------------------*/
 
-// One Merge for every compiler: HP2's Loki-era GCC copy (#else of #if _MSC_VER) had no bDarkLight
-// branch, so dark lights brightened on GCC/clang builds. At ASM=0 the #else below is the C loop.
+// One Merge for every compiler, with the bDarkLight (subtract) branch; with ASM=0 the additive merge is
+// the C loop in the #else below.
 void FLightManager::Merge( FTextureInfo& Tex, BYTE Effect, INT Key, FLightInfo* Info, DWORD* Stream, DWORD* Dest )
 {
 	guardSlow(FLightManager::Merge);

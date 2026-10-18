@@ -1,3 +1,6 @@
+# compare.py <script-dir> <EngineClasses.h> <Core.u> <Engine.u>... -- one table row per native class: script
+# PropertiesSize, msvc and gcc sizeof, member order, per-property offset mismatches. Runs <script-dir>/layout.py
+# and <script-dir>/hdr.py in its own namespace.
 import sys,re,math
 SP=sys.argv[1]; HDR=sys.argv[2]; PKGS=sys.argv[3:]
 sys.argv=['x']+PKGS

@@ -8,7 +8,7 @@
     "theme": "branding/theme.css",
     "helpDoc": "branding/help.md"
   },
-  "_publishComment": "Everything `yarn publish-all` needs that is NOT derivable. folder \".\" = THIS TARGET IS THE SITE ROOT: it is published directly into --out with no portal page (it has its own domain and no game selector) \u2014 requires the packages/build change in the ufrontend-target-contract report \u00a76; until that lands use folder \"hp2\" and deploy <out>/hp2/ as the site root. engine.repo is the engine checkout's FOLDER NAME under enginesRoot (the identity check compares basename(realpath(repo))). The portal-card fields are kept although no portal is rendered, so the target can join a multi-game portal later without a data change.",
+  "_publishComment": "What `yarn publish-all` needs that cannot be derived. folder \".\" publishes this target as the site root, with no portal page (it has its own domain and no game selector); the frontend's publisher needs a change for that, otherwise use folder \"hp2\" and serve <out>/hp2/ as the site root. engine.repo is the engine checkout's folder name under enginesRoot (publish compares basename(realpath(repo))). The portal-card fields stay so the target can join a multi-game portal without a data change.",
   "publish": {
     "folder": ".",
     "name": "Harry Potter and the Chamber of Secrets",
@@ -24,7 +24,7 @@
       "presetDir": "Source"
     }
   },
-  "_assetMarkersComment": "How build/publish prove an asset path is THIS game's tree. System/Core.u of HP2 (UE1 build 433, package version 79) is 61,685 bytes and hashes differently from every other target's Core.u. require = files only HP2 ships; forbid = the other UE1 games' core packages.",
+  "_assetMarkersComment": "How build/publish prove an asset path is this game's tree. HP2's System/Core.u (UE1 build 433, package version 79) is 61,685 bytes and its sha256 differs from every other target's Core.u. require = files only HP2 ships; forbid = the other UE1/UE2 games' core packages.",
   "assetMarkers": {
     "fingerprint": {
       "path": "System/Core.u",
@@ -49,7 +49,7 @@
     "memfsBudgetMb": 1024
   },
   "network": {
-    "_playerNameComment": "Where the ENGINE persists the player name: HP2's appInit creates User.ini from DefUser.ini ([DefaultPlayer] Name=Player). iniToken is the <File> half of -ini:<File>:[<Section>]:<Key>=, which FConfigCacheIni::Find translates ('User' -> the user ini).",
+    "_playerNameComment": "Where the engine persists the player name: HP2's appInit creates User.ini from DefUser.ini ([DefaultPlayer] Name=Player). iniToken is the <File> half of -ini:<File>:[<Section>]:<Key>=, which FConfigCacheIni::Find translates ('User' -> the user ini).",
     "_publicRoomComment": "The shared room a fresh install starts on; the transport prepends the peer prefix.",
     "publicRoom": "default-public-room",
     "playerName": {
@@ -59,7 +59,7 @@
       "key": "Name",
       "prefix": "Player"
     },
-    "_serverNameComment": "HP2 HAS Engine.GameReplicationInfo (Source/Engine/Classes/GameReplicationInfo.uc:19, `globalconfig string ServerName`), so the name lives in the SYSTEM ini like ut99's, and WebRTCDrv reads exactly that section at listen time (template WebRTCDrv.cpp:277-278). `stock` must equal the value Config/System/web/Default.ini ships; the retail Default.ini still carries UT's 'Another UT Server'.",
+    "_serverNameComment": "HP2 has Engine.GameReplicationInfo (Source/Engine/Classes/GameReplicationInfo.uc, `globalconfig string ServerName`), so the name lives in the system ini, and WebRTCDrv reads that section at listen time. `stock` must equal the ServerName the web Default.ini (Config/System/web) ships; the retail Default.ini carries 'Another UT Server'.",
     "serverName": {
       "iniPath": "System/Game.ini",
       "iniToken": "System",
@@ -70,7 +70,7 @@
     "peerPrefix": "hp2",
     "defaultServerName": "HP2 Server"
   },
-  "_modsComment": "The 'sort by type' table for uploaded files (step 1.7). HP2's own asset types only: music is Ogg Vorbis streamed by name from Music/ (UnAudio.h PlayMusic(FString Song,\u2026)); there is no .umx.",
+  "_modsComment": "The 'sort by type' table for uploaded files. HP2's own asset types only: music is Ogg Vorbis streamed by name from Music/ (UnAudio.h PlayMusic(FString Song,\u2026)); there is no .umx.",
   "mods": {
     "extToFolder": {
       ".unr": "Maps",
@@ -93,7 +93,7 @@
   },
   "manifest": "file-manifest.json",
   "precache": "precache.json",
-  "_manifestExcludeComment": "What the site must NOT serve (step 2.15). Literal .ini entries double as the list of engine inis the user-data daemon watches (vite.config.ts engineFiles -> boot.ts UserData.watch), so System/Game.ini and System/User.ini MUST stay literal here or settings do not survive a reload. Default.ini/DefUser.ini come from the engine's preloaded Config/System/web set. Everything else: native Win32 binaries/installer files, build-time sources (Fonts/, PackageSources/, DialogSources/, *.ttf, System/EditorRes/), unused content (dev maps under Maps/Oldfiles|Studies|templates, the localized MenuArt.<lang>_utx set that no package imports, Unreal-1 leftovers in SystemLocalized/), Windows splash bitmaps (Help/, System/*.bmp), and the retail Save/ leftovers.",
+  "_manifestExcludeComment": "What the site must not serve. Literal .ini entries double as the list of engine inis the launcher's user-data store watches, so System/Game.ini and System/User.ini stay literal here, or settings do not survive a reload. Default.ini/DefUser.ini come from the engine's preloaded Config/System/web set. The rest: native Win32 binaries and installer files, build-time sources (Fonts/, PackageSources/, DialogSources/, *.ttf, System/EditorRes/), content no package reaches (dev maps under Maps/Oldfiles|Studies|templates, Textures/MenuArt.*, which nothing imports, the Unreal-1 leftovers in SystemLocalized/, SAPFont.*), the Windows splash bitmaps (Help/, System/*.bmp), and the retail Save/ leftovers.",
   "manifestExclude": [
     "System/Default.ini",
     "System/DefUser.ini",
@@ -147,7 +147,7 @@
     "Save/**",
     "*.usa"
   ],
-  "_userFilesComment": "What the PLAYER makes and a reload must give back (ufront 2.75). HP2 writes saves under GSys->SaveSlotPath: ../Save when no -SAVESLOT= is given, ../Save/Slot<N> otherwise (Core/Src/UnMisc.cpp:1834-1841, 2001-2037); Save<i>.usa + Save<i>.bmp thumbnail + <Map>_pa.usa per-level state; Save/Slot<N>/cache/*_pa.usa is rebuilt from the slot at boot and deliberately NOT kept. The glue allows a glob only in the file name, so each slot directory is listed (hp2-game-boot-and-content.md \u00a73.3).",
+  "_userFilesComment": "What the player makes and a reload must give back. HP2 writes saves under GSys->SaveSlotPath: ../Save without -SAVESLOT=, ../Save/Slot<N> with it (appInit and appSetSaveSlotDir in Core/Src/UnMisc.cpp): Save<i>.usa, its Save<i>.bmp thumbnail and the per-level <Map>_pa.usa. <SaveSlotPath>/cache/*_pa.usa is rebuilt from the slot at boot and is not kept. Each slot directory is listed by name: a wildcard directory would also keep Save/cache/, the cache of a launch without -SAVESLOT=.",
   "userFiles": [
     "Save/*.usa",
     "Save/*.bmp",
@@ -164,13 +164,13 @@
     "Save/Slot6/*.usa",
     "Save/Slot6/*.bmp"
   ],
-  "_defaultsComment": "The Play panel's hints. HP2 boots its menu book from LocalMap=Startup.unr with an empty map field; PrivetDr is the first playable level and loads directly. No game class: every HP2 map runs Engine.GameInfo, so the travel hint falls back to the neutral 'Key=Value?Key2=Value2'.",
+  "_defaultsComment": "The Play panel's hints. HP2 boots its menu book from LocalMap=startup.unr with an empty map field; PrivetDr is the first playable level and loads directly. No game class: every HP2 map runs Engine.GameInfo, so the travel hint falls back to the neutral 'Key=Value?Key2=Value2'.",
   "defaults": {
     "map": "PrivetDr",
     "game": "",
     "travelOptions": ""
   },
-  "_videoDriversComment": "Owner's renderer list for HP2: XOpenGL (WebGL 2, default), UTGLR/OpenGLDrv via gl4es (WebGL 1), HP2's own SoftDrv, NullDrv. No NOpenGLES. Switches are the launcher's table (Source/Game/Src/Launch.cpp:275-286).",
+  "_videoDriversComment": "HP2's renderers: XOpenGL (WebGL 2, the default), UTGLR (OpenGLDrv via gl4es; WebGL 2, or WebGL 1 in a browser without WebGL 2), SoftDrv, NullDrv. The switches are the launcher's GRenderSwitches table (Source/Game/Src/Launch.cpp).",
   "videoDrivers": [
     {
       "label": "XOpenGL (WebGL 2)",
@@ -196,17 +196,17 @@
     "key": "FrameRateCap",
     "default": 120
   },
-  "_audioComment": "audioBuffer / audioHrtf are ADDED ONLY WHEN Phase E lands NOpenALDrv (openal-soft web backend). With SoundDrv.NullAudioSubsystem an absent block correctly hides both Advanced controls (vite.config.ts:70-77).",
-  "_conversionsComment": "EMPTY BY FACT: HP2 ships no total conversions (no alternate -ini= System inis in Assets/System).",
+  "_audioComment": "No audioBuffer / audioHrtf block, so the launcher hides both Advanced audio controls. They configure NOpenALDrv's openal-soft web backend.",
+  "_conversionsComment": "Empty: HP2 ships no total conversions (no alternate -ini= system inis in Assets/System).",
   "conversions": [],
-  "_travelComment": "EMPTY BY FACT (single-player). HP2 registers NO GameInfo or Mutator subclass (no `MetaClass=Engine.GameInfo`/`Engine.Mutator` in any System/*.int; no `extends GameInfo` under Source/*/Classes), so generate-travel yields nothing, and the one URL option HP2 honours that a pill could set (GameSpeed) is not worth a panel. Requires the skeleton-test + PlayPanel change in report \u00a74 (or the fallback in \u00a71.5).",
+  "_travelComment": "Empty (single-player): HP2 registers no GameInfo or Mutator subclass (no `MetaClass=Engine.GameInfo`/`Engine.Mutator` in any System/*.int, no `extends GameInfo` under Source/*/Classes), so generate-travel yields nothing, and GameSpeed, the one URL option HP2 honours that a pill could set, gets no panel. An empty block needs the frontend's skeleton test and Play panel to accept a target without modes.",
   "travel": {
     "modes": [],
     "toggles": [],
     "presets": [],
     "mutators": []
   },
-  "_capabilitiesComment": "Same required set as every threaded build (pthread + PROXY_TO_PTHREAD + OFFSCREENCANVASES_TO_PTHREAD + OPFS worker + emsdk-5 wasm baseline). offscreenWebgl2 is RECOMMENDED because the default renderer (XOpenGL) is WebGL 2; UTGLR/Software/Null run without it.",
+  "_capabilitiesComment": "The set every threaded build requires (pthread + PROXY_TO_PTHREAD + OFFSCREENCANVASES_TO_PTHREAD + the OPFS worker + the emsdk-5 wasm baseline). offscreenWebgl2 is only recommended: the default renderer (XOpenGL) needs WebGL 2, UTGLR/Software/Null run without it.",
   "capabilities": {
     "required": [
       "secureContext",
@@ -230,7 +230,7 @@
       "pointerLock"
     ]
   },
-  "_noticesComment": "TO-VERIFY against a captured console. Taken from HP2 SOURCE, same UE1 client paths as ut99: Engine/Src/UnPenLev.cpp:88 `PendingLevel received: %s` (NAME_DevNet, visible: HP2 suppresses only DevNetTraffic), UPGRADE/FAILURE/FAILCODE at UnPenLev.cpp:91-113, Engine.int:36 `Pending=Pending connect to '%s' failed; %s`, UnLevel.cpp:970 `Failed to listen: %s`.",
+  "_noticesComment": "Not yet checked against a captured console; taken from the source: Engine/Src/UnPenLev.cpp `PendingLevel received: %s` (NAME_DevNet, which HP2 does not suppress) and its UPGRADE/FAILURE/FAILCODE branches, Engine.int `Pending=Pending connect to '%s' failed; %s`, Engine/Src/UnLevel.cpp `Failed to listen: %s`.",
   "notices": [
     {
       "join-failed": [
@@ -258,7 +258,7 @@
       ]
     }
   ],
-  "_telemetryComment": "TO-VERIFY against a captured console from THIS build before committing fixtures (docs/06 \u00a71: never copied from a sibling). Source evidence: Engine/Src/UnGame.cpp:651 debugf(TEXT(\"Browse: %s\")) and :842 debugf(NAME_Log, TEXT(\"LoadMap: %s\")) -> 'Log: Browse:' / 'Log: LoadMap:'; the crash reason line is whatever the ported web error device prints ('Critical: ' + reason after 'Critical: appError called:' in the template).",
+  "_telemetryComment": "Not yet checked against a captured console of this build; test fixtures must come from one. Taken from the source: Engine/Src/UnGame.cpp debugf(TEXT(\"Browse: %s\")) and debugf(NAME_Log, TEXT(\"LoadMap: %s\")) -> 'Log: Browse:' / 'Log: LoadMap:'. Core/Inc/FOutputDeviceAnsiError.h logs 'Critical: appError called:' before the reason, which the crash pattern's lookahead skips.",
   "telemetry": [
     {
       "browse": {

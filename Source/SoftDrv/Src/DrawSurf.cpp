@@ -170,17 +170,12 @@ struct FTexSetup
 	}
 
 	//
-	// Filtered variant: keep U and V as plain 16.16, unpacked.
+	// Filtered variant: U and V stay plain 16.16, unpacked.
 	//
-	// The hybrid packing above folds both into Tex.DH ([U int | U frac | V int]) so one register
-	// addresses the texel -- but it masks V's fractional bits away entirely (Mask.DH is VSize-1).
-	// Neither filtering mode can work in that domain: a sub-texel V dither added to Tex.DH is a
-	// no-op, and bilinear needs V's fraction and the V+1 neighbour. So the filtered passes get
-	// their own representation. The setup loop already has plain U and V at every call site.
-	//
-	// CoSetup is unused by the Pentium path (only the MMX walker sets it), so it carries the mip
-	// here -- that lets ONE filtered pass serve every (mip, UBits) combination instead of the 144
-	// specialisations the point path generates for compile-time shifts.
+	// The hybrid packing above folds both into Tex.DH ([U int | U frac | V int]) and masks V's
+	// fraction away (Mask.DH is VSize-1), so neither a sub-texel V dither nor bilinear (V's fraction
+	// and the V+1 neighbour) works there. CoSetup, unused by the Pentium path, carries the mip, so one
+	// filtered pass serves every (mip, UBits) pair instead of the point path's 144 specialisations.
 	//
 	void InitTexPentiumFiltered( INT InX, FMipSetup* Mip, DWORD U, DWORD V )
 	{
@@ -373,16 +368,13 @@ static BYTE         Shade[ LIGHTSHADES * 256 ];
 //
 // Fog maps for the portable (non-MMX) path.
 //
-// The MMX kernels carried fog interleaved into Photon[] (light at [ebp+0], fog at [ebp+8],
-// ebp += 16 -- which is why Photon[] is sized *2).  The C path keeps Photon[] as it was and puts
-// fog in its own array, so the non-fog case stays byte-identical and pays nothing.
+// The MMX kernels interleave fog into Photon[] (light at [ebp+0], fog at [ebp+8], which is why
+// Photon[] is sized *2). The C path keeps fog in its own array, so surfaces without fog pay nothing.
 //
-// FogPhoton holds a fog *byte* per channel, 0..255, packed in the same byte lanes the light uses
-// (see the FMMX union: SB1,SG1,SR1).  Deliberately NOT reduced to the light's 7-bit range: the
-// original's attenuation is (127 - fogbyte)/127, so the fog map's full scale is byte 127 and
-// halving it would throw away half the resolution and double the apparent density.
-// It is colour-depth independent -- FogShade[] converts to display units and is rebuilt per depth
-// alongside Shade[].
+// FogPhoton holds a fog byte per channel, 0..255, in the light's byte lanes (FMMX: SB1,SG1,SR1). It is
+// not reduced to the light's 7-bit range: attenuation is (127 - fogbyte)/127, so full scale is byte 127
+// and halving it would double the apparent density. It is colour-depth independent: FogShade[]
+// converts to display units and is rebuilt per depth alongside Shade[].
 static DWORD        FogPhoton[ MaximumXScreenSize ];
 static BYTE         FogShade[ 3 * 256 ];
 static BYTE         FogShadeMod[ 3 * 256 ];
@@ -479,14 +471,9 @@ void USoftwareRenderDevice::InitColorTables( FLOAT Brightness, INT ColorBytes, D
 	//         - 32-bit doesn't need dither, so could easily be extended to 84 shades instead of 64.
 	//
 	
-	// NOT doubled to compensate for the 7-bit light index, though it mechanically "should" be.
-	// LightPentium masks its result to 0x7f7f7f, so Shade[]'s Light axis is 0..127 against the
-	// 0..255 the MMX path feeds its own multiply, and tools/asmport/oracle measures the Pentium
-	// path at exactly 0.5x the MMX slope across the whole texel range. Doubling Scale does match
-	// the MMX kernel -- and makes the picture measurably WORSE: PSNR against the OpenGL reference
-	// falls 25.2 -> 15.5 dB on test-fog and 15.4 -> 13.7 dB on test-detail-tex, because the MMX
-	// path saturates hard and moving toward it moves away from what the scene should look like.
-	// Left as-is deliberately; see the oracle's second report if revisiting.
+	// Not doubled for the 7-bit light index: LightPentium masks to 0x7f7f7f, so this path has half
+	// the MMX slope, but doubling it to match the MMX kernel's hard saturation looks worse against
+	// the OpenGL renderer.
 	FLOAT Scale = (0.50f + Brightness) * 8.0 / (128.0 * 128.0);
 
 	DWORD UnlitValue = Clamp( appRound( (FLOAT)UNLITLEVEL * (0.50f + Brightness) ),0,127);
@@ -547,21 +534,17 @@ void USoftwareRenderDevice::InitColorTables( FLOAT Brightness, INT ColorBytes, D
 	}
 
 	//
-	// Fog map contribution.
+	// Fog map contribution, matching the MMX kernels (SampleFogLight, MMX32FogRender8):
 	//
-	// Calibrated against the original MMX kernel rather than guessed -- tools/asmport/oracle runs
-	// SampleFogLight and MMX32FogRender8 and reports what they actually produce. Two results:
+	//   * the additive term is linear in the fog byte:  fogAdd = (fogbyte * FlashCompress) >> 13
+	//     (the fog sample is fogbyte<<7, pmulhw drops 16, psraw FinalShift drops 4 more),
+	//     about 225 of 255 at full density.
+	//   * full density is fog byte 127 (MMX14Bits is 0x3F80 == 127<<7 and the bilinear sample
+	//     is fogbyte<<7), which is why FogAttenuate divides by FOGFULLSCALE.
 	//
-	//   * the additive term is LINEAR in the fog byte:  fogAdd = (fogbyte * FlashCompress) >> 13
-	//     (the fog sample is fogbyte<<7, pmulhw drops 16, psraw FinalShift drops 4 more)
-	//     reaching ~225 of 255 at full density -- not 255.
-	//   * full density is fog byte 127, not 255 (MMX14Bits is 0x3F80 == 127<<7 and the bilinear
-	//     sample is fogbyte<<7), which is why FogAttenuate divides by FOGFULLSCALE.
-	//
-	// FlashCompress is the same quantity Shade[] already folds in as D_Scale*, so brightness and
-	// screen flash track automatically. The FlashFog bias is deliberately NOT included: Shade[]
-	// bakes it into every entry, and adding it again would tint the screen the moment a fog zone
-	// came into view.
+	// FlashCompress is what Shade[] folds in as D_Scale*, so brightness and screen flash track. The
+	// FlashFog bias is left out: Shade[] bakes it into every entry, so adding it again would tint the
+	// screen whenever a fog zone is in view.
 	//
 	DOUBLE FogScale = (0.50f + Brightness) * (DOUBLE)(0x3FFF) / (DOUBLE)(0x80);
 	INT FogCompressR = Clamp( appRound( FogScale * FlashScale.X ), 0, 0x7FFF );
@@ -722,9 +705,9 @@ static inline void InitBilinearKernel(INT UBits, INT iMip)
 	//
 	// The four above are in the MMX coordinate domain, which the Pentium hybrid packing cannot
 	// express (it masks V's fraction away). In 16.16 texel units one texel is 1<<16, so a step of
-	// 1/16 texel is 1<<12; iMip scales it so the dither stays a constant fraction of a texel as
-	// mips change. Indexed (X&1) | ((Y&1)<<1) over {A0,A1,B0,B1}, matching the original's
-	// `test esi,1` within a scanline and its A/B kernel choice between them.
+	// 1/16 texel is 1<<12; iMip keeps the dither a constant fraction of a texel across mips.
+	// Indexed (X&1) | ((Y&1)<<1) over {A0,A1,B0,B1}, like the MMX kernels' `test esi,1` within a
+	// scanline and their A/B kernel choice between scanlines.
 	//
 	KnightU[0] = A_U << (12 + iMip);  KnightV[0] = A_V << (12 + iMip);
 	KnightU[1] = B_U << (12 + iMip);  KnightV[1] = B_V << (12 + iMip);
@@ -905,11 +888,8 @@ static inline DWORD LightPentium( FMMX Lit )
 			[	((D.DH                 ) >> (32-LightUBits))
 			+	((D.DH&LightMip.Mask.DL) << (   LightUBits)) ];
 
-	// The +0x010101 is a round-to-nearest bias on each tap pair. The assembly below does it
-	// (`lea eax,[eax+esp+0x010101]`); this C fallback dropped it, so every non-x86 build --
-	// web, ARM, native Linux -- has been rendering every lit pixel up to 1 LSB per channel dark
-	// since the portable path was written. Verified with tools/asmport: adding it makes the two
-	// bit-identical over 653 cases, where without it they differ on every single one.
+	// The +0x010101 is the round-to-nearest bias on each tap pair that the assembly below applies
+	// (`lea eax,[eax+esp+0x010101]`); with it the C and asm results are bit-identical.
 	return  ((((L1+0x010101)&0xfefefe)+((L2+0x010101)&0xfefefe))/4) & 0x7f7f7f;
 
 #else
@@ -1102,11 +1082,9 @@ static FTexSetup* LightPassPentium( FTexSetup* Setup )
 //
 // 4X oversampled fog pass.
 //
-// Identical sampling to LightPentium, only the base pointer differs.  That is not a coincidence:
-// FLightManager builds the fog map and the light map from the same Index->UClamp/VClamp/Pan/UScale
-// (UnLight.cpp SetupVolumetrics vs the LightMip setup below it), so they always share dimensions
-// and pan and one coordinate walk serves both.  The MMX kernel exploited the same fact -- its
-// SampleFogLight is literally the bilinear block run twice with LightMip.FogData swapped in.
+// LightPentium's sampling on LightMip.FogData. FLightManager builds the fog map and the light map
+// from the same Index->UClamp/VClamp/Pan/UScale (SetupVolumetrics), so they share dimensions and pan
+// and one coordinate walk serves both, as in the MMX SampleFogLight.
 //
 static inline DWORD FogPentium( FMMX Lit )
 {
@@ -1133,7 +1111,7 @@ static inline DWORD FogPentium( FMMX Lit )
 			[	((D.DH                 ) >> (32-LightUBits))
 			+	((D.DH&LightMip.Mask.DL) << (   LightUBits)) ];
 
-	// Average the 4 taps per channel, keeping the FULL byte range. LightPentium masks its result
+	// Average the 4 taps per channel, keeping the full byte range. LightPentium masks its result
 	// down to 7 bits because Shade[]'s light axis is 0..127; fog has no such axis and its full
 	// scale is byte 127 (see FOGFULLSCALE), so halving it here would double the apparent density.
 	DWORD B0 = (( T0      & 0xff) + ( T1      & 0xff) + ( T2      & 0xff) + ( T3      & 0xff)) >> 2;
@@ -1145,13 +1123,10 @@ static inline DWORD FogPentium( FMMX Lit )
 
 
 //
-// Fog is an alpha blend, not just an additive haze: SampleFogLight multiplied the light by
-// (MMX14Bits - fog) before storing it and emitted the fog colour separately.  Skipping the
-// attenuation would leave bright surfaces punching through dense fog.
-//
-// MMX14Bits is 0x3F80 == 127<<7 and the bilinear fog sample is fogbyte<<7, so the factor is
-// (127 - fogbyte)/127 -- full density is fog byte 127, confirmed against the original kernel by
-// tools/asmport/oracle (light 28704 -> ~0 as the fog byte goes 0 -> 127).
+// Fog is an alpha blend, not only an additive haze: as in SampleFogLight, the light is scaled by
+// (MMX14Bits - fog) and the fog colour added separately, so bright surfaces do not punch through
+// dense fog. MMX14Bits is 0x3F80 == 127<<7 and the fog sample is fogbyte<<7, so the factor is
+// (127 - fogbyte)/127: full density is fog byte 127.
 //
 static inline DWORD FogAttenuate( DWORD Light, DWORD Fog )
 {
@@ -1167,19 +1142,10 @@ static inline DWORD FogAttenuate( DWORD Light, DWORD Fog )
 
 
 //
-// Halve the sum of two fog samples without letting a channel carry into its neighbour.
-//
-// ⚠ Masking BEFORE the add is carry-safe but NOT exact: it clears the low bit of BOTH operands, so
-// whenever both are odd the result lands one short of floor((A+B)/2). That is 25% of byte pairs, and
-// the error only ever goes DARK. It shows up as regular vertical streaks roughly 8 pixels apart,
-// because the two pixels that carry the raw sample (X+0/X+1 in LightPassPentiumFog) are the only ones
-// in the group that never pass through here — every other pixel is averaged once or twice and comes
-// out up to 2/255 darker, so the sample column reads as a brighter stripe.
-//
-// (A&B) + (((A^B)>>1) & 0x7f7f7f) is the standard carry-free byte average: the shared bits plus half
-// the differing bits. It is exact for all 65536 byte pairs and still cannot carry between lanes.
-// The light path above can keep its cheaper ((A+B)&0xfefefe)>>1 form because LightPentium has already
-// clamped those samples to 7 bits, so the sum cannot overflow a lane in the first place.
+// Halve the sum of two fog samples without letting a channel carry into its neighbour: the shared
+// bits plus half the differing bits, exact for every byte pair. Fog bytes use the full 0..255 range,
+// so the light path's cheaper ((A+B)&0xfefefe)>>1 (fine for its 7-bit samples) would overflow a lane,
+// and masking both operands before the add would come out one short whenever both are odd.
 //
 static inline DWORD FogAvg( DWORD A, DWORD B )
 {
@@ -1192,7 +1158,7 @@ static inline DWORD FogAvg( DWORD A, DWORD B )
 //
 // Structurally identical to LightPassPentium above -- same walker, same 8- and 4-pixel
 // subdivision, same smearing -- carrying fog alongside the light.  Attenuation happens at sample
-// time (before the smear), matching the MMX path, which stored already-attenuated samples and let
+// time (before the smear), matching the MMX path, which stores already-attenuated samples and lets
 // the render kernel interpolate between them.
 //
 static FTexSetup* LightPassPentiumFog( FTexSetup* Setup )
@@ -1221,9 +1187,8 @@ static FTexSetup* LightPassPentiumFog( FTexSetup* Setup )
 			Photon[X+2].DL = Photon[X+3].DL       = ((D12 +     RGB) & 0xfefefe) >> 1;
 			Photon[X+6].DL = Photon[X+7].DL       = ((D12 + NextRGB) & 0xfefefe) >> 1;
 
-			// Carry-safe halving: FogPhoton carries full 0..255 bytes, so the operands must be
-			// masked BEFORE the add. The light lines above can use the cheaper form only because
-			// LightPentium already clamped them to 7 bits.
+			// FogPhoton holds full 0..255 bytes, so it is halved with FogAvg; the light lines above
+			// can use the cheaper form because LightPentium clamps them to 7 bits.
 			DWORD F12                             = FogAvg( FogRGB, NextFog );
 			FogPhoton[X+4] = FogPhoton[X+5]       = F12;
 			FogPhoton[X+2] = FogPhoton[X+3]       = FogAvg( F12, FogRGB );
@@ -1389,18 +1354,14 @@ static FTexSetup* LightPassPentiumFog( FTexSetup* Setup )
 	Filtered texture passes.
 -----------------------------------------------------------------------------*/
 //
-// Two modes, both writing the same Photon[X].DH the point pass does -- so every merge pass and
-// all three colour depths keep working unchanged. Filtering is orthogonal to depth.
+// Two modes, both writing the same Photon[X].DH the point pass does, so every merge pass and
+// all three colour depths work unchanged. Filtering is orthogonal to depth.
 //
-//   TEXTUREFILTER_DITHER   the original's 2x2 knight's-move coordinate dither. UE1's "texture
-//                          smoothing" was never bilinear filtering: it jitters the sample position
-//                          per pixel on a 2x2 screen grid and fetches ONE texel, which costs an
-//                          add and breaks up magnified texels for free. Offsets and the
-//                          (X&1)|((Y&1)<<1) selection are the originals, recovered from
-//                          MMX32Render8A/B (see tools/asmport/NOTES.md).
-//   TEXTUREFILTER_BILINEAR true bilinear: 4 taps and a blend. Not in the original at any bit
-//                          depth -- the 1998 kernels never did it -- but it is what the texture
-//                          actually wants when magnified, and it is cheap enough in C.
+//   TEXTUREFILTER_DITHER   UE1's texture smoothing: the 2x2 knight's-move coordinate dither. It
+//                          jitters the sample position per pixel on a 2x2 screen grid and fetches
+//                          one texel. Offsets and the (X&1)|((Y&1)<<1) selection are those of
+//                          MMX32Render8A/B.
+//   TEXTUREFILTER_BILINEAR true bilinear: 4 taps and a blend (the MMX kernels have no such mode).
 //
 
 //
@@ -1432,12 +1393,8 @@ static FTexSetup* TexturePassFiltered( FTexSetup* Setup )
 	// fall straight out without storing either.
 	const INT   Shift = 32 - Mip->LVShift;        // 16 + iMip: U/V >> Shift == integer texel
 	const INT   UBits = Mip->LVShift - Mip->HUShift;
-	// Derive the U wrap mask from UBits, NOT from Mip->USize: that field is declared in FMipSetup
-	// but never assigned by any of the three setup branches, so it is a zero-initialised static and
-	// USize-1 came out 0xFFFFFFFF -- i.e. no wrap at all. U then ran unbounded past the end of the
-	// texture into whatever followed it in memory, which is both an out-of-bounds read and, where
-	// it happened to land on other data, the block noise this pass showed on some surfaces.
-	// (LightMip.USize IS assigned and is a different struct; only FMipSetup::USize is dead.)
+	// The U wrap mask comes from UBits, not Mip->USize: no setup branch assigns FMipSetup::USize
+	// (it stays 0), so USize-1 would not wrap and U would read past the end of the texture.
 	const DWORD UMask = (1u << UBits) - 1;
 	const DWORD VMask = Mip->Mask.DH;             // VSize-1
 	BYTE* const Data  = Mip->Data.PtrBYTE;
@@ -2602,17 +2559,13 @@ static void MergeNone( INT Y, INT X, INT InnerX )
 	Blitting pass, volumetric fog variants.
 -----------------------------------------------------------------------------*/
 //
-// Fog twins of the merge passes above.  The MMX render kernels added the per-pixel fog colour to
-// the final value for *every* blend mode -- including modulated, where the add lands on the
-// modulation result rather than on the multiplier (verified in MMX32FogModulatedRender8; see
-// tools/asmport/NOTES.md).  These reproduce that.
+// Fog twins of the merge passes above. Like the MMX render kernels, they add the per-pixel fog
+// colour to the final value for every blend mode, modulated included, where the add lands on the
+// modulation result rather than on the multiplier (as in MMX32FogModulatedRender8).
 //
-// The multiplicative half of fog is already done by then: LightPassPentiumFog attenuated the light
-// by (127 - fog) before it ever reached Photon[].  So all that is left here is the additive term
-// and a clamp.
-//
-// The non-fog functions above are left untouched on purpose -- fog costs nothing when a surface
-// has no fog map, and the common path stays exactly as it was.
+// The multiplicative half of fog is already done: LightPassPentiumFog attenuates the light by
+// (127 - fog) before it reaches Photon[], so only the additive term and a clamp are left here.
+// Surfaces without a fog map keep the plain passes above.
 //
 
 static inline DWORD FogAdd( DWORD V, DWORD F, DWORD Max )
@@ -21095,10 +21048,9 @@ inline void USoftwareRenderDevice::RenderSurfSpansMMX16(FRainbowPtr& DestPtr, FS
 }
 
 
-// HP2 433: Render passes the flags to draw with separately from the surface's own flags (Lumos surfaces
-// get PF_Translucent added and the Lumos bits, incl. PF_Modulated, stripped -- Render/Src/UnRender.cpp), so
-// every flag test below reads the PolyFlags argument. cAlpha is only ever 0/255 on this span-based path and
-// is ignored, as in HP2's retail SoftDrv.
+// Render passes the flags to draw with separately from the surface's own (a Lumos surface gets
+// PF_Translucent added and its Lumos bits, PF_Modulated included, stripped in UnRender.cpp), so every
+// flag test below reads PolyFlags. cAlpha is only ever 0 or 255 on this span-based path and is ignored.
 void USoftwareRenderDevice::DrawComplexSurface( FSceneNode* Frame, FSurfaceInfo& Surface, FSurfaceFacet& Facet, DWORD PolyFlags, BYTE cAlpha )
 //void USoftwareRenderDevice::DrawPolyV( FSceneFrame* Frame, FSurfaceInfo& Surface, FSurfaceFacet& Facet )
 {
@@ -21176,8 +21128,8 @@ void USoftwareRenderDevice::DrawComplexSurface( FSceneNode* Frame, FSurfaceInfo&
 
 			TextureSmooth = ( (LowResTextureSmooth && (Frame->X<=400)) ||  (HighResTextureSmooth && (Frame->X>400)) );
 
-			// Smoothing stays the on/off gate it always was; BilinearFiltering only picks which of
-			// the two filtered modes to use, so there is no way to ask for "filtering on, but point".
+			// TextureSmooth is the on/off gate; BilinearFiltering only picks which of the two
+			// filtered modes to use.
 			TexFilterMode = TextureSmooth
 								? ( BilinearFiltering ? TEXTUREFILTER_BILINEAR : TEXTUREFILTER_DITHER )
 								: TEXTUREFILTER_POINT;
@@ -21299,15 +21251,11 @@ void USoftwareRenderDevice::DrawComplexSurface( FSceneNode* Frame, FSurfaceInfo&
 			}
 
 			//
-			// Volumetric fog: swap in the fog twin of whatever the ladder above picked.
+			// Volumetric fog: swap in the fog twin of whatever the ladder above picked, so a surface
+			// without a fog map keeps its plain pass.
 			//
-			// Done as a post-pass rather than by threading a fog flag through that (already deeply
-			// nested) selection: the mapping is visible in one place, and a surface with no fog map
-			// provably takes the exact same path it always did.
-			//
-			// Fog needs a lightmap to ride on -- LightPassPentiumFog is what fills FogPhoton[], and
-			// it only runs when there is one.  The MMX dispatcher had the same restriction (its
-			// unlit branch is tagged "todo: also unlit fogged cases"), so this is not a regression.
+			// Fog needs a lightmap: LightPassPentiumFog fills FogPhoton[] and runs only when there is
+			// one. The MMX dispatcher has the same limit (its unlit branch: "todo: also unlit fogged cases").
 			//
 			if( Surface.FogMap && Surface.LightMap )
 			{
@@ -22224,8 +22172,8 @@ void USoftwareRenderDevice::DrawComplexSurface( FSceneNode* Frame, FSurfaceInfo&
 				
 				for( INT YR = TaskStartY;  YR < TaskEndY; YR++ )
 				{
-					// Scanline parity selects the A or B half of the knight kernel -- the MMX
-					// dispatcher did the same with `if (YR & 1) ...Render8A(); else ...Render8B();`.
+					// Scanline parity selects the A or B half of the knight kernel, as the MMX
+					// dispatcher does with `if (YR & 1) ...Render8A(); else ...Render8B();`.
 					KnightRow = (YR & 1) << 1;
 					for( FSpan* Span=Facet.Span->Index[YR-Facet.Span->StartY]; Span; Span=Span->Next )
 					{

@@ -1,10 +1,9 @@
 project(Editor CXX)
 
-# HP2 build 433 Editor, stripped the way the template strips UT99's: no Win32 GUI hook (EdHook.cpp is
-# replaced by NullEdHook.cpp), no TrueType import (TTFontImport.cpp needs GDI), no PS2 commandlets
-# (UPS2ConvertCommandlet, UPSX2MusicCommandlet), no UMOD tooling (UMasterCommandlet.cpp includes the unbuilt
-# Setup/Inc/Setup.h). It links only Engine+Core and exists because UE1 content
-# references Editor classes at runtime; it also carries `ucc make`.
+# HP2 build 433 Editor without the Win32 GUI hook (NullEdHook.cpp replaces EdHook.cpp), TrueType import
+# (TTFontImport.cpp needs GDI), the PS2 commandlets (UPS2ConvertCommandlet, UPSX2MusicCommandlet) and the UMOD
+# tooling (UMasterCommandlet.cpp includes the unbuilt Setup/Inc/Setup.h). It links only Engine+Core, is
+# needed because the content references Editor classes at runtime, and carries `ucc make`.
 set(SRC_FILES
   "Src/CoolBsp.cpp"
   "Src/Editor.cpp"

@@ -298,18 +298,9 @@ public: \
 
 // Declare a concrete class.
 //
-// NOTE the placement-new in InternalConstructor is deliberately written WITHOUT parentheses
-// (`new(X)TClass`, not `new(X)TClass()`). Empty parens mean VALUE-initialization, and under modern
-// C++ a class with no USER-PROVIDED default constructor is ZERO-INITIALIZED before its (implicit)
-// constructor runs. That would wipe the UObject header -- Index/Name/Outer/Class/ObjectFlags --
-// which StaticAllocateObject has just written, because StaticConstructObject calls the class
-// constructor immediately AFTER allocating and initializing the object. The result is a live object
-// with Class==NULL, which crashes the moment anything calls GetClass() (e.g. GetFullName()).
-// The 1998 MSVC this engine was written against did not zero-initialize here, so the parens were
-// harmless then; GCC implements the current rule. Dropping them restores default-initialization:
-// identical behaviour for every class that DOES declare a default constructor (the vast majority),
-// and no header clobbering for the plain ones (e.g. the legacy UVectors/UVerts/UBspNodes/UBspSurfs
-// containers in UnModel.cpp that only load <=v61 maps -- the case that exposed this).
+// InternalConstructor's placement new has no parentheses on purpose: `new(X)TClass()` value-initializes,
+// which zeroes a class without a user-provided default constructor and so wipes the UObject header
+// (Index/Name/Outer/Class/ObjectFlags) that StaticAllocateObject has just written.
 #define DECLARE_CLASS( TClass, TSuperClass, TStaticFlags, TPackage ) \
 	DECLARE_BASE_CLASS( TClass, TSuperClass, TStaticFlags, TPackage ) \
 	friend FArchive &operator<<( FArchive& Ar, TClass*& Res ) \
@@ -439,7 +430,7 @@ public:
 	UObject& operator=( const UObject& );
 	void StaticConstructor();
 	static void InternalConstructor( void* X )
-		{ new( (EInternal*)X )UObject; }   // no parens -- see the note on DECLARE_CLASS above
+		{ new( (EInternal*)X )UObject; }   // no parens: value-initialization would wipe the header
 
 	// Destructors.
 	virtual ~UObject();

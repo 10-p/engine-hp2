@@ -1,24 +1,14 @@
 # OpenALMingw.cmake — OpenAL Soft for the MinGW-w64 (Windows) build.
 #
-# ufront step 2.34. Sibling of SDL2Mingw.cmake, same reasoning: every other platform gets OpenAL from
-# somewhere that already exists (the system `-lopenal` on native Linux, Emscripten's built-in on the web),
-# and a *cross* build from Linux has neither — so fetch OpenAL Soft's own official prebuilt Windows
-# binaries. Nothing binary is vendored into git.
+# A cross build from Linux has no Windows OpenAL (the web and native Linux builds get theirs from
+# OpenALSoft.cmake or the system), so this fetches OpenAL Soft's official prebuilt Windows binaries.
+# Nothing binary is vendored into git.
 #
-# ★ WHY A DLL AND NOT A STATIC LINK. Everything else in the Windows build is linked in, and the step's
-# headline is "one file you can drop somewhere and run". OpenAL is the deliberate exception:
-#   - The prebuilt drop is a DLL + import library; building openal-soft from source would pull a C++17
-#     subproject into an engine that compiles at gnu++14 with its own global allocator overrides — the
-#     exact combination that produced a null-ctor crash when this was tried on Android (see the
-#     `android-nativelib-integration-openal` notes). Late-loading the shared library is the arrangement
-#     that works there and on desktop Linux.
-#   - Shipping a DLL beside the exe is explicitly acceptable for these development binaries (2.34 rule 5,
-#     which allows ANGLE's libEGL/libGLESv2 for the same reason).
-# The alternative was a SILENT Windows build (AudioDevice=SoundDrv.NullAudioSubsystem), and a null driver
-# is not a usable default.
+# OpenAL is the one DLL of the Windows build, which links everything else in: the prebuilt drop is a DLL +
+# import library, and without it the build would fall back to the silent SoundDrv.
 #
 # Sets OPENAL_INCLUDE_DIR + OPENAL_LIBRARY, and defines OPENAL_MINGW_RUNTIME_DLL — the implementation DLL
-# that has to sit next to the .exe. Callers copy it there (see Unreal/CMakeLists.txt).
+# that has to sit next to the .exe. Game/CMakeLists.txt copies it there.
 
 set(OPENAL_MINGW_VERSION "1.25.2" CACHE STRING "OpenAL Soft release to fetch for the MinGW build")
 set(OPENAL_MINGW_SHA256  "67a0c4b800bd860c93c04f38caf8cbe4875f9c84700ac430efc451f70e265434"
@@ -48,10 +38,9 @@ set(OPENAL_LIBRARY     "${_OPENAL_MINGW_ROOT}/libs/${_OPENAL_MINGW_ARCHDIR}/libO
 
 # `soft_oal.dll` IS the implementation; `router/` holds the pass-through OpenAL32.dll that dispatches to a
 # system-installed driver. We want the implementation, under the name the import library asks for.
-# CACHE INTERNAL, not a plain variable: this file is included from whichever directory decides OpenAL
-# (the top level in engine-unreal1, NOpenALDrv/ in engine-ut99), while the POST_BUILD copy lives in the
-# LAUNCHER's directory. A normal set() there is invisible to a sibling subdirectory, and the failure is
-# silent — the exe links, and the DLL simply is not next to it.
+# CACHE INTERNAL, not a plain variable: this file is included from NOpenALDrv/, while the POST_BUILD copy
+# lives in the launcher's directory, where a plain set() is invisible and the exe would link without the
+# DLL beside it.
 set(OPENAL_MINGW_RUNTIME_DLL "${_OPENAL_MINGW_ROOT}/bin/${_OPENAL_MINGW_ARCHDIR}/soft_oal.dll"
     CACHE INTERNAL "OpenAL Soft implementation DLL to ship beside the executable")
 set(OPENAL_MINGW_RUNTIME_DLL_NAME "OpenAL32.dll"

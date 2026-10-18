@@ -1,17 +1,9 @@
 /*=============================================================================
 	Null.cpp: A do-nothing audio subsystem (silent).
 
-	ufront step 2.7a (engine-ut99). ut99dc's shipped inis select
-	`SoundDrv.NullAudioSubsystem`, but the `SoundDrv` package was never included
-	in the ut99dc tree (only the Dreamcast `AICADrv` and the OSS-`/dev/dsp`
-	`Audio` subsystem, neither usable on native-Linux/WASM). This provides the
-	null subsystem the config already references — silent audio that works on
-	every platform. Mirrors engine-unreal1's `SoundDrv/Null.cpp`.
-
-	HP2: rewritten for build 433's own `UAudioSubsystem` (flags/fade/priority
-	PlaySound, Ogg PlayMusic by name, ModifySound, fade-out StopSound). The
-	real driver is NOpenALDrv (PLAN Phase E); this one is the bring-up and
-	`-NOSOUND`-equivalent default.
+	Build 433's `UAudioSubsystem` with every call a no-op. The default audio
+	driver is NOpenALDrv; this one is used when NOpenALDrv is not built, when
+	it cannot be loaded natively, or when the ini names it.
 =============================================================================*/
 
 #include "Engine.h"
@@ -29,14 +21,12 @@ class DLL_EXPORT UNullAudioSubsystem : public UAudioSubsystem
 {
 	DECLARE_CLASS(UNullAudioSubsystem, UAudioSubsystem, CLASS_Config, SoundDrv)
 
-	// Class registration hook (the ut99dc driver convention). No config
-	// properties — silent audio needs none.
+	// Class registration hook. No config properties — silent audio needs none.
 	static void InternalClassInitializer( UClass* Class ) {}
 
-	// UAudioSubsystem interface (HP2 build 433, Engine/Inc/UnAudio.h). Return values follow the retail
-	// ALAudio driver's "nothing played" answers: PlaySound -1 (script ignores it), PlayMusic 0 (MusicTrigger
-	// stores the handle and later passes it to StopMusic, which must accept 0). USound::Audio stays NULL --
-	// only a real driver sets it.
+	// UAudioSubsystem interface (HP2 build 433, Engine/Inc/UnAudio.h). Return values follow ALAudio's "nothing
+	// played" answers: PlaySound -1 (script ignores it), PlayMusic 0 (MusicTrigger stores the handle and later
+	// passes it to StopMusic, which must accept 0). USound::Audio stays NULL -- only a real driver sets it.
 	virtual UBOOL Init() { return 1; }
 	virtual void SetViewport( UViewport* Viewport ) { AudioViewport = Viewport; }
 	virtual UBOOL Exec( const TCHAR* Cmd, FOutputDevice& Ar=*GLog ) { return 0; }

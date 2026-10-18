@@ -23,10 +23,8 @@ char* strupr( char* s );
 // Globally Unique Identifiers.
 void appGetGUID( void* GUID );
 
-// ufront 2.33 — Windows side of this same platform layer (Core/Src/UnMinGW.cpp). WinSock needs an
-// explicit process-wide startup that BSD sockets do not, and appComputerName/appGetLocalIP can run
-// before IpDrv has loaded.
 #ifdef PLATFORM_WIN32
+// Starts WinSock once per process (UnMinGW.cpp): appComputerName/appGetLocalIP can run before IpDrv loads.
 CORE_API void appWinSockInit();
 #endif
 

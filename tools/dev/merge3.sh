@@ -1,21 +1,24 @@
 #!/usr/bin/env bash
-# merge3.sh — three-way merge DRY RUN for the HP2 port (docs/porting/PLAN.md §3).
+# merge3.sh — three-way merge dry run of HP2 against engine-ut99, per package (default: Core Engine Render Fire
+# SoftDrv Editor). Deletes and recreates <outdir>; only reads the three source trees.
 #
 #   tools/dev/merge3.sh <outdir> [Pkg ...]
+#   with EPIC_SOURCE=/home/ion/WorkUnreal/epic-sources/ut99-v400 UT99_SOURCE=/home/ion/WorkUnreal/engine-ut99/Source
 #
-# base   = /home/ion/epic-sources/ut99-v400     (Epic UT99 v400, the common ancestor; CRLF)
-# ours   = Source/<Pkg>                          (HP2 build 433; LF)
-# theirs = /home/ion/engines/engine-ut99/Source  (ut99dc + ufront web port; LF)
+# base   = $EPIC_SOURCE   Epic UT99 v400, the common ancestor (CRLF)
+# ours   = $HP2_SOURCE    HP2 build 433 (LF): this repo's Source/ by default; the original drop is
+#                         /home/ion/WorkUnreal/epic-sources/hp2-ue1-433-proto/Source
+# theirs = $UT99_SOURCE   engine-ut99's Source/ (LF)
 #
-# For every file under <Pkg>/{Inc,Src} present in all three trees, writes the `git merge-file --diff3`
-# result to <outdir>/<Pkg>/<sub>/<file> and one line per file to <outdir>/summary.tsv:
-#   THEIRS-UNCHANGED         ut99dc did not touch it — nothing to port
-#   OURS-UNCHANGED           HP2 == epic — take the template's file as-is
-#   CLEAN                    merged without conflict — review, copy in
-#   CONFLICTS=<n>            n conflict hunks — resolve by hand (the file has diff3 markers)
-#   HP2-ONLY-OR-DROPPED      only HP2 (or ut99dc dropped it) — keep HP2's, port fixes by analogy
-#   NO-BASE                  both have it, epic lacks it
-# Never touches the repos. Read-only on the reference trees (they belong to another agent).
+# For every file under <Pkg>/{Inc,Src} of ours, writes the `git merge-file --diff3` result to
+# <outdir>/<Pkg>/<sub>/<file> and one line per file to <outdir>/summary.tsv:
+#   THEIRS-UNCHANGED         engine-ut99 did not change it: nothing to port
+#   OURS-UNCHANGED           HP2 matches v400: engine-ut99's file is copied to the output as-is
+#   CLEAN                    merged without conflict: review, copy in
+#   CONFLICTS=<n>            n conflict hunks: resolve by hand (the file has diff3 markers)
+#   HP2-ONLY-OR-DROPPED      engine-ut99 has no such file: keep HP2's
+#   NO-BASE                  HP2 and engine-ut99 have it, v400 does not
+#   ERROR                    git merge-file failed
 set -u
 HP2=${HP2_SOURCE:-"$(cd "$(dirname "$0")/../../Source" && pwd)"}
 EPIC=${EPIC_SOURCE:-/home/ion/epic-sources/ut99-v400}

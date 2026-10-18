@@ -1,39 +1,21 @@
 /*=============================================================================
-	WebRTCLan.cpp — make the STOCK UE1 server browser work over WebRTC.
+	WebRTCLan.cpp — UE1 LAN server discovery answered from the WebRTC peer list.
 
-	★ THE PROBLEM (ufront 2.38). The owner reported that the server browser had
-	never worked on any UE1 target, and that we had assumed UT2004's networking
-	work covered them. It did not: this engine had no discovery bridge at all —
-	`webrtc_discover_servers` and friends are exported by the baked glue shim and
-	nothing in the UE1 engines had ever called them.
+	The stock discovery script runs over AUdpLink, and a browser has no UDP, so
+	this answers it with synthetic packets built from the glue's server list:
+	  - the passive listener (Unreal 1's ClientBeaconReceiver binds the beacon
+	    port and waits for "<Product> <address> <text>" beacons);
+	  - the "REPORTQUERY" sweep to ServerBeaconPort+0..9, answered with
+	    "<Product> <QueryPort>" from the server's address, then the "\info\"
+	    query answered with "\key\value\" pairs (UT99's UBrowser).
+	HP2's content has no UdpLink script (no IpDrv.u), so nothing in this game
+	reaches these hooks.
 
-	★ WHY THIS IS A UDP SIMULATOR AND NOT A BROWSER PATCH. The browser is script,
-	and the script packages are FROZEN retail `.u` files we cannot recompile. So the
-	fix has to meet the stock code where it already is, and where it is is UDP:
+	A server is a synthetic address in 10.199.0.0/16 whose low 16 bits index a
+	room table: FURL parses the dotted address as a host, and
+	UWebRTCNetDriver::InitConnect translates it back to the room.
 
-	  Unreal 1  — `UnrealListenMenu` spawns `IpDrv.ClientBeaconReceiver`, which binds
-	              the beacon port and LISTENS. Servers broadcast
-	              "<Product> <address> <text>"; the menu lists the <text> and travels
-	              to the <address>. The client never sends anything.
-	  UT99/436  — `UBrowser.UBrowserLocalLink` broadcasts "REPORTQUERY" to
-	              ServerBeaconPort+0..9 and expects "<Product> <QueryPort>" back; it
-	              takes the SOURCE ADDRESS of that reply as the server's IP. Then
-	              `UBrowserServerPing` (also a UdpLink) sends "\info\" to that
-	              address and parses "\key\value\" pairs.
-
-	Both bottom out in `AUdpLink`, so ONE hook — send + poll — serves every UE1
-	target, and the browsers, list boxes, sorting, ping columns and join buttons all
-	keep working untouched.
-
-	★ HOW A JOIN GETS BACK TO A ROOM. We hand out synthetic addresses in 10.199.0.0/16
-	and keep a stable index -> room table. Both browsers put that address in the travel
-	URL, `FURL` parses a dotted token as a HOST (UnURL.cpp), and
-	`UWebRTCNetDriver::InitConnect` asks us to translate it back. So the room name
-	survives a round trip through code that only understands IPv4.
-
-	Layering: this file lives in WebRTCDrv and uses NO IpDrv types; IpDrv calls in
-	through the plain-C-shaped declarations in WebRTCLan.h. One-way, link-time, no
-	module cycle — the same arrangement engine-ut2004 uses for WebRTCDiscovery.cpp.
+	IpDrv calls in through WebRTCLan.h; this file uses no IpDrv types.
 =============================================================================*/
 
 #include "Engine.h"
@@ -61,7 +43,7 @@ extern "C"
 -----------------------------------------------------------------------------*/
 
 // 10.199.0.0/16 — private, and far away from anything a real LAN hands out. The low 16 bits are the
-// index into GRooms, which is why the table must be append-only (see RoomIndex).
+// index into GRooms, which is why the table must be append-only.
 #define LAN_ADDR_BASE     0x0AC70000u
 #define LAN_ADDR_MASK     0xFFFF0000u
 // The "query port" we advertise. UT99's browser sends its \info\ there; nothing binds it for real.
@@ -86,16 +68,16 @@ struct FLanServer
 static TArray<FString>    GRooms;
 static TArray<FLanServer> GServers;
 static UBOOL              GDiscoveryPending = 0;
-// HP2 433: appSeconds() returns FTime (32.32 fixed point, no < or >=); this file keeps DOUBLE timestamps.
+// appSeconds() returns FTime (32.32 fixed point, no < or >=); this file keeps DOUBLE timestamps.
 static inline DOUBLE LanNow() { return (DOUBLE)appSeconds().GetFloat(); }
 
 static DOUBLE             GLastDiscoveryAt  = 0.0;
-// Set by the net driver when WE are the listen server, so we never advertise ourselves to ourselves.
+// Set by the net driver when we are the listen server, so we never advertise ourselves to ourselves.
 static FString            GLocalRoom;
-// Set from a context where proxying is unsafe (see WebRTCLan_Bind); acted on from the tick.
+// Set where proxying is unsafe (WebRTCLan_Bind); acted on from the tick.
 static UBOOL              GWantKick = 0;
 
-// A link that wants synthetic traffic. `BeaconPort` is set for a passive Unreal 1 listener.
+// A link that wants synthetic traffic. `WantsBeacons` is set for a passive (beacon-port) listener.
 struct FLanLink
 {
 	const void* Id;
@@ -103,7 +85,7 @@ struct FLanLink
 	UBOOL   WantsBeacons;      // Unreal 1: emit unsolicited beacons on a timer
 	DOUBLE  NextBeaconAt;
 	UBOOL   bLoggedFirstPoll;
-	// ★ A sweep this link asked for that we could not answer yet. See WebRTCLan_Send.
+	// A sweep this link asked for that discovery could not answer yet.
 	UBOOL   bSweepPending;
 	DOUBLE  SweepDeadline;
 	DOUBLE  LastPendingLog;
@@ -145,11 +127,10 @@ static FLanLink& TouchLink( const void* Id )
 }
 
 /**
- * Stable index for a room. Append-only — see GRooms.
+ * Stable index for a room; GRooms is append-only.
  *
- * ⚠ `new( Array )T( Item )`, NOT `Array.AddItem( Item )`. See the note above PumpDiscovery: UE1's
- * `AddItem` ASSIGNS into an uninitialised slot, and assigning an FString reallocs whatever garbage
- * pointer was sitting there.
+ * Appended with `new( Array )T( Item )`, not `Array.AddItem( Item )`: AddItem assigns into an
+ * unconstructed slot, and assigning an FString reallocs whatever garbage pointer is there.
  */
 static INT RoomIndex( const FString& Room )
 {
@@ -171,7 +152,7 @@ static UBOOL IsSyntheticAddr( DWORD Addr )
 }
 
 /** The beacon product string the stock script will compare against. Read the ini, never guess: Unreal 1
- *  compares with `==` (CASE-SENSITIVE), so a hardcoded "unreal" would silently match nothing. */
+ *  compares with `==` (case-sensitive), so a hardcoded "unreal" would silently match nothing. */
 static FString BeaconProduct()
 {
 	FString P;
@@ -200,16 +181,10 @@ static void KickDiscovery()
 /**
  * Drain a finished discovery into GServers. No-op while one is still in flight.
  *
- * ★★ THROTTLED, AND THE THROTTLE IS NOT AN OPTIMISATION — IT IS THE DIFFERENCE BETWEEN RUNNING AND
- * ABORTING. Every webrtc_* call here is `__proxy: 'sync'`: a CROSS-THREAD round trip from the engine
- * pthread to the main thread. This function is reached from AUdpLink::Tick, i.e. once per link per
- * FRAME, and while a sweep was outstanding it asked "is discovery done?" every single one of them.
- *
- * ⚠ Under load that overflows Emscripten's proxy queue and the module dies:
- *     Aborted(Assertion failed: false && "emscripten_proxy_async failed",
- *             at: system/lib/html5/callback.c,42,_emscripten_run_callback_on_thread)
- * — measured 2.38. It survived a standalone run and aborted inside a suite, which made it look like a
- * dead tick, a stale artifact and an empty server list in turn. Ask four times a second instead.
+ * Polls at most four times a second, which keeps the module alive: every webrtc_* call here is a
+ * `__proxy: 'sync'` round trip from the engine pthread to the main thread, this runs from AUdpLink::Tick
+ * once per link per frame, and asking every frame overflows Emscripten's proxy queue
+ * (Aborted: "emscripten_proxy_async failed").
  */
 static DOUBLE GLastPumpAt = 0.0;
 
@@ -225,35 +200,10 @@ static void PumpDiscovery()
 		return;
 	GDiscoveryPending = 0;
 
-	// ⚠⚠ COPY-CONSTRUCTED IN PLACE (`new( Array )T( Item )`) — AND NOTHING ELSE WORKS.
-	//
-	// ★ THIS FILE HAS NOW BEEN BITTEN TWICE BY THE SAME UE1 FACT, ONCE PER FLAVOUR, SO IT IS WRITTEN OUT
-	// IN FULL. `TArray<T>` IS A POD CONTAINER. It has no idea T might own memory, and both of its obvious
-	// "add an element" spellings hand you a slot that is not a T yet:
-	//
-	//     INT AddItem( const T& Item ) { INT Index=Add(); (*this)(Index)=Item; }   // UnTemplate.h
-	//     INT FArray::Add( INT n, INT Size ) { ... Realloc(Size); return Index; }  // NO zeroing, NO ctor
-	//
-	// so `AddItem` ASSIGNS into raw memory, and FString's assignment operator is:
-	//
-	//     FString& operator=( const FString& Other ) { ArrayNum=ArrayMax=Other.Num(); Realloc(...); }
-	//
-	// i.e. `appRealloc( Data, … )` on whatever bit pattern the allocator happened to leave in that slot.
-	// `FLanServer` holds four FStrings, so one AddItem is four reallocs of four garbage pointers.
-	//
-	// ★★ AND IT IS HEAP LUCK, WHICH IS WHY IT READ AS FLAKINESS. Fresh dlmalloc pages come back zeroed, and
-	// a zeroed FString is a valid empty one — so on a quiet heap this "works". Measured 2.38: ut99 died on
-	// it 3 runs out of 3 (`memory access out of bounds`, and inside a suite a CRASH-PANEL), while unreal1 —
-	// same source, lighter heap — drained 4 for 4 and looked perfectly healthy. The tell is in the log:
-	// the per-server line below prints and "discovery done" never does, because the module is gone in
-	// between. Downstream that is a browser window with no rows in it, then a page that stops painting.
-	//
-	// ⚠ The FIRST version of this comment claimed "a local + AddItem is safe: the copy constructor runs".
-	// It does not run. There is no construction anywhere in AddItem. Placement new is the only spelling
-	// that copy-constructs, and it is what `TArray::operator=` itself uses.
-	//
-	// (Removal and Empty() are fine as they are: TTypeInfo<T>::NeedsDestructor() defaults to 1, so TArray
-	// does destruct elements it drops — it just never constructs the ones it adds.)
+	// Each server is copy-constructed in place (`new( Array )T( Item )`): TArray<T> is a POD container, so
+	// AddItem() assigns into an unconstructed slot, and FString's operator= reallocs whatever pointer the
+	// allocator left there (FLanServer holds four). On a freshly zeroed heap that happens to work. Removal and
+	// Empty() do destruct the elements they drop.
 	GServers.Empty();
 	const INT Count = webrtc_get_server_count();
 	char nameBuf[256], roomBuf[256], mapBuf[128], gtBuf[128];
@@ -296,9 +246,7 @@ static void PumpDiscovery()
 	Reply builders.
 -----------------------------------------------------------------------------*/
 
-// ⚠ Placement new, like every other append in this file — see the note above PumpDiscovery. (AddZeroed +
-// assign would in fact survive here, because a zeroed FString is a valid empty one, but "survives because
-// zero happens to be a legal value" is exactly the reasoning that cost this file two crashes.)
+// Placement new, like every other append in this file (AddItem assigns into an unconstructed slot).
 static void Queue( const void* LinkId, DWORD Addr, INT Port, const FString& Text )
 {
 	new( GReplies )FLanReply( LinkId, Addr, Port, Text );
@@ -312,7 +260,7 @@ static void QueueBeacons( const void* LinkId )
 	{
 		const FLanServer& S = GServers(i);
 		const DWORD Addr = AddrForIndex( RoomIndex( S.Room ) );
-		// The menu splits on the FIRST space: everything before it is the join address, the rest is the
+		// The menu splits on the first space: everything before it is the join address, the rest is the
 		// row label. So the label must not be empty, and the address must not contain a space.
 		Queue( LinkId, Addr, LAN_GAME_PORT,
 			FString::Printf( TEXT("%s %s %s (%s) %i/%i"),
@@ -331,7 +279,7 @@ static void QueueBeaconQueries( const void* LinkId )
 	}
 }
 
-/** UT99: the GameSpy-style \key\value\ answer UBrowserServerPing parses (see its GetInfo state). */
+/** UT99: the GameSpy-style \key\value\ answer UBrowserServerPing parses. */
 static void QueueServerInfo( const void* LinkId, DWORD Addr )
 {
 	const INT Index = (INT)(Addr & 0xFFFF);
@@ -364,24 +312,18 @@ void WebRTCLan_Bind( const void* LinkId, INT Port )
 	FLanLink& L = TouchLink( LinkId );
 	L.BoundPort = Port;
 
-	// ★ WARM THE CACHE ON ANY BIND, not just the beacon port — but ⚠ NOT FROM HERE.
+	// Warm the cache on any bind, not just the beacon port: a browser's link binds, sweeps once and is gone
+	// a few seconds later, and discovery (a peer-list XHR plus a status handshake per server) is slower than
+	// that; a warm GServers also answers the next query.
 	//
-	// The stock browser's link is SHORT-LIVED — it binds, broadcasts its sweep once, and is destroyed a
-	// few seconds later. Discovery is asynchronous (a peer-list XHR plus a status handshake per server),
-	// so a sweep issued microseconds after the bind routinely outlives its own answer, and the list shows
-	// nothing at all. Kicking here buys those few seconds and, more importantly, leaves GServers populated
-	// for the NEXT query — which is why a REFRESH always works even when the first look did not.
-	//
-	// ⚠⚠ DEFERRED, NOT CALLED. BindPort can be reached from INSIDE a script event that our own delivery
-	// triggered (a beacon reply -> FoundServer -> spawn UBrowserServerPing -> BindPort), i.e. from inside
-	// the engine's tick, inside script, inside an Asyncify-unwound stack. Every webrtc_* bridge is a
-	// SYNC CROSS-THREAD call, and making one from there hangs the engine — the drain completes, the log
-	// stops mid-flow, and nothing ever ticks again. So record the wish and grant it from the tick's own
-	// context (WebRTCLan_NextReply), which is a safe place to proxy from.
+	// Deferred to WebRTCLan_NextReply, not called here: BindPort can run inside a script event this file
+	// delivered (a beacon reply -> FoundServer -> spawn UBrowserServerPing -> BindPort), i.e. inside the
+	// tick, script and an Asyncify-unwound stack, and a sync cross-thread webrtc_* call from there hangs
+	// the engine.
 	GWantKick = 1;
 
-	// Unreal 1's ClientBeaconReceiver is PASSIVE: it binds the beacon port and waits for servers to
-	// shout. Nothing will ever arrive to trigger us, so binding that port IS the trigger.
+	// Unreal 1's ClientBeaconReceiver is passive: it binds the beacon port and waits for servers to
+	// shout. Nothing will ever arrive to trigger us, so binding that port is the trigger.
 	INT BeaconPort = 7776;
 	GConfig->GetInt( TEXT("IpDrv.UdpBeacon"), TEXT("BeaconPort"), BeaconPort );
 	if( Port == BeaconPort )
@@ -409,21 +351,10 @@ UBOOL WebRTCLan_Send( const void* LinkId, DWORD DestAddr, INT DestPort, const TC
 		return 0;
 	TouchLink( LinkId );
 
-	// UT99's LAN sweep. It fires ten of these (ServerBeaconPort+0..9).
-	//
-	// ★★ THE ANSWER USUALLY CANNOT BE IMMEDIATE, AND PRETENDING OTHERWISE LOSES THE LIST.
-	// Discovery is a peer-list XHR plus a status handshake per server — hundreds of milliseconds at best.
-	// The stock browser broadcasts ONCE when its window opens and then waits; it does not ask again until
-	// the player hits REFRESH. So answering synchronously with whatever is cached means an empty list
-	// whenever the window opens before discovery has finished, which is most of the time.
-	//
-	// ⚠ Measured, and it cost several suite runs to see: standalone the cache happened to be warm and the
-	// list filled; inside a suite the guest reached its menu in 20 s, opened the browser first, and the
-	// list stayed empty — with the window demonstrably open and discovery demonstrably succeeding a
-	// second later. It read as "the server browser is broken".
-	//
-	// So the sweep is remembered and answered when the answer exists. That is also what a real LAN sweep
-	// looks like from the client's side: replies trickle in after the broadcast, not with it.
+	// UT99's LAN sweep: ten of these (ServerBeaconPort+0..9). The browser broadcasts once when its window
+	// opens and asks again only on REFRESH, while discovery takes hundreds of milliseconds, so answering from
+	// the cache alone usually gives an empty list. The sweep is remembered and answered once discovery has
+	// servers, the way replies to a real LAN broadcast trickle in after it.
 	if( appStrnicmp( Text, TEXT("REPORTQUERY"), 11 )==0 )
 	{
 		KickDiscovery();
@@ -454,8 +385,8 @@ UBOOL WebRTCLan_Send( const void* LinkId, DWORD DestAddr, INT DestPort, const TC
 		QueueServerInfo( LinkId, DestAddr );
 		return 1;
 	}
-	// Anything else addressed at a synthetic server is still ours to swallow: there is no socket that
-	// could carry it, and letting sendto() fail would only produce a misleading script warning.
+	// Anything else addressed at a synthetic server is ours to swallow: there is no socket that could
+	// carry it.
 	if( IsSyntheticAddr( DestAddr ) )
 		return 1;
 
@@ -470,9 +401,7 @@ UBOOL WebRTCLan_NextReply( const void* LinkId, DWORD* OutAddr, INT* OutPort, FSt
 		GWantKick = 0;
 		KickDiscovery();
 	}
-	// One line per link, the first time it polls. Whether the stock link TICKS AT ALL is the load-bearing
-	// assumption of this whole file — if it does not, nothing can ever be delivered — so it is worth
-	// knowing from the log rather than by inference.
+	// One log line per link, the first time it polls: replies are delivered only to a link that ticks.
 	{
 		FLanLink* L0 = FindLink( LinkId );
 		if( L0 && !L0->bLoggedFirstPoll )
@@ -501,9 +430,8 @@ UBOOL WebRTCLan_NextReply( const void* LinkId, DWORD* OutAddr, INT* OutPort, FSt
 	// does (or until the deadline — after that the player's REFRESH is the retry).
 	if( L && L->bSweepPending )
 	{
-		// ⚠ While a sweep is outstanding, say so every few seconds. "The link stopped ticking" and
-		// "discovery found nothing" produce the same silence otherwise, and telling them apart by
-		// inference has already been wrong once in both directions.
+		// While a sweep is outstanding, log it every few seconds, so a link that stopped ticking and a
+		// discovery that found nothing look different.
 		DOUBLE Now2 = LanNow();
 		if( Now2 - L->LastPendingLog > 5.0 )
 		{
@@ -589,7 +517,7 @@ void WebRTCLan_SetLocalRoom( const TCHAR* Room )
 
 #else  // !__EMSCRIPTEN__
 
-// Native builds have real UDP and a real LAN; the stock browser needs no help.
+// Native builds have real UDP; the hooks do nothing.
 void    WebRTCLan_Bind( const void*, INT ) {}
 void    WebRTCLan_Unbind( const void* ) {}
 UBOOL   WebRTCLan_Send( const void*, DWORD, INT, const TCHAR* ) { return 0; }

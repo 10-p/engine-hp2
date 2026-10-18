@@ -1090,8 +1090,7 @@ UTextureFactory::UTextureFactory()
 	guard(UTextureFactory::UTextureFactory);
 	unguard;
 }
-// HP2 port: GFile is defined once, in Engine (UnTex.cpp, beside UEngineTextureFactory). The retail DLLs each
-// had their own copy; the static binary links both packages, and nothing reads it.
+// GFile is defined once, in Engine (UnTex.cpp): a static build links both packages into one binary.
 UObject* UTextureFactory::FactoryCreateBinary
 (
 	UClass*				Class,

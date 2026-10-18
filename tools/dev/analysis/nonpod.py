@@ -1,3 +1,5 @@
+# nonpod.py FILE... -- heuristic: print printf-style calls (debugf, appErrorf, Printf, ...) whose variadic
+# arguments include an FString by value, which clang compiles into a runtime trap.
 import re,sys
 VAR=r'(?:debugf|debugfSlow|appErrorf|appThrowf|appUnwindf|appMsgf|Logf|appSprintf|Printf|appFailAssert|warnf|StatusUpdatef|YesNof|WrappedPrintf|appSnprintf|FString::Printf)'
 call_re=re.compile(VAR+r'\s*\(')

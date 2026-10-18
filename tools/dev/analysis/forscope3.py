@@ -1,6 +1,6 @@
+# forscope3.py <forscope.py> FILE... -- run forscope.py on the files and drop a hit if the name is declared (outside
+# a for-init) between the enclosing function's opening '{' (column 0) and the use line.
 import re,sys,subprocess
-# post-filter forscope.py hits: drop a hit if the name is declared (outside a for-init) between the
-# enclosing function's opening '{' (column 0) and the use line.
 TY=r'(?:INT|int|DWORD|UBOOL|BYTE|_WORD|WORD|FLOAT|float|unsigned|long|SWORD|SBYTE|TCHAR|[A-Z]\w*)'
 S=sys.argv[1]
 out=subprocess.run(['python3',S]+sys.argv[2:],capture_output=True,text=True).stdout

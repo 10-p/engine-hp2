@@ -1,11 +1,6 @@
 /*=============================================================================
-	UnFpsLog.cpp: the frame rate in the log, one line per interval. ufront port; not
-	Epic's. Ported from engine-uc2 (Source/Engine/Src/UC2FpsLog.cpp, its F-2); the same
-	setting, command and line in every engine of the frontend. Quiet by default.
-
-	Why: STAT FPS draws the frame rate on the screen only; a benchmark run by a tool, a
-	headless run and a browser run need it in the log, and a mean alone hides the slow
-	frames players notice.
+	UnFpsLog.cpp: the frame rate in the log, one line per interval (STAT FPS only draws
+	it on the screen). Off by default.
 
 	Setting (ini; set from outside with -ini:System:[Engine.GameEngine]:FpsLogSeconds=5):
 	  [Engine.GameEngine] FpsLogSeconds=<seconds>   0 (default) = off
@@ -16,7 +11,7 @@
 	A line, logged under the name FPS at the end of each interval:
 	  FPS: <secs> s <frames> frames <fps> fps; frame ms avg <a> min <b> max <c> p99 <d>; 1% low <e> fps; <W>x<H>
 	A frame is the wall time between two calls of UGameEngine::Tick: the whole main-loop
-	iteration (tick, draw, present, the launcher's limiter and, on the web, the yield).
+	iteration (tick, draw, present and the launcher's limiter).
 	1% low = the frame rate of the average of the slowest 1% of the frames (at least one).
 =============================================================================*/
 
@@ -35,7 +30,7 @@ static FName FpsLogName()
 }
 
 static FLOAT			GFpsLogSeconds = -1.f;	// -1: the ini not read yet
-// HP2's appSeconds() is an FTime (fixed point); only differences of two are taken (FTime::operator- is exact enough,
+// appSeconds() is an FTime (fixed point); only differences of two are taken (FTime::operator- is exact enough,
 // FTime::GetFloat() of an absolute time is not).
 static UBOOL			GFpsLogStarted = 0;		// 0: the next frame starts an interval
 static FTime			GFpsLogStart;			// start of the interval

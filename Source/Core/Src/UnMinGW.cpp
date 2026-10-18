@@ -1,14 +1,6 @@
 /*=============================================================================
-	UnMinGW.cpp: Win32 calls the portable core does not have.
-
-	ufront step 2.33 — the Windows build.
-
-	The engine's platform layer for every GCC/Clang target is UnUnix.cpp (Core/CMakeLists.txt picks
-	UnVcWin32.cpp only for MSVC). That layer is very nearly portable to MinGW already; this file exists
-	for the few places where there is no POSIX answer at all, so that Windows work stays OUT of the
-	shared sources instead of accreting as #ifdefs inside them.
-
-	COMPILED ON WINDOWS ONLY — Linux and web never see it, which is exactly the point.
+	UnMinGW.cpp: the few Win32 calls with no POSIX answer in UnUnix.cpp.
+	Built for MinGW (Windows) targets only.
 =============================================================================*/
 
 #ifdef PLATFORM_WIN32
@@ -23,9 +15,8 @@
 -----------------------------------------------------------------------------*/
 
 //
-// Get system error. Mirrors UnVcWin32.cpp's implementation; needed by the Windows file manager and
-// error handler (FFileManagerWindows.h, FOutputDeviceWindowsError.h), which UnVcWin32.cpp would
-// otherwise have supplied.
+// Get system error, for FFileManagerWindows.h and FOutputDeviceWindowsError.h (UnVcWin32.cpp's version
+// is MSVC-only).
 //
 CORE_API const TCHAR* appGetSystemErrorMessage( INT Error )
 {
@@ -50,9 +41,8 @@ CORE_API const TCHAR* appGetSystemErrorMessage( INT Error )
 -----------------------------------------------------------------------------*/
 
 //
-// appCreateGuid (UnUnix.cpp) delegates here. The POSIX implementation is UnGUID.cpp — the OSF/DCE
-// algorithm over gettimeofday plus a MAC address — which Core/CMakeLists.txt drops on Windows in favour
-// of the OS's own generator. FGuid is four DWORDs, the same shape and byte order as a Win32 GUID.
+// appCreateGuid (UnUnix.cpp) calls this; on Windows the OS generator replaces UnGUID.cpp. FGuid is four
+// DWORDs, the same shape and byte order as a Win32 GUID.
 //
 void appGetGUID( void* GUID )
 {
@@ -68,9 +58,8 @@ void appGetGUID( void* GUID )
 -----------------------------------------------------------------------------*/
 
 //
-// WinSock needs an explicit process-wide startup that BSD sockets do not; without it every socket call
-// fails with WSANOTINITIALISED. IpDrv calls this from its own init (see IpDrvPrivate.h), and appComputerName
-// /appGetLocalIP in UnUnix.cpp reach gethostname through the same library.
+// WinSock needs a process-wide startup, or every socket call fails with WSANOTINITIALISED. appComputerName
+// and appGetLocalIP (UnUnix.cpp) call this, since they can run before IpDrv's own InitSockets.
 //
 CORE_API void appWinSockInit()
 {

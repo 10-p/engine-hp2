@@ -1,4 +1,5 @@
-# template-engine analyst: emulate HP2 433 UStruct::Link (PC rules) over loaded packages
+# Emulates HP2 433's UStruct::Link (PC rules) over loaded .u packages: per-property offsets (LAYOUT) and
+# PropertiesSize (SIZE) of every class and struct. Imported by compare.py and emit_asserts.py.
 import sys,struct,os
 sys.path.insert(0,os.path.dirname(os.path.abspath(__file__)) if '__file__' in dir() else '.')
 from upkg import Pkg,CPF_Net

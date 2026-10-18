@@ -1,4 +1,4 @@
-# template-engine analyst: C++ layout models. 'gcc' = SysV i386 / wasm32 clang (GCC_PACK'd lone bitfield
+# C++ layout models. 'gcc' = SysV i386 / wasm32 clang (GCC_PACK'd lone bitfield
 # runs occupy ceil(bits/8) bytes; derived members may use the base's tail padding). 'msvc' = Win32 /Zp4 and
 # MinGW -mms-bitfields (bitfield runs occupy whole DWORDs; derived class starts at sizeof(base)).
 import math

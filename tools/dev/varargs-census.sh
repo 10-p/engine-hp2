@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# varargs-census.sh <Pkg>... -- PLAN §3.7 gate: compile each package's sources with the web compiler and
-# -Wnon-pod-varargs ENABLED (the build silences it; clang then compiles an FString-through-... call into a
-# runtime TRAP). Prints one line per hit: file:line: message. Uses build-wasm's per-target flags.
+# varargs-census.sh <Pkg>... -- syntax-check each package's sources with em++ and -Wnon-pod-varargs on (the
+# build silences it, and clang compiles an FString passed through ... into a runtime trap). Prints one line
+# per hit: file:line: message. Uses build-wasm's per-target flags, so configure the wasm preset first.
 set -u
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"
 B="$REPO/build-wasm"

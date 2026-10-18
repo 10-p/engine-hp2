@@ -506,8 +506,8 @@ template< class T > T* ConstructObject( UClass* Class, UObject* Outer=(UObject*)
 	return (T*)UObject::StaticConstructObject( Class, Outer, Name, SetFlags );
 }
 
-// HP2 433: construct an object of the template class type (moved here from UnObjBas.h beside the UClass*
-// overload it forwards to -- both need a complete UClass under two-phase lookup).
+// Construct an object of the template class type. It sits beside the UClass* overload it forwards to: both
+// need a complete UClass under two-phase lookup.
 template< class T > T* ConstructObject( UObject* Parent=(UObject*)-1, FName Name=NAME_None, DWORD SetFlags=0 )
 {
 	return ConstructObject<T>( T::StaticClass(), Parent, Name, SetFlags );

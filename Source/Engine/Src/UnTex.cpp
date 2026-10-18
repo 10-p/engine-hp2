@@ -10,7 +10,7 @@
 #include "UnRender.h"
 
 // The DirectDraw stand-ins, Heckbert quantiser and closed s3tc.lib API serve only the MSVC-only DXT
-// block below (see its note); MinGW defines WIN32 too, so key on the compiler, not the platform.
+// block below; MinGW defines WIN32 too, so key on the compiler, not the platform.
 #if _MSC_VER
 #include "UnDDraw.h"
 #include "Palette.h"
@@ -748,13 +748,8 @@ UPalette* UPalette::ReplaceWithExisting()
 
 typedef	struct {BYTE rgba[4];} COLOR;
 
-// ufront 2.33: was `#ifdef WIN32`. These implementations call into Epic's S3TC encoder and Heckbert
-// quantiser (Engine/Lib/s3tc.lib plus the __declspec(dllexport) declarations in Palette.h), which NO
-// CMake target links — that .lib is an MSVC-era artifact left in the tree. So the block only ever built
-// under Epic's original MSVC project, and "WIN32" quietly meant "MSVC". Under MinGW it compiled and then
-// failed at link with undefined S3TCencode/S3TCdecode/HeckbertQuantize.
-// Every build this repo actually produces — Linux, web, and Windows/MinGW — takes the #else stub
-// below, exactly as it always has, so this changes nothing for any of them.
+// MSVC only: these call Epic's S3TC encoder and Heckbert quantiser (s3tc.lib and Palette.h's
+// __declspec(dllexport) declarations), which no CMake target links. Every CMake build takes the #else stub.
 #if _MSC_VER
 
 //

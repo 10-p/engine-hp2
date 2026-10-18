@@ -1,8 +1,8 @@
-# OpenGLDrv — UTGLR (Chris Dohnal's legacy-OpenGL UE1 render device) ported to engine-ut99.
+# OpenGLDrv — UTGLR (Chris Dohnal's legacy-OpenGL UE1 render device), built for HP2 (UE1 build 433).
 #
-# Driver-only port (see PORTING.md). Package/class name is OpenGLDrv.OpenGLRenderDevice — the
-# faithful upstream name, which also makes NSDLDrv create the right context (its GL-window test
-# keys on the substring "OPENGL"; "GLES" is absent so native gets a desktop-GL compat context).
+# Package/class name is OpenGLDrv.OpenGLRenderDevice, the upstream name, which also makes NSDLDrv create the
+# right context (its GL-window test keys on the substring "OPENGL"; "GLES" is absent, so native gets a
+# desktop-GL compatibility context).
 #
 # Backends:
 #   default        -> resolves GL entry points at runtime via SDL_GL_GetProcAddress against the
@@ -17,8 +17,8 @@ if(NOT USE_SDL)
   message(FATAL_ERROR "OpenGLDrv (UTGLR) requires NSDLDrv/SDL2 to function.")
 endif()
 
-# Source is FETCHED (${UTGLR_SOURCE_DIR}, set in the top-level CMakeLists.txt) — the utglr-copy repo is
-# flat (files at root); only this build glue lives in the engine tree.
+# Source is fetched (${UTGLR_SOURCE_DIR}, set in the top-level CMakeLists.txt); the utglr-copy repo is
+# flat (files at root). Only this build glue lives in the engine tree.
 set(SRC_FILES "${UTGLR_SOURCE_DIR}/OpenGL.cpp" "${UTGLR_SOURCE_DIR}/OpenGLDrv.cpp" "${UTGLR_SOURCE_DIR}/c_gclip.cpp")
 
 add_library(${PROJECT_NAME} ${LIB_TYPE} ${SRC_FILES})
@@ -34,8 +34,9 @@ target_include_directories(${PROJECT_NAME}
 target_link_libraries(${PROJECT_NAME} ${SDL2_LIBRARY})
 target_link_libraries(${PROJECT_NAME} Render Engine Core)
 
-# UTGLR build config + this engine's (ut99dc / UE1 v400) portability gate + the Unix/SDL path.
-# UTGLR_ENGINE_UT99DC guards every engine-specific deviation from upstream UTGLR (grep it).
+# UTGLR build config, the engine gates and the Unix/SDL path. UTGLR_ENGINE_UT99DC selects the fork's platform
+# layer (SDL2 shims, NSDLDrv-owned context, gl4es, web); UTGLR_ENGINE_HP2 beside it selects HP2 433's types
+# and render-device face.
 target_compile_definitions(${PROJECT_NAME} PRIVATE
   UPACKAGE_NAME=${PROJECT_NAME}
   UTGLR_UT_BUILD
@@ -44,9 +45,9 @@ target_compile_definitions(${PROJECT_NAME} PRIVATE
   __UNIX__
 )
 
-# gl4es backend (M3 / WebGL path). Inert unless USE_GL4ES is ON and the gl4es::GL target exists
+# gl4es backend (the WebGL path). Inert unless USE_GL4ES is ON and the gl4es::GL target exists
 # (created by the top-level FetchContent block). When active, gl4es supplies <GL/gl.h> and the GL
-# symbols instead of the system OpenGL (Pitfall: never also link system -lGL).
+# symbols instead of the system OpenGL (never also link the system -lGL).
 if(USE_GL4ES)
   if(NOT TARGET gl4es::GL)
     message(FATAL_ERROR "OpenGLDrv: USE_GL4ES is ON but the gl4es::GL target is missing "

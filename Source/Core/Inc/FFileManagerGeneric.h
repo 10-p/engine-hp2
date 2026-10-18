@@ -130,10 +130,9 @@ public:
 	SQWORD GetGlobalTime( const TCHAR* Filename )
 	{
 		guard(FFileManagerGeneric::GetGlobalTime);
-		// Always 0 on GCC targets (Epic's/the template's FFileManagerLinux behaviour). HP2's appInit regenerates
-		// Game.ini/User.ini whenever Default.ini is newer, and the web preloads Default.ini fresh on every page
-		// load -- a real mtime would overwrite the player's persisted inis on every boot. It also keeps the
-		// persistent-actor cache check deterministic (PLAN §2 "GetGlobalTime").
+		// Always 0. appInit regenerates Game.ini/User.ini whenever Default.ini is newer, and the web preloads
+		// Default.ini fresh on every page load, so a real mtime would overwrite the player's inis on every boot.
+		// It also keeps the persistent-actor cache check deterministic.
 		return 0;
 		unguard;
 	}

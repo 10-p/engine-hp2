@@ -1,5 +1,5 @@
 /*=============================================================================
-	UnStaticExports.cpp: Dreamcast-specific routines.
+	UnStaticExports.cpp: the package export registry of every UNREAL_STATIC build (native, web, Windows).
 =============================================================================*/
 
 #ifndef UNREAL_STATIC

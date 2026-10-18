@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# UT99 softenh -- native Linux launcher (installed into a run tree by mkrun-ut99.sh).
+# run-template.sh -- native Linux launcher for a UT99 run tree (installed as run.sh by mkrun-ut99.sh).
 #
 #   ./run.sh                     software renderer, menu
-#   ./run.sh gl                  XOpenGLDrv, for side-by-side reference
+#   ./run.sh gl                  no switch: the launcher's hardware default (XOpenGLDrv first), for reference
 #   ./run.sh soft DM-Barricade   start straight into a map
 #
 #   RES=1920x1080   viewport size
@@ -32,8 +32,8 @@ fi
 [ -n "${SURFFOG:-}" ] && sed -i -E "/^\[SoftDrv.SoftwareRenderDevice\]/,/^\[/ \
     s|^VolumetricLighting=.*|VolumetricLighting=$([ "$SURFFOG" = 1 ] && echo True || echo False)|" "$INI"
 
-# SoftDrv is never auto-adopted (ufront 2.9 will not promote a software device to the hardware
-# default), so it has to be selected on the command line, not through the ini.
+# The launcher takes a software device from the ini only when an earlier -SOFTWARERENDERER run recorded it
+# as the user's pick; otherwise it uses a hardware device. So SoftDrv is selected on the command line.
 ARGS=""
 [ "$DEV" = soft ] && ARGS="-SOFTWARERENDERER"
 

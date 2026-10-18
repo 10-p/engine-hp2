@@ -1,14 +1,11 @@
 /*=============================================================================
-	UnCheats.cpp: the position cheats WHEREAMI and TELEPORT. ufront port; not
-	Epic's. Ported from engine-uc2 (Source/Engine/Src/UC2Cheats.cpp); the names,
-	the format and the guard are the cross-engine spec of engine-uc2's
-	docs/CHEAT-COMMANDS.md, shared by every engine of the frontend.
+	UnCheats.cpp: the position cheats WHEREAMI and TELEPORT.
 
 	Console commands (the console, a key binding, the web's ue_exec_command):
 	  WHEREAMI                         the local player's position and view:
 	                                   "<x> <y> <z> <yaw> <pitch>" (x y z: world units, one
 	                                   decimal, the pawn's location; yaw 0..65535, pitch
-	                                   -32768..32767: Unreal rotation units, the VIEW
+	                                   -32768..32767: Unreal rotation units, the view
 	                                   rotation), on the console, on the screen
 	                                   (ClientMessage) and in the log as
 	                                   "Cheat: WHEREAMI <x> <y> <z> <yaw> <pitch>"
@@ -16,7 +13,7 @@
 	                                   puts the local player's pawn there (WHEREAMI's output
 	                                   pasted back gives the same place and view); without yaw
 	                                   and pitch the view is kept. TELEPORT with no arguments is
-	                                   not ours (the game's own, where it has one).
+	                                   left to the other Exec handlers.
 
 	The guard: allowed for the local player of a standalone game and of a listen server
 	(the host is the server); every network client and a dedicated server refuse:

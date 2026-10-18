@@ -1,16 +1,15 @@
 project(NOpenALDrv C CXX)
 
-# HP2 433 (PLAN Phase E): HP2's retail ALAudio ported to openal-soft on the template's pattern (see the header of
-# NOpenALDrv.cpp). SFX: OpenAL; EA-XA sounds through the in-tree EAXADecoder.cpp; music: Ogg Vorbis files opened
-# by path through libvorbisfile. No libxmp (HP2 has no .umx), no coda, no MpegLib.
+# NOpenALDrv: HP2's ALAudio on openal-soft. SFX: OpenAL; EA-XA sounds through the in-tree EAXADecoder.cpp;
+# music: Ogg Vorbis files opened by path through libvorbisfile. No libxmp (HP2 has no .umx), no coda, no MpegLib.
 set(SRC_FILES
   "NOpenALDrv.cpp"
   "EAXADecoder.cpp"
 )
 
 # ---------------------------------------------------------------------------------------------------------------
-# libogg + libvorbis(file): FetchContent'd static libraries on every target, the upstream release tags (§11.2
-# A5 / M5-3; cmake/ArtifactDeps.cmake records them in meta.json). Built WITHOUT the engine's -fpack-struct=4:
+# libogg + libvorbis(file): FetchContent'd static libraries on every target, the upstream release tags
+# (cmake/ArtifactDeps.cmake records them in meta.json). Built without the engine's -fpack-struct=4:
 # OggVorbis_File has ogg_int64_t/double members, 8-aligned on wasm32, and libvorbisfile must lay it out the way
 # the C ABI says. The driver includes the headers under #pragma pack(push,8) and Init() compares sizeof() with
 # VorbisLayout.c below, compiled the library's way.
@@ -78,20 +77,20 @@ hp2_strip_engine_packing(${_xiph_targets})
 message(STATUS "NOpenALDrv: xiph ogg ${HP2_OGG_GIT_TAG} + vorbis ${HP2_VORBIS_GIT_TAG} (static, natural packing)")
 
 # ---------------------------------------------------------------------------------------------------------------
-# OpenAL (template, unchanged).
+# OpenAL.
 # ---------------------------------------------------------------------------------------------------------------
 if(EMSCRIPTEN)
-  # ufront 2.61: openal-soft, built by the parent (cmake/OpenALSoft.cmake WEB) — was Emscripten's built-in
-  # -lopenal. Linking the target also gives this driver openal-soft's <AL/alext.h>/<AL/efx.h>.
+  # Web: openal-soft, built by the parent (cmake/OpenALSoft.cmake WEB). Linking the target also gives this
+  # driver openal-soft's <AL/alext.h>/<AL/efx.h>.
   set(OPENAL_LIBRARY OpenAL)
 elseif(TARGET OpenAL)
-  # ufront 2.70: native Linux — the parent built the same fork SHARED (cmake/OpenALSoft.cmake NATIVE); the
-  # launcher copies libopenal.so.1 beside the binary and links with $ORIGIN, so this DT_NEEDED resolves there.
+  # Native Linux with HP2_BUNDLED_OPENAL: the parent built the same fork SHARED (cmake/OpenALSoft.cmake
+  # NATIVE); the launcher copies libopenal.so.1 beside the binary and links with $ORIGIN, so this DT_NEEDED
+  # resolves there.
   set(OPENAL_LIBRARY OpenAL)
 elseif(MINGW AND CMAKE_CROSSCOMPILING)
-  # ufront 2.34 — cross-building for Windows: no system OpenAL, so fetch OpenAL Soft's official prebuilt
-  # Windows binaries (same pattern as SDL2Mingw). See cmake/OpenALMingw.cmake for why this one library is
-  # loaded rather than linked.
+  # Cross-building for Windows: no system OpenAL, so cmake/OpenALMingw.cmake fetches OpenAL Soft's official
+  # prebuilt Windows binaries (a DLL and its import library).
   include(OpenALMingw)
 else()
   # Native (Linux) without HP2_BUNDLED_OPENAL: the system OpenAL (openal-soft).
@@ -122,8 +121,8 @@ target_link_libraries(${PROJECT_NAME} Engine Render Core)
 target_compile_definitions(${PROJECT_NAME} PRIVATE NOPENALDRV_EXPORTS UPACKAGE_NAME=${PROJECT_NAME})
 
 # ---------------------------------------------------------------------------------------------------------------
-# The EA-XA decoder's acceptance test (Test/EAXAOracle.cpp, template-drivers.md §11.4). NOT built by default and
-# never run by the build; native only (it reads the retail Assets/Sounds, read-only):
+# The EA-XA decoder's acceptance test (Test/EAXAOracle.cpp). Not built by default and never run by the build;
+# native only (it reads Assets/Sounds, read-only):
 #   cmake --build <native-tree> --target eaxa_oracle && <native-tree>/NOpenALDrv/eaxa_oracle Assets/Sounds
 # ---------------------------------------------------------------------------------------------------------------
 if(NOT EMSCRIPTEN AND NOT CMAKE_CROSSCOMPILING)

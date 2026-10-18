@@ -16,9 +16,8 @@
 	General structures.
 ----------------------------------------------------------------------------*/
 
-// This file uses MSVC's __int64 spelling. Supply it where the compiler does not -- but NOT on MinGW,
-// where __int64 is a builtin keyword and typedef'ing it is a syntax error (ufront 2.33).
 #if !_MSC_VER && !defined(__MINGW32__)
+	// This file uses MSVC's __int64 spelling (on MinGW __int64 is a builtin keyword, so no typedef there).
 	typedef SQWORD __int64;
 #endif
 
@@ -464,10 +463,8 @@ class DLL_EXPORT_CLASS UIceTexture : public UFractalTexture
     BYTE        VertPanSpeed;
 	BYTE        Frequency;
 	BYTE        Amplitude;
-	// HP2 port (layout pad, same defect as Engine's ABrush::bColoredPad): GCC/clang pack MoveIce into the two
-	// spare bytes after Amplitude (offset 230) while MSVC -- and the shipped Fire.u -- start a new DWORD at 232,
-	// so every later member was 4 bytes low and sizeof(UIceTexture) was 280 vs script 284 (the [layout] guard,
-	// ucc batchexport). MinGW lays bitfields out the MSVC way, so no pad there.
+	// Layout pad: GCC/clang would pack MoveIce into the two spare bytes after Amplitude (offset 230), while
+	// MSVC and the shipped Fire.u start a new DWORD at 232. MinGW lays bitfields out the MSVC way, so no pad there.
 #ifndef __MINGW32__
 	BYTE        MoveIcePad[2];
 #endif

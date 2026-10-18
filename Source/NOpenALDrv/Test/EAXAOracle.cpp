@@ -1,28 +1,26 @@
 /*=============================================================================
-	EAXAOracle.cpp: the EA-XA decoder's acceptance test (docs/porting/analysis/template-drivers.md §11.4).
+	EAXAOracle.cpp: the EA-XA decoder's acceptance test.
 
-	The oracle is stored in the retail data itself. USound::CalcLipSyncData (Engine/Src/UnAudio.cpp) computed
-	each dialog line's lip-sync table at import time FROM THE ORIGINAL PCM: one byte every 20 ms = the peak
-	|sample|/128 over a 5 ms window. Decoding the shipped EA-XA bytes and recomputing that table must give the
-	same curve, so a wrong coefficient table, shift, nibble order or history rule shows up as a collapsed
-	correlation. Reference: tools/dev/analysis/xadec.py (same windowing arithmetic, same numbers).
+	The oracle is in the game data: USound::CalcLipSyncData (Engine/Src/UnAudio.cpp) computes each dialog
+	line's lip-sync table at import time from the original PCM: one byte every 20 ms = the peak |sample|/128
+	over a 5 ms window. Decoding the shipped EA-XA bytes and recomputing that table must give the same curve,
+	so a wrong coefficient table, shift, nibble order or history rule shows up as a collapsed correlation.
+	Reference: tools/dev/analysis/xadec.py (same windowing arithmetic, same numbers).
 
 	Checks, per run:
-	  1. ORACLE  (every AllDialog.uax given): the first 50 sounds with FileType 'XA' and SF_HasLipSync, decoded
+	  1. Oracle  (every AllDialog.uax given): the first 50 sounds with FileType 'XA' and SF_HasLipSync, decoded
 	     through the driver's streaming path (FEAXADecoder::Decode in 32 KB chunks). Pass: Pearson r > 0.99
-	     and mean |delta| under 2% of the line's peak table value. (§11.4 proposed an absolute "< 3 of 255";
-	     at 50 sounds the reference xadec.py itself gives exactly 3.00 for the loud PC_Ara_ArragogFight_16b,
-	     peak 245 -- lossy ADPCM errs in proportion to loudness -- so the bound is relative.) The first five
-	     are the §11.1 C4 set and must reproduce the reference values to the printed precision
+	     and mean |delta| under 2% of the line's peak table value (relative, because lossy ADPCM errs in
+	     proportion to loudness). The first five must reproduce the reference values to the printed precision
 	     (r 0.9997/0.9959/0.9981/0.9994/0.9993, MAD 0.43/1.36/0.85/0.80/0.73).
-	  2. DECODE  (every XA sound in every package given): the sound decodes to exactly raw_NumSamples samples,
+	  2. Decode  (every XA sound in every package given): the sound decodes to exactly raw_NumSamples samples,
 	     consumes no more than its bytes (ceil(n/28)*15 for plain frames), and a whole-sound decode equals the
 	     chunked one (odd chunk sizes included).
-	  3. CENSUS  (when a whole Sounds/ directory is given): the §11.4 counts (3,289 sounds, 2,994 XA =
+	  3. Census  (when a whole Sounds/ directory is given): the known counts (3,289 sounds, 2,994 XA =
 	     121,218,855 bytes, 626 x flags 260 + 2,368 x flags 388, 295 wav = 218 x 0 + 77 x 128).
 
-	NOT part of the normal build (EXCLUDE_FROM_ALL; never compiled for the web). Run it by hand:
-	  cmake --build ../build-native-e --target eaxa_oracle && ../build-native-e/NOpenALDrv/eaxa_oracle Assets/Sounds
+	Not part of the normal build (EXCLUDE_FROM_ALL; never compiled for the web). Run it by hand:
+	  cmake --build <native-tree> --target eaxa_oracle && <native-tree>/NOpenALDrv/eaxa_oracle Assets/Sounds
 	or with no CMake tree at all (from the repo root):
 	  g++ -O2 -o /tmp/eaxa_oracle Source/NOpenALDrv/Test/EAXAOracle.cpp Source/NOpenALDrv/EAXADecoder.cpp \
 	      && /tmp/eaxa_oracle Assets/Sounds
@@ -295,11 +293,11 @@ static std::string BaseName( const std::string& Path )
 }
 
 /*-----------------------------------------------------------------------------
-	Synthetic frames (the paths the retail data never takes).
+	Synthetic frames (the paths the game data never takes).
 -----------------------------------------------------------------------------*/
 
-// 0xEE raw frame (no HP2 sound has one, §11.4 census) then a plain frame predicting from its history, then a
-// truncated tail that must end the sound instead of reading past the buffer.
+// 0xEE raw frame (no HP2 sound has one; the census counts them), then a plain frame predicting from its
+// history, then a truncated tail that must end the sound instead of reading past the buffer.
 static int SelfTest()
 {
 	uint8_t Buf[EAXA_RAW_FRAME_BYTES + EAXA_FRAME_BYTES + 7];
@@ -324,7 +322,7 @@ static int SelfTest()
 	if( Got != 2 * EAXA_FRAME_SAMPLES ) Fail++;
 	for( int i = 0; i < EAXA_FRAME_SAMPLES && !Fail; i++ )
 		Fail += Out[i] != (int16_t)( i * 1000 - 14000 );
-	// First plain sample from the raw frame's HEADER history (h1=256, h2=-128), as ffmpeg's ADPCM_EA_R1 does.
+	// First plain sample from the raw frame's header history (h1=256, h2=-128), as ffmpeg's ADPCM_EA_R1 does.
 	const int32_t S0 = ( ( ( 7 << 28 ) >> 20 ) + 460 * 256 - 208 * -128 + 128 ) >> 8;
 	const int32_t S1 = ( ( (int32_t)( 15u << 28 ) >> 20 ) + 460 * S0 - 208 * 256 + 128 ) >> 8;
 	Fail += Out[EAXA_FRAME_SAMPLES] != S0 || Out[EAXA_FRAME_SAMPLES + 1] != S1;
@@ -420,7 +418,7 @@ int main( int argc, char** argv )
 		}
 		const std::string Base = BaseName( Files[f] );
 
-		// 2. DECODE + 3. CENSUS
+		// 2. Decode + 3. Census
 		int FileXa = 0, FileBad = 0;
 		for( size_t s = 0; s < Sounds.size(); s++ )
 		{
@@ -467,7 +465,7 @@ int main( int argc, char** argv )
 		Failures += FileBad;
 		printf( "%-24s ver %d  %4d sounds  %4d XA  %s\n", Base.c_str(), Version, (int)Sounds.size(), FileXa, FileBad ? "DECODE FAILURES" : "decode ok" );
 
-		// 1. ORACLE
+		// 1. Oracle
 		if( strcasecmp( Base.c_str(), "AllDialog.uax" ) == 0 )
 		{
 			RanOracle = true;
@@ -523,7 +521,7 @@ int main( int argc, char** argv )
 	printf( "        %ld XA samples decoded, %ld at the 16-bit rails (%.4f%%)\n", XaSamples, RailHits, XaSamples ? 100.0 * RailHits / XaSamples : 0.0 );
 	if( WholeDirectory )
 	{
-		// §11.4's measured census — only meaningful for the whole retail Sounds/ directory.
+		// The known census -- only meaningful for the whole Sounds/ directory.
 		const bool Census = TotalSounds == 3289 && XaSounds == 2994 && XaBytes == 121218855LL && Xa260 == 626 && Xa388 == 2368
 			&& WavSounds == 295 && Wav0 == 218 && Wav128 == 77;
 		printf( "census vs §11.4 (3289 / 2994 XA = 121218855 bytes / 626+2368 / 295 wav = 218+77): %s\n", Census ? "MATCH" : "MISMATCH" );

@@ -1,5 +1,6 @@
 #!/bin/bash
-# probe.sh <gcc|wasm> file.cpp  -> errors
+# probe.sh <gcc|wasm> <file.cpp> -- syntax-check one Core source with g++ -m32 (warnings off) or emsdk's wasm32
+# clang++ (only -Wnon-pod-varargs), with Core's static-build defines and -I Inc -I Src relative to this directory.
 W=$(dirname $0); cd $W
 DEFS="-DUNREAL_STATIC -DPLATFORM_LINUX -DPLATFORM_SDL -DCORE_API= -DCORE_EXPORTS -DUPACKAGE_NAME=Core -I Inc -I Src"
 case $1 in

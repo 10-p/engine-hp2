@@ -1,4 +1,5 @@
-# template-engine analyst: emit compile-time layout asserts (script offsets from the shipped .u)
+# emit_asserts.py <EngineClasses.h> <Core.u> <Engine.u>... -- write EngineLayoutAsserts.cpp into the current directory:
+# a static_assert per non-bitfield member offset and per class size, taken from the shipped packages.
 import sys,os
 sys.path.insert(0,os.path.dirname(os.path.abspath(sys.argv[0])))
 import layout; from hdr import parse_header

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""msvcread.py FILE LINE VAR -- the for at LINE declares VAR. Report whether VAR is READ after the for
-statement, inside the same enclosing block, before being written/redeclared (i.e. code that relied on MSVC6
-for-scope and now silently binds to an outer VAR)."""
+"""msvcread.py FILE LINE VAR -- the for at LINE declares VAR. Report whether VAR is read (READ@line) after the for
+statement, inside the same enclosing block, before being written/redeclared: code that relies on MSVC6 for-scope,
+which standard C++ binds to an outer VAR."""
 import re, sys
 
 def tokens(src):

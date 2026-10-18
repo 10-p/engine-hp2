@@ -301,9 +301,8 @@ UStruct::UStruct( ENativeConstructor, INT InSize, const TCHAR* InName, const TCH
 ,	ConstructorLink	( NULL )
 ,	FriendlyName	( /*Uninitialized*/ )
 {
-	// Layout guard: record the native C++ sizeof (InSize) keyed by object pointer, so UStruct::Link can
-	// compare it against the size derived from the LOADED .u property offsets and warn on any C++/script
-	// disagreement. Plain globals (BSS) -> safe at the static-init time these native constructors run.
+	// Layout guard: record the native C++ sizeof (InSize) per struct so UStruct::Link can compare it with the
+	// size derived from the loaded .u property offsets. Plain globals (BSS), safe during static init.
 	extern UStruct* GLayoutStructs[]; extern INT GLayoutSizes[]; extern INT GLayoutCount;
 	if( GLayoutCount < 4096 ) { GLayoutStructs[GLayoutCount]=this; GLayoutSizes[GLayoutCount]=InSize; GLayoutCount++; }
 }
@@ -390,15 +389,10 @@ void UStruct::Link( FArchive& Ar, UBOOL Props )
 			}
 		}
 		PropertiesSize = Align(PropertiesSize,PropertiesAlign);
-		// Layout guard (ported from feat/v436-compat, where it was a GENERAL fix living on a
-		// target-specific branch): a native class's C++ sizeof must equal the size derived from the
-		// loaded .u property offsets. A mismatch means the class's own members — and any native
-		// subclass's — are read from the wrong offsets.
-		//
-		// ⚠ IT IS NECESSARY BUT NOT SUFFICIENT, and step 2.32 is the proof: the ABrush/AMover keyframe
-		// bug passed this check. C++ may place a derived class's members in the base's TAIL PADDING, so
-		// sizeof(base) is unchanged while the derived member moves, and AMover re-aligned before its end
-		// so its size matched too. Only a per-PROPERTY offset comparison sees that class of bug.
+		// Layout guard: a native class's C++ sizeof must equal the size derived from the loaded .u property
+		// offsets, or its members (and any native subclass's) are read from the wrong offsets. Necessary but not
+		// sufficient: C++ may place a derived class's members in the base's tail padding, so the sizes can match
+		// while a member moves; only a per-property offset comparison catches that.
 		{
 			extern UStruct* GLayoutStructs[]; extern INT GLayoutSizes[]; extern INT GLayoutCount;
 			for( INT li=0; li<GLayoutCount; li++ )
@@ -408,7 +402,8 @@ void UStruct::Link( FArchive& Ar, UBOOL Props )
 					{
 						debugf( NAME_Warning, TEXT("[layout] native %s: C++ sizeof=%i but script layout=%i -- member-offset shift risk"),
 							GetName(), GLayoutSizes[li], PropertiesSize );
-						// DIAG 2.80 (throwaway): each own property in link order, with its script offset.
+						// Size mismatch: dump the class's own properties in link order (offset, size, bool bitmask),
+						// then the super's PropertiesSize.
 						for( UField* F=Children; F && F->GetOuter()==this; F=F->Next )
 						{
 							UProperty* P = Cast<UProperty>( F );
@@ -426,16 +421,10 @@ void UStruct::Link( FArchive& Ar, UBOOL Props )
 	}
 	else
 	{
-		// ufront 2.70 — this branch links NATIVE properties (CPP_PROPERTY, registered in a StaticConstructor):
-		// their storage is a C++ member, so linking must not move it. Epic restored the OFFSET and forgot the
-		// BIT: UBoolProperty::Link merges a bool into the previous bool's word as if they were packed script
-		// bitfields, so adjacent native bools came out with BitMask 2, 4, 8... while each one is a whole UBOOL.
-		// Harmless for Epic's own drivers (a bool that only config ever writes is simply nonzero or zero), but a
-		// constructor that writes `= true` (bit 1) before config is applied can then never be switched off:
-		// NOpenALDrv's `UseReverb=False` cleared bit 4 and reverb stayed on (measured), and ExportText reads such
-		// a bool back as False. A native property can never be a real bitfield (CPP_PROPERTY takes an offset),
-		// so its bit is restored exactly like its offset. Unreal 1 never merges native bools at all (its
-		// LinkOffsets runs only for loaded/compiled structs), which is why the same driver works there.
+		// Native properties (CPP_PROPERTY, registered in a StaticConstructor) are C++ members, so linking must not
+		// move them: restore the offset and the bool BitMask. UBoolProperty::Link would pack adjacent native bools
+		// into one word (BitMask 2, 4, 8...) although each is a whole UBOOL, and a constructor's `= true` (bit 1)
+		// could then never be switched off by config.
 		UProperty* Prev = NULL;
 		for( UField* Field=Children; Field && Field->GetOuter()==this; Field=Field->Next )
 		{
@@ -1450,7 +1439,7 @@ EExprToken UStruct::SerializeExpr( INT& iCode, FArchive& Ar )
 			//this bit is an incredible kludge, but telportes do not play well
 			// with the debugger, and until i figure out why kludgecity gk
 			nameComp=this->GetFullName();
-			if((appStrcmp(nameComp,badTeleport1)!=0)&&(appStrcmp(nameComp,badTeleport2)!=0)) // retail was UNICODE; the port is ANSI
+			if((appStrcmp(nameComp,badTeleport1)!=0)&&(appStrcmp(nameComp,badTeleport2)!=0)) // appStrcmp: TCHAR is char in this ANSI build
 			{
 				HANDLE_OPTIONAL_DEBUG_INFO(); //DEBUGGER
 

@@ -52,8 +52,8 @@ private:
 	TIMETYP v;
 };
 
-// GCC and clang implement #pragma pack(push,n) too; keyed on __GNUC__ because __LINUX__ is never defined by
-// the template UnGnuG.h (and was only defined after this line before). Used to wrap third-party codec headers.
+// GCC and clang implement #pragma pack(push,n) too; keyed on __GNUC__ because UnGnuG.h does not define
+// __LINUX__. Used to wrap third-party codec headers.
 #if _MSC_VER || __ICC || __GNUC__
 	#define SUPPORTS_PRAGMA_PACK 1
 #else
@@ -100,10 +100,8 @@ enum ENoInit {E_NoInit = 0};
 		typedef ANSICHAR  TCHAR;
 		typedef ANSICHARU TCHARU;
 	#elif defined(PLATFORM_WIN32)
-		// ufront 2.33 (Windows/MinGW): MinGW's <tchar.h>, reached through the Win32 headers, sets
-		// _TCHAR_DEFINED and supplies TCHAR (== char here, since we do not build UNICODE) — but it knows
-		// nothing about UE1's TCHARU, so the branch above skipped BOTH and the engine failed to compile
-		// wherever TCHARU is used (UnCanvas.cpp).
+		// MinGW's <tchar.h>, reached through the Win32 headers, defines TCHAR (char, no UNICODE) and
+		// _TCHAR_DEFINED but not UE1's TCHARU.
 		typedef ANSICHARU TCHARU;
 	#endif
 	#undef TEXT

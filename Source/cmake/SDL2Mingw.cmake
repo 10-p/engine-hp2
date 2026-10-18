@@ -1,13 +1,11 @@
 # SDL2Mingw.cmake — SDL2 for the MinGW-w64 (Windows) build.
 #
-# ufront step 2.33. Every other platform here gets SDL2 from somewhere that already exists: the system
-# (native Linux, and MSYS2's `mingw-w64-i686-SDL2`), the Emscripten `-sUSE_SDL=2` port (web), or
-# Thirdparty/ (MSVC). A *cross* build from Linux has no such source, so fetch SDL2's own official prebuilt
-# MinGW development binaries — the same FetchContent pattern the renderers and libxmp already use, so
-# nothing binary is vendored into git.
+# A cross build from Linux has no Windows SDL2 (native Linux uses the system's, the web the Emscripten
+# `-sUSE_SDL=2` port), so this fetches SDL2's official prebuilt MinGW development binaries with
+# FetchContent. Nothing binary is vendored into git.
 #
-# The version deliberately matches this box's system SDL2, so the Windows build and the native Linux twin
-# are the same SDL2 and a behavioural difference between them cannot be blamed on the library.
+# The version matches the Linux build host's system SDL2, so the Windows and native Linux builds run the
+# same library.
 #
 # Sets SDL2_INCLUDE_DIR and SDL2_LIBRARY (a full link line: static SDL2 + the Win32 libraries it needs,
 # taken from the tarball's own sdl2.pc `Libs.private`).
@@ -37,10 +35,9 @@ endif()
 
 set(SDL2_INCLUDE_DIR "${_SDL2_MINGW_ROOT}/include")
 
-# ⚠ ORDER MATTERS. -lmingw32 and SDL2main must precede SDL2: SDL.h renames the engine's `int main()` to
-# `SDL_main`, and SDL2main supplies the WinMain that calls it. Get the order wrong and the link dies on an
-# undefined WinMain — with no hint that it is about link order. This is also why the launcher needs NO
-# source change for Windows.
+# Order matters: -lmingw32 and SDL2main precede SDL2. SDL.h renames the engine's `int main()` to
+# `SDL_main` and SDL2main supplies the WinMain that calls it (so the launcher has no Windows entry point);
+# in another order the link fails on an undefined WinMain.
 set(SDL2_LIBRARY
   -lmingw32
   "${_SDL2_MINGW_ROOT}/lib/libSDL2main.a"

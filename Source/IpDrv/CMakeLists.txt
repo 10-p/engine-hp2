@@ -8,8 +8,8 @@ set(SRC_FILES
   "Src/InternetLink.cpp"
   "Src/TcpNetDriver.cpp"
 )
-# HP2: UMasterServerCommandlet/UUpdateServerCommandlet (UT99 master-server tooling) are not built -- HP2 has no
-# server browser or master server. No IpDrv.u ships either: TcpNetDriver needs no script class.
+# UMasterServerCommandlet/UUpdateServerCommandlet (master-server tooling) are not built: HP2 has no server
+# browser or master server. No IpDrv.u ships either: TcpNetDriver needs no script class.
 
 add_library(${PROJECT_NAME} ${LIB_TYPE} ${SRC_FILES})
 
@@ -18,9 +18,8 @@ target_include_directories(${PROJECT_NAME}
   ${CMAKE_CURRENT_SOURCE_DIR}/Inc
   PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/Src
-  # ufront 2.38 — AUdpLink calls the synthetic LAN in WebRTCDrv (WebRTCLan.h). HEADER ONLY: the
-  # dependency is one-way and resolved at the final --whole-archive link, so IpDrv does NOT link
-  # WebRTCDrv and there is no module cycle. Mirrors engine-ut2004's IpDrv -> WebRTCDiscovery hook.
+  # On the web AUdpLink calls the synthetic LAN in WebRTCDrv (WebRTCLan.h). Header only: the calls
+  # resolve at the final --whole-archive link, so IpDrv does not link WebRTCDrv and there is no cycle.
   ${CMAKE_CURRENT_SOURCE_DIR}/../WebRTCDrv
 )
 

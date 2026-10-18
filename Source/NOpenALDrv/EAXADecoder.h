@@ -1,20 +1,19 @@
 /*=============================================================================
 	EAXADecoder.h: the EA-XA ADPCM decoder HP2's compressed sounds need.
 
-	HP2 433 imported every sound over 32 KB through EA's `sx -eaxa_blk -raw` (Engine/Src/UnAudio.cpp,
-	USound::CompressXA) and decoded it at run time with the closed `coda` library (CEAXABLKDec,
-	Core/Src/UnVcWin32.cpp). This is the open replacement for that one job — no container, no per-sound
-	header, mono 16-bit, 2,994 of the 3,289 shipped sounds (FileType 'XA', CoreFlags & SF_Compressed).
+	HP2's compressed sounds are EA's `sx -eaxa_blk -raw` output (Engine/Src/UnAudio.cpp, USound::CompressXA),
+	which the shipped driver decodes with the closed `coda` library (CEAXABLKDec). This is an open decoder
+	for that format — no container, no per-sound header, mono 16-bit, 2,994 of the 3,289 shipped sounds
+	(FileType 'XA', CoreFlags & SF_Compressed).
 
-	Format (settled numerically: docs/porting/analysis/template-drivers.md §11.1 C4; reference decoder
-	tools/dev/analysis/xadec.py, oracle §11.4 = Test/EAXAOracle.cpp):
+	Format (reference decoder tools/dev/analysis/xadec.py, checked by Test/EAXAOracle.cpp):
 	  a frame is 15 bytes -> 28 samples. Byte 0 = (predictor << 4) | shift, bytes 1..14 = 28 signed
-	  nibbles, HIGH NIBBLE FIRST. With h1/h2 the previous two output samples:
+	  nibbles, high nibble first. With h1/h2 the previous two output samples:
 	      sample = ((nib << 28) >> (shift + 8)) + C1[p]*h1 + C2[p]*h2 + 128) >> 8,  clamped to 16 bits
 	      C1 = { 0, 240, 460, 392 },  C2 = { 0, 0, -208, -220 }
 	  A header byte of 0xEE is a raw frame of 61 bytes: new h1, h2 (big-endian 16-bit) then 28 raw BE16
 	  samples (none occur in HP2's data; decoded for completeness, as ffmpeg's ADPCM_EA_R1 does).
-	  The decoder state starts at h1 = h2 = 0 (retail: CEAXABLKDec::SetState({0,0})).
+	  The decoder state starts at h1 = h2 = 0, as coda's CEAXABLKDec::SetState({0,0}) sets it.
 
 	Engine-independent on purpose (plain <stdint.h> C++): the driver streams through it in chunks and the
 	native unit test links it on its own.
@@ -48,7 +47,7 @@ struct FEAXADecoder
 	// Point the decoder at a byte run and reset it to the start.
 	void Init( const uint8_t* InSrc, int32_t InSrcBytes, int32_t InTotalSamples );
 
-	// Back to the first sample (a looping sound re-feeds the same data, as retail did).
+	// Back to the first sample (a looping sound re-feeds the same data).
 	void Rewind();
 
 	// Decode up to MaxSamples mono samples into Out. Returns the number written; 0 = end of the sound.

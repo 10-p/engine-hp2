@@ -400,8 +400,8 @@ class ENGINE_API USkeletalMesh : public ULodMesh
 	int BoneIndex( FName BoneName ) const;
 	FName BoneName( int Index ) const;
 
-	// Public (was private): UnSkeletalMesh.cpp's cache wrapper FSkelCache names it as the template
-	// argument of its base class, which MSVC6 did not access-check and GCC/clang do.
+	// Public: UnSkeletalMesh.cpp's cache wrapper FSkelCache names it as the template argument of its
+	// base class, which GCC/clang access-check (MSVC6 does not).
 	struct CFSkelHeader;
 
 private:

@@ -25,8 +25,8 @@ void USoftwareRenderDevice::StaticConstructor()
 	new(GetClass(),TEXT("BilinearFiltering"),   RF_Public)UBoolProperty (CPP_PROPERTY(BilinearFiltering   ), TEXT("Options"), CPF_Config );
 	new(GetClass(),TEXT("FastTranslucency"),    RF_Public)UBoolProperty (CPP_PROPERTY(FastTranslucency    ), TEXT("Options"), CPF_Config );
 	new(GetClass(),TEXT("DetailBias"),		    RF_Public)UFloatProperty(CPP_PROPERTY(DetailBias          ), TEXT("Options"), CPF_Config );
-	// HP2 433: SoftDrv-local (the template declares it on Engine's URenderDevice). Default on, like the
-	// template's shipped ini; StaticConstructor runs on the class default object, before LoadConfig.
+	// SoftDrv-local config bool, on by default (StaticConstructor runs on the class default object, before
+	// LoadConfig).
 	new(GetClass(),TEXT("VolumetricLightingMeshes"),RF_Public)UBoolProperty(CPP_PROPERTY(VolumetricLightingMeshes), TEXT("Options"), CPF_Config );
 	VolumetricLightingMeshes = 1;
 
@@ -46,10 +46,9 @@ UBOOL USoftwareRenderDevice::Init( UViewport* InViewport, INT NewX, INT NewY, IN
 	// Driver flags.
 	SpanBased			= 1;
 	FullscreenOnly		= 0;
-	// ufront: fog maps used to be gated on GIsMMX, because volumetric fog existed only in the MMX
-	// kernels. The portable path now has it (LightPassPentiumFog + the fog merge passes in
-	// DrawSurf.cpp), so advertise it unconditionally -- URender only builds fog maps at all when
-	// the device claims support (UnRender.cpp, IsVolumetric).
+	// The portable path has volumetric fog too (LightPassPentiumFog and the fog merge passes in
+	// DrawSurf.cpp), so fog maps are advertised without MMX; URender builds fog maps only for a device
+	// that claims support.
 	SupportsFogMaps		= 1;
 	SupportsDistanceFog	= 0;
 	InitDrawSurf();

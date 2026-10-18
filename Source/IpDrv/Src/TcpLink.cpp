@@ -43,7 +43,7 @@ void ATcpLink::Destroy()
 
 static UBOOL SetNonBlocking( INT Socket )
 {
-	// ufront 2.33: WinSock has no fcntl; the switch is the socket API, not the compiler.
+	// WinSock has no fcntl: the switch is the socket API, not the compiler.
 	#if __BSD_SOCKETS__
 	INT pd_flags;
 	pd_flags = fcntl( Socket, F_GETFL, 0 );
@@ -72,8 +72,7 @@ void ATcpLink::execBindPort( FFrame& Stack, RESULT_DECL )
 		{
 			Socket = socket( AF_INET, SOCK_STREAM, IPPROTO_TCP );
 			INT optval = 1;
-			// ufront 2.33: WinSock types optval as `const char*` where POSIX has `const void*`. The cast
-			// satisfies both — char* converts to void* implicitly, so no platform behaves differently.
+			// WinSock types optval as `const char*`, POSIX as `const void*`; the char* cast satisfies both.
 			setsockopt( Socket, SOL_SOCKET, SO_REUSEADDR, (const char*)&optval, sizeof(INT) );
 			if( GetSocket() != INVALID_SOCKET )
 			{
@@ -132,7 +131,7 @@ void ATcpLink::execIsConnected( FFrame& Stack, RESULT_DECL )
 		return;
 	}
 	
-	// ufront: RemoteSocket is INVALID_SOCKET until a client is accepted -- never FD_SET it then.
+	// RemoteSocket is INVALID_SOCKET until a client is accepted: never FD_SET it then.
 	if ( (LinkState == STATE_Listening) && HasSocket() && RemoteSocket != INVALID_SOCKET )
 	{
 		FD_ZERO( &SocketSet );
@@ -474,12 +473,9 @@ void ATcpLink::execOpen( FFrame& Stack, RESULT_DECL )
 		RemoteHost.sin_addr.s_addr = htonl(Addr.Addr);
 		Error = connect( GetSocket(), (SOCKADDR*) &RemoteHost, sizeof(RemoteHost) );
 		if ( Error == SOCKET_ERROR ) {
-			// ufront: a non-blocking connect() that is still in progress is not an error. WinSock says
-			// WSAEWOULDBLOCK; BSD sockets say EINPROGRESS -- and UnSocket.h maps WSAEWOULDBLOCK to EAGAIN (right
-			// for recv/recvfrom, where BSD says EAGAIN; the Dreamcast port changed it from EINPROGRESS, which
-			// was right only here). So accept both at the one call that answers EINPROGRESS: without this,
-			// every outbound TcpLink.Open (the server browser's master query, the HTTP news, IRC, mods) failed
-			// "An error occured while attempting to connect: 115" on Linux and Android (the web has no sockets at all).
+			// A non-blocking connect() still in progress is not an error: WinSock returns WSAEWOULDBLOCK,
+			// BSD sockets EINPROGRESS. UnSocket.h maps WSAEWOULDBLOCK to EAGAIN (what recv/recvfrom return),
+			// so BSD sockets accept both here.
 			INT ConnectError = WSAGetLastError();
 #if __BSD_SOCKETS__
 			if ( ConnectError != WSAEWOULDBLOCK && ConnectError != EINPROGRESS ) {

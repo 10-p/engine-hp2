@@ -122,8 +122,8 @@ struct FMMXPolyCSetup
 	Gouraud span rendering.
 ------------------------------------------------------------------------------*/
 
-// Set per DrawTriangles from RenDev->VolumetricLightingMeshes; lets mesh fog be turned off
-// independently of surface fog, since it is the expensive half on a weak CPU.
+// Set per DrawTriangles (VolumetricLightingMeshes is one of its conditions), so mesh fog, the costlier
+// half, can be turned off independently of surface fog.
 static UBOOL GMeshFog=0;
 static UBOOL GDontMaskThePolygon=0;
 static UBOOL GTranslucent=0;
@@ -3716,7 +3716,7 @@ guardSlow(FlashTriangle EdgeSetup);
 			MMX15Load(EdgeSetupPtr->LightRGB, R, G, B);
 
 			FLOAT DFR     = RDY * (TA->Fog.X - TB->Fog.X);
-			FLOAT DFG     = RDY * (TA->Fog.Y - TB->Fog.Y); // HP2 433: G/B were swapped in v400
+			FLOAT DFG     = RDY * (TA->Fog.Y - TB->Fog.Y); // Fog.Y is green, Fog.Z blue
 			FLOAT DFB     = RDY * (TA->Fog.Z - TB->Fog.Z);
 			MMX14Load(EdgeSetupPtr->DeltaFogRGB,DFR,DFG,DFB);
 
@@ -4135,14 +4135,9 @@ void USoftwareRenderDevice::PentiumFlashTriangle
 	//
 	// Volumetric fog on meshes.
 	//
-	// FLightManager::Fog() already fills FTransSample::Fog per vertex (UnMeshRn.cpp), and the MMX
-	// path interpolated it -- TriVertexType::Fog, TriDeltaFog and FPolyCSetup::FogRGB all exist for
-	// exactly this. The Pentium twin never grew it, so actors have been unfogged on every non-x86
-	// build. Same treatment as Light: scale into display units, then interpolate.
-	//
-	// Clamped against what the light already claimed (GFloatRange minus this vertex's light) so
-	// light + fog can never exceed GMaxColor. Both interpolate linearly, so bounding the sum at the
-	// vertices bounds it across the whole triangle and the span loops need no extra clamp.
+	// FTransSample::Fog holds the per-vertex fog (FLightManager::Fog); like Light it is scaled into
+	// display units, then interpolated. Each vertex's fog is clamped to GFloatRange minus its light, so
+	// light + fog stays within GMaxColor across the triangle and the span loops need no extra clamp.
 	//
 	if( GMeshFog )
 	{
@@ -4202,14 +4197,8 @@ void USoftwareRenderDevice::PentiumFlashTriangle
 				FLOAT U       = MipUScale * PB->U + YAdj * DU;
 				FLOAT V       = MipVScale * PB->V + YAdj * DV;
 
-				// X/Y/Z are R/G/B. The upstream UE1 source declares these as DR, DB, DG and pairs
-				// each with its OWN channel; porting FPlane .R/.G/.B to FVector .X/.Y/.Z substituted
-				// positionally instead, so DB took .Y (green) and DG took .Z (blue) while the
-				// assignments below still stepped G by DG and B by DB. Green therefore interpolated
-				// down each edge using blue's gradient and vice versa -- invisible under white light,
-				// but wrong colours in horizontal streaks under coloured light, since the error
-				// accumulates once per scanline. The MMX path a few hundred lines up got this right,
-				// which is why it only ever showed at ASM=0.
+				// X/Y/Z are R/G/B: DG comes from Light.Y and DB from Light.Z, each stepping its own
+				// channel below.
 				FLOAT DR      = RDY * (TA->Light.X - TB->Light.X);
 				FLOAT DG      = RDY * (TA->Light.Y - TB->Light.Y);
 				FLOAT DB      = RDY * (TA->Light.Z - TB->Light.Z);
@@ -4390,9 +4379,8 @@ void USoftwareRenderDevice::PentiumFlashTriangle
 	GPolyC.DG  = dGdX;
 	GPolyC.DB  = dBdX;
 
-	// Fog steps per pixel exactly like the light. Scaled into each depth's display units by the
-	// same factors FlashR/G/B use for the global screen fog just above -- per-vertex fog and screen
-	// flash fog are the same 0..1 colour, they just differ in where they come from.
+	// Fog steps per pixel like the light, scaled into each depth's display units by the factors
+	// FlashR/G/B use for the screen fog above (both are 0..1 colours).
 	FLOAT FogScaleR, FogScaleG, FogScaleB;
 	if( Viewport->ColorBytes==4 )
 	{
@@ -4489,18 +4477,15 @@ INT USoftwareRenderDevice::MaxVertices()
 	return 256;
 }
 
-// HP2 433: the URenderDevice face draws triangles, not polygons. Three input shapes (Render/Src
-// UnMeshRn.cpp, UnParticleRn.cpp, UnRender.cpp decals, and URenderDevice::DrawGouraudPolygon):
-// indexed tri-list / non-indexed tri-list / Indices==NULL && NumIndices==NumPts tri fan.
+// The 433 render face draws triangles: an indexed tri-list, a non-indexed tri-list, or a fan
+// (Indices==NULL && NumIndices==NumPts, as URenderDevice::DrawGouraudPolygon sends).
 void USoftwareRenderDevice::DrawTriangles( FSceneNode* Frame, FTextureInfo& Texture, FTransTexture** Pts, INT NumPts, _WORD* Indices, INT NumIndices, DWORD PolyFlags, FSpanBuffer* SpanBuffer )
 {
 	guard(USoftwareRenderDevice::DrawTriangles);
 
-	// Mesh fog rides on the same data URender already computes (FLightManager::Fog fills
-	// FTransSample::Fog per vertex), so it costs nothing to gather -- but interpolating and adding
-	// it is per-pixel work, hence its own switch separate from VolumetricLighting.
-	// HP2 433: gated on PF_RenderFog too -- HP2 particles (UnParticleRn.cpp) never write FTransSample::Fog
-	// (uninitialised GMem verts); meshes in a fog zone get PF_RenderFog from FLightManager (UnLight.cpp).
+	// Mesh fog is per-pixel work, so it has its own switch beside VolumetricLighting. Only PF_RenderFog
+	// draws carry fog: FLightManager sets it for meshes in a fog zone, while particles (UnParticleRn.cpp)
+	// leave FTransSample::Fog unwritten.
 	GMeshFog = VolumetricLighting && VolumetricLightingMeshes && SupportsFogMaps && (PolyFlags & PF_RenderFog);
 
 	// Screen Y size not supported if bigger than our setup buffer size:

@@ -187,11 +187,9 @@ FURL::FURL( FURL* Base, const TCHAR* TextURL, ETravelType Type )
 		} while( s );
 	}
 
-	// Handle pure filenames. HP2 port: where PATH_SEPARATOR is '/' (every GCC/clang target), a relative
-	// "../" or absolute "/x" (never "//host") path is a filename too. HP2's LOADGAME and -LOAD= hand
-	// "<SaveSlotPath>/SaveN.usa" = "../Save/Slot1/Save0.usa" to ServerTravel; parsed as URL text below it
-	// becomes map ".." + portal "Save" + a second '/' => Valid=0, so the Load menu failed with InvalidUrl.
-	// On Windows the '\' separator made it a plain map name. No network URL starts with "../" or one '/'.
+	// Handle pure filenames. Where PATH_SEPARATOR is '/' (every GCC/clang target), a relative "../" or
+	// absolute "/x" (never "//host") path is a filename too: LOADGAME and -LOAD= pass "../Save/Slot1/Save0.usa",
+	// which the URL parsing below rejects. No network URL starts with "../" or a single '/'.
 	UBOOL FarHost=0;
 	UBOOL FarMap=0;
 	if

@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# mkrun-hp2.sh -- assemble a private HP2 run tree for a native build (PLAN Phase B step 7).
+# mkrun-hp2.sh -- assemble a private HP2 run tree for a native (or --windows) build, with run-hp2.sh as run.sh.
 #
-#   tools/dev/mkrun-hp2.sh <build-dir> <run-dir> [--windows]
+#   tools/dev/mkrun-hp2.sh <build-dir> <run-dir> [--windows]      (game content: $HP2_ASSETS_DIR, default Assets/)
 #
-# Assets/ (the retail tree, never in git) is only ever READ: big read-only trees are symlinked, System/ is
-# a real copy because the engine writes Game.ini/User.ini/Game.log into it. Retail Win32 binaries (*.dll
-# *.exe *.bat) are NOT copied -- on Windows a retail OpenAL32.dll/Game.exe would shadow ours (M6-2).
+# The game content (never in git) is only read: big read-only trees are symlinked, System/ is a real copy
+# because the engine writes Game.ini/User.ini/Game.log into it. The retail Win32 binaries (*.dll *.exe *.bat)
+# are not copied: on Windows a retail OpenAL32.dll/Game.exe would shadow ours.
 #
-# NOTE: --remove-destination on every copy is load-bearing. Without it a plain `cp` onto a symlink
-# FOLLOWS the link and writes straight through into Assets/. Do not drop it.
+# --remove-destination on every copy is load-bearing: a plain `cp` onto a symlink follows the link and
+# writes straight through into the content tree.
 set -eu
 
 BUILD="${1:?usage: mkrun-hp2.sh <build-dir> <run-dir> [--windows]}"

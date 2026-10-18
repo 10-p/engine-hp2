@@ -1,8 +1,8 @@
 #=============================================================================
-# SoftDrv - HP2's own software render device (CPU rasterizer, the 433 URenderDevice face: DrawTriangles /
-# MaxVertices / DrawComplexSurface with PolyFlags+cAlpha). Its x86 __asm rasterization carries portable
-# #if !ASM paths, so it builds with -DASM=0 the way the template's SoftDrv does. Pure software (no
-# glad/SDL GL), so it coexists with XOpenGLDrv on web. Selected via -SOFTWARERENDERER.
+# SoftDrv - the v400 software renderer (CPU rasterizer) with HP2's 433 render face (DrawTriangles /
+# MaxVertices / DrawComplexSurface with PolyFlags+cAlpha). Built with -DASM=0: the portable #if !ASM paths
+# replace its x86 __asm rasterization. Pure software (no GL), so it links beside the GL devices.
+# Selected via -SOFTWARERENDERER.
 #=============================================================================
 
 project(SoftDrv CXX)
@@ -32,7 +32,7 @@ target_link_libraries(${PROJECT_NAME} Render Engine Core)
 # ASM=0: the portable (non-x86) rasterization paths + the portable no-MMX path.
 target_compile_definitions(${PROJECT_NAME} PRIVATE SOFTDRV_EXPORTS UPACKAGE_NAME=${PROJECT_NAME} ASM=0)
 
-# The SizeX/SizeY-indexed scratch tables are STATIC arrays bounded by this (the template's 2.19f/2.71
-# finding: the web canvas is the display's DEVICE pixel size, so the wasm preset raises it to 8192).
+# The SizeX/SizeY-indexed scratch tables are static arrays bounded by this; the wasm preset raises it to
+# 8192 because the web canvas is the display's device-pixel size.
 set(SOFTDRV_MAX_SCREEN "4096" CACHE STRING "Max software-renderer viewport dimension (static table bound)")
 target_compile_definitions(${PROJECT_NAME} PRIVATE SOFTDRV_MAX_SCREEN=${SOFTDRV_MAX_SCREEN})

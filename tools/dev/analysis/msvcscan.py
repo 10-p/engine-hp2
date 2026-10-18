@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# msvcscan.py FILE... -- run msvcread.check on every for-init declaration (and for_array/for_count) in each file
+# and print those whose variable is read after the loop.
 import sys, re
 sys.path.insert(0, __import__('os').path.dirname(__import__('os').path.abspath(__file__)))
 from msvcread import tokens, match, check

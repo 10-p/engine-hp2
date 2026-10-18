@@ -187,7 +187,6 @@ enum EVectorFlags
 
 //
 // Floating point vector.
-// Playstation2 vectors are 16 bytes.
 //
 
 

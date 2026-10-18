@@ -1,16 +1,12 @@
 /*=============================================================================
-	WebRTCDrv.cpp: WebRTC network driver for UT99 (Emscripten/browser multiplayer).
-	ufront step 2.7d.
+	WebRTCDrv.cpp: WebRTC network driver (Emscripten/browser networking).
 
-	Engine-LOCAL (engines are independent — no shared code). Modeled on this repo's
-	IpDrv `UTcpNetDriver`/`UTcpipConnection` (the v400 UNetDriver/UNetConnection
-	reference) with the socket transport replaced by the glue `webrtc_*` C-ABI
+	Shaped like IpDrv's `UTcpNetDriver`/`UTcpipConnection`
+	with the socket transport replaced by the glue `webrtc_*` C-ABI
 	(satisfied by the baked vendor/glue/webrtc-shim.js -> the host-injected
-	Module.UE.net). Ported from engine-unreal1's WebRTCDrv (UE1 v200) and adapted to
-	UT99 v400: v400 splits Init into InitConnect/InitListen, ticks via TickDispatch,
-	sends via the connection's LowLevelSend(Data,Count) (base packs OutData), and
-	receives via the driver calling Connection->ReceivedRawPacket(Data,Size); the
-	client list is ClientConnections (not v200's Connections).
+	Module.UE.net). InitConnect/InitListen open the link, TickDispatch accepts and
+	receives (Connection->ReceivedRawPacket), and the connection's LowLevelSend
+	sends one packet; the clients are ClientConnections.
 =============================================================================*/
 
 #include "Engine.h"
@@ -29,11 +25,9 @@ IMPLEMENT_PACKAGE(WebRTCDrv);
 #define WEBRTC_STATE_OPEN       2
 #define WEBRTC_STATE_CLOSED     3
 
-// UT99's peer-ID namespace prefix. MUST match targets/ut99/target.json network.peerPrefix (the glue
-// registers the listen peer as "<prefix>-<room>-srv"). Engine-specific by design — engine-ut99 only ever
-// hosts UnrealTournament, exactly as engine-ut2004 hardcodes "ut2k4" (DATA-not-code governs the generic
-// frontend/glue, not the per-game engine repos).
-#define WEBRTC_PEER_PREFIX      "hp2"   // was targets/hp2 network.peerPrefix; the targets are now hp2-proto / hp2-retail-exp (P2P is off: network.multiplayer false)
+// Peer-ID namespace prefix. A client dials "<prefix>-<room>-srv", the id the glue registers a listen
+// server under from the frontend target's network.peerPrefix; this engine hosts HP2 under "hp2".
+#define WEBRTC_PEER_PREFIX      "hp2"   // the frontend keeps P2P off for HP2 (network.multiplayer false)
 
 // Packet sizing (parity with UTcpipConnection's UDP model).
 #define WEBRTC_MAX_PACKET       (512)
@@ -124,14 +118,12 @@ class DLL_EXPORT_CLASS UWebRTCConnection : public UNetConnection
 		unguard;
 	}
 
-	// UNetConnection interface (v400: send one packet via LowLevelSend; base packs OutData -> here).
+	// UNetConnection interface: the base packs OutData and sends one packet through LowLevelSend.
 	void LowLevelSend( void* Data, INT Count )
 	{
 		guard(UWebRTCConnection::LowLevelSend);
-		// connId 0 is VALID — it's the client's own outbound pipe (the server-side accepted connections start
-		// at 1). Guard on Count only (like unreal1's FlushNet guards on OutNum). A `> 0` test here silently
-		// muted every client->server packet (the client's Hello never left), so the server never WELCOMEd and
-		// the guest never joined — while server->client (connId >= 1) worked, giving a one-way link.
+		// connId 0 is valid: it is the client's own outbound pipe (server-side accepted connections start at
+		// 1), so the id test is `>= 0`; a `> 0` test would mute every client->server packet.
 		if( WebRTCConnId >= 0 && Count > 0 )
 			webrtc_send( WebRTCConnId, Data, Count );
 		unguard;
@@ -164,9 +156,9 @@ IMPLEMENT_CLASS(UWebRTCConnection);
 -----------------------------------------------------------------------------*/
 class UWebRTCNetDriver;
 
-// ★ THE CLIENT HAS EXACTLY ONE TRANSPORT SLOT. The glue hands every client connect the same conn id (0),
-// so only one client driver can own the wire at a time. Tracked here so a second InitConnect can take the
-// slot cleanly instead of silently sharing it. Server-side ids are per peer and unaffected.
+// The client has exactly one transport slot: the glue hands every client connect the same conn id (0), so
+// only one client driver owns the wire at a time, and a second InitConnect takes the slot over. Server-side
+// ids are per peer and unaffected.
 static UWebRTCNetDriver* GClientDriver = NULL;
 
 class DLL_EXPORT_CLASS UWebRTCNetDriver : public UNetDriver
@@ -177,9 +169,9 @@ class DLL_EXPORT_CLASS UWebRTCNetDriver : public UNetDriver
 	FString	RoomName;
 	FString	ServerName;      // ?ServerName= for browser discovery
 	UBOOL	bIsListenServer;
-	// Set when a NEWER client driver has taken the one client transport slot from us.
+	// Set when a newer client driver has taken the one client transport slot from us.
 	UBOOL	bDetached;
-	// Pipes the level told us to IGNORE (not refuse) — re-offered on a later tick. See TickDispatch().
+	// Pipes the level answered ACCEPTC_Ignore (not a refusal); re-offered on a later tick.
 	TArray<INT>	ParkedAccepts;
 
 	// Constructor.
@@ -189,7 +181,7 @@ class DLL_EXPORT_CLASS UWebRTCNetDriver : public UNetDriver
 	// Generous timeouts: the WebRTC handshake (PeerJS signaling + ICE) and Emscripten sync-XHR map downloads
 	// take far longer than a UDP connect, and the engine's sleeps stop while a package streams, so
 	// LastReceiveTime goes stale. Prevent an immediate disconnect on the first post-download tick (ICE
-	// monitors the real link underneath). Mirrors engine-ut2004's WebRTC timeouts.
+	// monitors the real link underneath).
 	void SetWebRTCTimeouts()
 	{
 		ConnectionTimeout     = 300.f;
@@ -207,10 +199,9 @@ class DLL_EXPORT_CLASS UWebRTCNetDriver : public UNetDriver
 		// Client. ConnectURL.Host carries the room (HostID); the server registered as "<prefix>-<room>-srv".
 		bIsListenServer = 0;
 		RoomName = ConnectURL.Host;
-		// ★ ufront 2.38 — a join FROM THE SERVER BROWSER arrives as a dotted address, not a room: both
-		// stock UE1 browsers can only carry an IPv4 string through to the travel URL. The synthetic LAN
-		// handed that address out, so it can hand the room back. A real-looking address that is not one
-		// of ours translates to "" and is left alone.
+		// A join through LAN discovery arrives as a dotted address, not a room (UE1 discovery carries only an
+		// IPv4 string into the travel URL). The synthetic LAN handed that address out, so it hands the room
+		// back; an address that is not one of ours translates to "" and is left alone.
 		{
 			FString FromBrowser = WebRTCLan_RoomForHost( *RoomName );
 			if( FromBrowser.Len() )
@@ -224,17 +215,16 @@ class DLL_EXPORT_CLASS UWebRTCNetDriver : public UNetDriver
 			RoomName = TEXT("default");
 		FString ServerPeerId = FString::Printf( TEXT("%s-%s-srv"), TEXT(WEBRTC_PEER_PREFIX), *RoomName );
 		debugf( NAME_DevNet, TEXT("[WebRTC] InitConnect: room='%s' -> peer '%s'"), *RoomName, *ServerPeerId );
-		// ★ TAKE THE ONE CLIENT SLOT. A server map change calls InitConnect again while the OLD level is
-		// still ticking and flushing — the engine keeps you playing until the new level has loaded. On UDP
-		// the two connections have different local ports and coexist; here they would share glue conn 0, so
-		// the departing level's driver goes on writing into the NEW session.
+		// Take the one client slot. A server map change calls InitConnect again while the old level still
+		// ticks and flushes; on UDP the two connections have different local ports, here they would share
+		// glue conn 0 and the departing level's driver would write into the new session.
 		bDetached = 0;
 		if( GClientDriver && GClientDriver!=this && GClientDriver->GetServerConnection() )
 		{
 			debugf( NAME_DevNet, TEXT("[WebRTC] InitConnect: detaching the previous client connection (one transport slot)") );
-			// ⚠ DETACHED, NOT CLOSED — marking it USOCK_Closed reads as "connection lost" and aborts the travel.
+			// Detached, not closed: USOCK_Closed reads as "connection lost" and aborts the travel.
 			GClientDriver->GetServerConnection()->WebRTCConnId = -1;
-			// …and its LowLevelDestroy must NOT call webrtc_destroy(): that transport is now OURS.
+			// ...and its LowLevelDestroy must not call webrtc_destroy(): that transport is now ours.
 			GClientDriver->bDetached = 1;
 		}
 		GClientDriver = this;
@@ -259,27 +249,17 @@ class DLL_EXPORT_CLASS UWebRTCNetDriver : public UNetDriver
 		RoomName   = ListenURL.GetOption( TEXT("room="), TEXT("default") );
 		ServerName = ListenURL.GetOption( TEXT("ServerName="), TEXT("") );
 
-		// ★★ ufront 2.40 — WHEN THE URL DOES NOT SAY, ASK OUR OWN CONFIG. A room now holds SEVERAL
-		// servers, and the transport identifies one as `<room>_<slug of the server name>` — so the name is
-		// no longer decoration, it is half of the address other players dial.
-		//
-		// The stock in-game LISTEN button sends a travel URL with neither `room=` nor `ServerName=`, so
-		// without this the host would register under a bare room and every menu-hosted game would collide.
-		// The value is right here: `[Engine.GameReplicationInfo] ServerName` is a `globalconfig`, so
-		// GConfig has held it since appInit — from the shipped ini, from the launcher's `-ini:` seed, or
-		// from a rename the player made in-game and saved. GameReplicationInfo itself does NOT exist yet at
-		// this point (the level is not up), which is why this reads the CONFIG rather than the object the
-		// status push in TickDispatch uses.
-		//
-		// ⚠ THE ENGINE IS THE SOURCE OF TRUTH FOR THIS, NOT THE LAUNCHER. The launcher seeds the ini and
-		// reads it back to show in its panel; asking it at listen time would be a second copy that goes
-		// stale the moment the name changes in-game.
+		// When the URL names no server, read the config: the transport identifies a server in a room as
+		// `<room>_<slug of the server name>`, so without a name every host in the room would collide.
+		// `[Engine.GameReplicationInfo] ServerName` is a `globalconfig`, so GConfig holds it from appInit on
+		// (the shipped ini, the launcher's `-ini:` seed or a saved rename); the GameReplicationInfo object the
+		// status push in TickDispatch uses does not exist yet (the level is not up).
 		if( !ServerName.Len() )
 			GConfig->GetString( TEXT("Engine.GameReplicationInfo"), TEXT("ServerName"), ServerName );
 
 		debugf( NAME_DevNet, TEXT("[WebRTC] InitListen: room='%s' name='%s'"), *RoomName, *ServerName );
-		// ufront 2.38 — tell the synthetic LAN which room is OURS, so a host browsing its own server
-		// list does not find itself and try to connect a peer to itself.
+		// Tell the synthetic LAN which room is ours, so a host browsing its own server list does not find
+		// itself and try to connect a peer to itself.
 		WebRTCLan_SetLocalRoom( *RoomName );
 		// `room/serverName` — the transport slugs the name and builds `<prefix>-<room>_<slug>-srv`. The
 		// separator is a `/` because a server name may contain anything, including the `_` the peer id uses.
@@ -298,19 +278,11 @@ class DLL_EXPORT_CLASS UWebRTCNetDriver : public UNetDriver
 
 		// Server: accept newly-opened peer connections.
 		//
-		// ★ ACCEPTC_Ignore IS NOT A REFUSAL. ULevel::NotifyAcceptingConnection (UnLevel.cpp) returns it
-		// for every incoming connection while a server travel is pending (`NextURL` set) — i.e. for the
-		// whole ServerTravelPause window. On UDP that means "drop this connect packet on the floor":
-		// nothing is torn down, the client just keeps retrying and gets in once the new level listens.
-		//
-		// Our transport is a PIPE, and closing it is a loud, visible event: the client's glue sees the
-		// data channel die, tears the peer down, reconnects, is ignored again, and the two livelock.
-		// Measured on the sibling v200 engine during a coop travel: 306 connect/close rounds inside a
-		// ~6s pause, after which the guest never rejoined at all.
-		//
-		// So park the pipe and re-offer it on a later tick, leaving the transport untouched — the
-		// pipe-oriented equivalent of dropping the packet. ⚠ Parked ids are re-offered BEFORE new
-		// arrivals, or a client that has been waiting loses its place to a newer one.
+		// ACCEPTC_Ignore is not a refusal: ULevel::NotifyAcceptingConnection returns it while a server travel
+		// is pending (`NextURL` set). On UDP the connect packet is dropped and the client retries; closing
+		// this pipe instead makes the client's glue tear the peer down and reconnect, and the two livelock.
+		// So the pipe is parked and re-offered on a later tick, parked ids before new arrivals so a waiting
+		// client keeps its place.
 		TArray<INT> Incoming = ParkedAccepts;
 		ParkedAccepts.Empty();
 		INT NewConnId;
@@ -342,8 +314,8 @@ class DLL_EXPORT_CLASS UWebRTCNetDriver : public UNetDriver
 		}
 
 		// Poll receive on the client's server connection + all server-side client connections.
-		// A DETACHED connection (WebRTCConnId < 0) no longer owns the slot — asking the glue about a connId
-		// we gave away would report CLOSED and the departing level would be called "connection lost".
+		// A detached connection (WebRTCConnId < 0) no longer owns the slot — asking the glue about a connId
+		// we gave away would report it closed and the departing level would be called "connection lost".
 		if( GetServerConnection() && GetServerConnection()->WebRTCConnId >= 0 )
 		{
 			UWebRTCConnection* SC = GetServerConnection();
@@ -362,11 +334,8 @@ class DLL_EXPORT_CLASS UWebRTCNetDriver : public UNetDriver
 		for( INT i=0; i<ClientConnections.Num(); i++ )
 		{
 			UWebRTCConnection* Conn = (UWebRTCConnection*)ClientConnections(i);
-			// ★ ufront 2.38 — SAY SO. Dropping a peer used to be entirely silent on this engine (only
-			// Unreal 1 v200 logs "Destroying … because connection closed"), so "the host noticed the
-			// guest left" had no evidence anywhere in a log — the glue's reap line was the last word on
-			// the subject and it only proves the TRANSPORT gave up, not that the engine acted. Matches
-			// what engine-ut2004's driver already prints, so one milestone covers every target.
+			// Log a peer the remote closed: the glue's own reap line shows only that the transport gave up,
+			// not that the engine acted.
 			if( webrtc_get_connection_state( Conn->WebRTCConnId ) == WEBRTC_STATE_CLOSED && Conn->State != USOCK_Closed )
 			{
 				debugf( NAME_DevNet, TEXT("[WebRTC] TickDispatch: Client connId=%i connection CLOSED by remote"), Conn->WebRTCConnId );
@@ -383,20 +352,11 @@ class DLL_EXPORT_CLASS UWebRTCNetDriver : public UNetDriver
 #ifdef __EMSCRIPTEN__
 		// Listen server: publish current status for browser discovery (~1s throttle).
 		//
-		// ★ ufront 2.38 — this used to push `(Name, RoomName, 0, 0, "")`: it advertised the ROOM as the
-		// MAP and hard-coded zero players, with the original author's own comment admitting "Minimal for
-		// now". Nothing ever noticed, because until 2.38 no UE1 client could see a server list at all —
-		// the payload had no reader. Now it has one (the synthetic LAN responder feeds these fields
-		// straight into the stock beacon + \status\ replies), so a wrong map here is a wrong map in the
-		// player's server browser.
-		//
-		// ⚠ Player count is derived from the TRANSPORT, not from the GameInfo: UE1's native AGameInfo
-		// does not export NumPlayers on every engine in this family (Unreal 1 v200 keeps it script-side),
-		// and ClientConnections + the local listen player is both universally available and the number a
-		// browser actually wants — how many people are in there right now.
+		// The synthetic LAN feeds these fields into its beacon and \info\ replies. Players counts the
+		// transport's client connections plus the listen host: how many are connected right now.
 		if( bIsListenServer )
 		{
-			static FTime LastPush;               // HP2 433: appSeconds() returns FTime
+			static FTime LastPush;               // appSeconds() returns FTime
 			FTime Now = appSeconds();
 			if( Now - LastPush > 1.f )
 			{
@@ -415,8 +375,8 @@ class DLL_EXPORT_CLASS UWebRTCNetDriver : public UNetDriver
 					{
 						if( GI->MaxPlayers > 0 )
 							MaxPl = GI->MaxPlayers;
-						// GameName is the human label ("DeathMatch"); the class name is the fallback so the
-						// browser row is never blank.
+						// GameName is the readable label; the class name is the fallback so the browser row is
+						// never blank.
 						if( GI->GameName.Len() )
 							GType = GI->GameName;
 						else
@@ -427,9 +387,8 @@ class DLL_EXPORT_CLASS UWebRTCNetDriver : public UNetDriver
 				}
 				if( !SName.Len() )
 					SName = TEXT("HP2 Server");
-				// ⚠ appToAnsi() returns ONE shared static buffer, so three calls in a single expression
-				// would clobber each other the moment this engine is built UNICODE. Copy each into its
-				// own frame buffer.
+				// In a UNICODE build appToAnsi() returns a shared static buffer, so each string is copied
+				// into its own buffer.
 				ANSICHAR NameBuf[128], MapBuf[128], GTypeBuf[128];
 				ToAnsiBuf( *SName, NameBuf, ARRAY_COUNT(NameBuf) );
 				ToAnsiBuf( *MapName, MapBuf, ARRAY_COUNT(MapBuf) );
@@ -457,11 +416,9 @@ class DLL_EXPORT_CLASS UWebRTCNetDriver : public UNetDriver
 		ParkedAccepts.Empty();
 		if( GClientDriver==this )
 			GClientDriver = NULL;
-		// ★★ A DEPARTING DRIVER MUST NOT DESTROY THE ARRIVING DRIVER'S TRANSPORT. webrtc_destroy() is
-		// GLOBAL, and on a CLIENT the two drivers overlap: InitConnect for the pending level runs FIRST and
-		// the old level's driver is destroyed LATER, inside LoadMap. Measured on the sibling v200 engine:
-		// the guest loaded the new map and then sat on "CONNECTING…" forever, and only a page reload
-		// cleared it. The host is safe — there the old driver dies BEFORE InitListen.
+		// A departing driver must not destroy the arriving driver's transport. webrtc_destroy() is global,
+		// and on a client the two drivers overlap: InitConnect for the pending level runs first and the old
+		// level's driver is destroyed later, inside LoadMap. On a host the old driver dies before InitListen.
 		if( !bDetached )
 			webrtc_destroy();
 		unguard;

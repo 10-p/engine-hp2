@@ -11,9 +11,7 @@ Revision history:
 #endif
 
 // Socket API.
-// ufront 2.33: keyed on the PLATFORM, not on the compiler. Under `_MSC_VER` a MinGW build took the BSD
-// branch and failed on <sys/socket.h>, which MinGW does not ship — Windows is WinSock regardless of which
-// compiler produced the binary.
+// Keyed on the platform, not the compiler: Windows is WinSock under MSVC and MinGW alike.
 #ifdef PLATFORM_WIN32
 	#define __WINSOCK__ 1
 	#define SOCKET_API TEXT("WinSock")
@@ -27,9 +25,7 @@ Revision history:
 	#include <windows.h>
 	#include <winsock.h>
 	#include <conio.h>
-	// ufront 2.33: WinSock's own headers stop at `int` for address lengths, but ws2tcpip.h supplies the
-	// standard `socklen_t` spelling — one include here instead of an #if at every getsockname/accept/
-	// recvfrom call site.
+	// ws2tcpip.h supplies `socklen_t`, so the getsockname/accept/recvfrom call sites need no #if.
 	#include <ws2tcpip.h>
 #endif
 
@@ -117,9 +113,7 @@ public:
 		appStrcpy( HostName, InHostName );
 		*Error = 0;
 
-// ufront 2.33: these were `#if _MSC_VER` / `#if __GNUG__` — i.e. the COMPILER standing in for the
-// platform. That held while GCC only ever meant POSIX; under MinGW it is false, and the engine tried to
-// build the pthread resolver against Win32 headers.
+// Keyed on the platform: a MinGW build is GCC but resolves with a Win32 thread.
 #ifdef PLATFORM_WIN32
 		HANDLE hThread = CreateThread( NULL, 0, ResolveThreadEntry, this, 0, &ThreadId );
 		check(hThread);

@@ -1,3 +1,6 @@
+# xadec.py <file.uax>... -- EA-XA v2 reference decoder; for up to 5 XA sounds with lipsync data (flags & 128) per
+# file, correlates the stored lipsync bytes with the decoded PCM's peak per 20 ms. Imports a `uax` module (parse,
+# sounds, ci) from outside this repo.
 import sys,struct,glob
 sys.path.insert(0,'/tmp/claude-1000/-home-ion-hp2-ufrontend/12487dd3-9ca1-402a-8034-cf740183f095/scratchpad')
 from uax import *

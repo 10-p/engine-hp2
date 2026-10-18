@@ -587,8 +587,8 @@ bool ULevel::LoadPersistentActors( const FString& MapName )
 			// 
 			// *********
 			// Block 3.3i ) Load the Persistence Properties
-			// ufront: resync to the size the writer recorded, so a property block the reader did not consume
-			// exactly (a class that changed shape) cannot shift every following actor. Retail trusted the parse.
+			// Resync to the size the writer recorded, so a property block the reader did not consume exactly
+			// (a class that changed shape) cannot shift every following actor.
 			INT iPropStart = pActAr->Tell();
 			pAct->SerializePersistence( *pActAr );
 			IF_TRUE_MSG_AND_BREAK(pActAr->GetError(),TEXT("ULevelBase::LoadPersistentActors ERROR: Loading tagged properties!") ) 
@@ -1238,11 +1238,9 @@ void ULevel::NotifyReceivedText( UNetConnection* Connection, const TCHAR* Text )
 		else if( ParseCommand(&Text,TEXT("LOGIN")) )
 		{
 			// Admit or deny the player here.
-			// ufront 2.80: the retail test, precedence and all. Epic wrote `!CR(Challenge)==Response`, which
-			// is (!CR)==Response, and BOTH retail Engine.dlls compile exactly that (v400 and v436: sete on
-			// CR==0, cmp with Response, je FAILURE): any non-zero response is admitted. The Dreamcast port
-			// "fixed" it to a real equality test, refusing any client whose response differs from ours --
-			// kept retail's, because what a server admits is what the clients of that era were built for.
+			// Epic's retail test, precedence and all: `!CR(Challenge)==Response` is (!CR)==Response, so any
+			// non-zero response is admitted. The parentheses only spell that out; a real equality test would
+			// refuse clients the retail engine admits.
 			INT Response=0;
 			if
 			(	!Parse(Text,TEXT("RESPONSE="),Response)

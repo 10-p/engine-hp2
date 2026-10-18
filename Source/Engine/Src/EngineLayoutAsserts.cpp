@@ -1,18 +1,19 @@
-// GENERATED from Assets/System/{Core,Engine}.u by emit_asserts.py -- do not edit by hand.
+// GENERATED from Assets/System/{Core,Engine}.u by tools/dev/layout/emit_asserts.py -- do not edit by hand,
+// except this preamble and the -Winvalid-offsetof block below.
 //
-// Compile-time layout check (template-engine.md §11.3): EngineClasses.h is frozen data that must match the
-// shipped, never-recompiled Engine.u byte for byte. Every non-bitfield member of every native class in it
-// must sit at the offset the loaded .u gives its property, and every class must have the script
-// PropertiesSize. The runtime [layout] size guard (Core UnClass.cpp) is necessary but NOT sufficient: a
-// derived class's members can move into the base's tail padding with both sizes unchanged (ABrush/AMover,
-// engine-ut99 step 2.32). These asserts see that. Offsets are target-independent (i386 SysV, wasm32 with
-// -fpack-struct=4, and MinGW's -mms-bitfields all reach the script layout — the latter without the
-// bColoredPad/bTwoWayPad pads), so a failure here is a real layout defect: fix the header, never this file.
+// Compile-time layout check: EngineClasses.h is frozen data that must match the shipped, never-recompiled
+// Engine.u byte for byte. Every non-bitfield member of every native class in it must sit at the offset the
+// loaded .u gives its property, and every class must have the script PropertiesSize. The runtime [layout]
+// size guard (Core UnClass.cpp) is necessary but not sufficient: a derived class's members can move into
+// the base's tail padding with both sizes unchanged (ABrush/AMover). These asserts see that. Offsets are
+// target-independent (i386 SysV, wasm32 with -fpack-struct=4, and MinGW's -mms-bitfields all reach the
+// script layout — the latter without the bColoredPad/bTwoWayPad pads), so a failure here is a real layout
+// defect: fix the header, never this file.
 //
-// Regenerate (only if EngineClasses.h or the shipped .u change): extract upkg.py, layout.py, hdr.py and
-// emit_asserts.py from template-engine.md Appendix A into one directory, then run there
-//   python3 emit_asserts.py <repo>/Source/Engine/Inc/EngineClasses.h <repo>/Assets/System/Core.u <repo>/Assets/System/Engine.u
-// and keep this preamble (the generator writes only the #include/#define lines and the asserts).
+// Regenerate after any change to EngineClasses.h or the shipped .u, from the repo root:
+//   python3 tools/dev/layout/emit_asserts.py Source/Engine/Inc/EngineClasses.h Assets/System/Core.u Assets/System/Engine.u
+// It writes EngineLayoutAsserts.cpp into the current directory with a short header of its own: move it here
+// and put this preamble and the -Winvalid-offsetof block back.
 #include "EnginePrivate.h"
 
 // offsetof on a non-standard-layout class (they all have vtables) is conditionally supported; GCC and

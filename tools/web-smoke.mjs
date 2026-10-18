@@ -1,10 +1,9 @@
 #!/usr/bin/env node
-// web-smoke.mjs — ufront 2.7b bare-loader smoke for engine-ut99.
-// Serves the just-built Launch.{js,wasm,data} over a minimal host page and drives it in headless Chromium
-// (Playwright, resolved from the ufront monorepo). Confirms the WASM module downloads, compiles,
-// instantiates, and main() runs (UT99 emits its early boot log). With only System/Default.ini preloaded
-// (no FetchFS yet — that's step 2.7c), the engine reaches package loading and stops there, BEFORE any WebGL
-// — so this smoke needs no GPU. Usage: node tools/web-smoke.mjs [artifactDir] [seconds]
+// web-smoke.mjs — bare-loader smoke test of the wasm build: serves SDLLaunch.{js,wasm,data} from a minimal host
+// page in headless Chromium (Playwright) and passes when the runtime initializes and the engine prints its boot log.
+// The page has only the preloaded System/Default.ini and DefUser.ini (no asset streaming), so the engine stops at
+// package loading, before any WebGL: no GPU needed.
+// Usage, from the repo root: node tools/web-smoke.mjs [artifactDir=build-wasm/SDLLaunch] [seconds=20]
 import { createServer } from 'node:http';
 import { readFileSync, existsSync, writeFileSync } from 'node:fs';
 import { extname, join, resolve } from 'node:path';
@@ -13,7 +12,7 @@ import { createRequire } from 'node:module';
 const DIR = resolve(process.argv[2] || 'build-wasm/SDLLaunch');
 const SECS = Number(process.argv[3] || 20);
 const PORT = 8792;
-// Playwright lives in the ufront monorepo, not this engine repo.
+// Playwright is resolved from the frontend's packages/e2e; this repo has no node_modules.
 const require = createRequire('/home/ion/ufrontend/packages/e2e/');
 const { chromium } = require('playwright');
 
@@ -22,7 +21,7 @@ if (!existsSync(join(DIR, 'SDLLaunch.js'))) {
     process.exit(2);
 }
 
-// Minimal Emscripten host page (bare, non-MODULARIZE global Module — as the monorepo host does).
+// Minimal host page: the build is not MODULARIZE, so the loader reads a global Module.
 writeFileSync(
     join(DIR, '__smoke.html'),
     `<!doctype html><meta charset=utf-8><canvas id=canvas width=320 height=240></canvas><script>
@@ -113,10 +112,8 @@ if (console_lines.some((l) => l.includes('PAGEERROR'))) {
     console.log('--- page errors ---');
     console.log(console_lines.filter((l) => l.includes('PAGEERROR')).join('\n'));
 }
-// 2.7b bar: module instantiated (runtime init) AND the engine EXECUTED. With only the boot config
-// preloaded and no FetchFS (that's 2.7c), the expected boundary is the engine reaching package resolution
-// and throwing PackageNotFound (Engine.u/Core.u aren't in the FS) — which the appThrowf console diagnostic
-// names. That is a PASS: it proves the toolchain end-to-end up to where FetchFS must supply the packages.
+// PASS = the runtime initialized and the engine ran. Without streamed packages the run ends at package resolution
+// (Core.u/Engine.u are not in the FS), which the [appThrowf] diagnostic names; that counts as a pass.
 const reachedPackageLoad = state.log.some((l) => /appThrowf|PackageNotFound|MissingIni|Package/i.test(l));
 const engineRan = !!state.engineLog || engineLog.length > 0 || reachedPackageLoad;
 const pass = state.rt && engineRan;

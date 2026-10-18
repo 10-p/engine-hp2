@@ -2274,27 +2274,13 @@ public:
     FColor BrushColor;
     INT PolyFlags;
     BITFIELD bColored:1 GCC_PACK(4);
-    // HAND EDIT (the only kind allowed in this generated header: layout pads; template-engine §10.4 L1).
-    // Epic's retail build (MSVC) stores this trailing lone bitfield as a full 4-byte DWORD. GCC's packed
-    // attribute (GCC_PACK) shrinks it to 1 byte, ending ABrush 3 bytes early -- which shifts AMover's
-    // byte cluster (MoverEncroachType/KeyNum/NumKeys/...) so the engine reads them from the wrong
-    // offsets. engine-ut99 measured it on v400 with the loaded Engine.u: script 608/611/613 vs C++
-    // 605/608/610, so NumKeys read 0 for a map that sets 8 and every multi-key mover ran exactly ONE leg
-    // and parked. HP2 433's Engine.u has the identical shape: script 776/779/781 vs C++ 773/776/778.
-    // Reserve the rest of the DWORD so sizeof(ABrush) matches the runtime layout.
-    //
-    // ⚠ NO SIZE CHECK CAN CATCH THIS, which is why it survived a guard built for exactly this class of
-    // bug. sizeof(AMover) matches the script layout either way (HP2: 1320 == PropertiesSize) because
-    // MoveTimes re-aligns at 784, and sizeof(ABrush) matches too -- C++ is allowed to place a derived
-    // class's members in the base's TAIL PADDING, so the base's size is unchanged while the derived
-    // member moves. The only reliable detector is a per-PROPERTY offset comparison (C++ address vs the
-    // loaded .u Offset) -- Src/EngineLayoutAsserts.cpp does it at compile time.
-    //
-    // ufront 2.33: NOT on MinGW. MinGW-w64 targets the Microsoft ABI and lays bitfields out the MSVC way
-    // (-mms-bitfields is its default), so the trailing lone BITFIELD already occupies its full DWORD there
-    // — exactly like Epic's retail build. Adding the pad on top overshoots by 4, which the 2.32 layout
-    // guard reported as "Brush: C++ sizeof=612 but script layout=608" the first time the Windows binary
-    // booted. So the pad compensates for a GCC/SysV behaviour, and belongs only where that behaviour is.
+    // Hand-edited layout pad: re-apply it whenever this generated header is regenerated. MSVC stores this
+    // trailing lone bitfield as a full DWORD; GCC_PACK shrinks it to 1 byte, which would move AMover's byte
+    // cluster (MoverEncroachType/KeyNum/NumKeys/...) 3 bytes early (C++ 773/776/778 vs script 776/779/781).
+    // Reserve the rest of the DWORD. No size check sees this: C++ places AMover's members in ABrush's tail
+    // padding with both sizes unchanged, so Src/EngineLayoutAsserts.cpp checks every member offset.
+    // Not on MinGW: its default -mms-bitfields already gives the bitfield a full DWORD, and the pad would
+    // overshoot by 4.
 #ifndef __MINGW32__
     BYTE bColoredPad[3];
 #endif
@@ -3420,13 +3406,9 @@ public:
     BITFIELD bNeverUseStrafing:1;
     BITFIELD bAutoBuilt:1;
     BITFIELD bTwoWay:1;
-    // HAND EDIT (layout pad, template-engine §10.4 L2 — HP2's own; the template has no such class tail).
-    // Same defect as ABrush::bColoredPad above: this 8-bool run is 1 byte under GCC/clang but a whole DWORD
-    // under MSVC, so APlayerStart's first member (BYTE TeamNumber) landed in the tail padding at 989
-    // instead of script 992 and sizeof(APlayerStart) was 996 vs script 1000 (the layout guard's
-    // "[layout] native PlayerStart" warning); UGameEngine::FixUpLevel's PS->bEnabled=false then cleared a
-    // bit of TeamNumber. sizeof(ANavigationPoint) stays 992 either way, so no other subclass moves.
-    // Not on MinGW for the same -mms-bitfields reason as bColoredPad.
+    // Hand-edited layout pad, as ABrush::bColoredPad: this 8-bit run is 1 byte under GCC/clang but a
+    // whole DWORD under MSVC, so without the pad APlayerStart's first member (BYTE TeamNumber) sits in the
+    // tail padding at 989 instead of script 992. Not on MinGW, for the same -mms-bitfields reason.
 #ifndef __MINGW32__
     BYTE bTwoWayPad[3];
 #endif
@@ -3982,7 +3964,7 @@ AUTOGENERATE_FUNCTION(ALevelInfo,-1,execGetLocalURL);
 #ifndef NAMES_ONLY
 #undef AUTOGENERATE_NAME
 #undef AUTOGENERATE_FUNCTION
-#endif // NAMES_ONLY (HAND EDIT: a bare label after #endif is a GCC/clang warning in every TU)
+#endif // NAMES_ONLY (hand edit: a bare label after #endif warns under GCC/clang)
 
 #if _MSC_VER
 #pragma pack (pop)

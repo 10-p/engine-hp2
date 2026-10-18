@@ -861,8 +861,6 @@ static void Pipe( FTransform& Result, const FSceneNode* Frame, const FVector& In
 	static const BYTE OutXMaxTab [2] = { 0, FVF_OutXMax };
 	static const BYTE OutYMinTab [2] = { 0, FVF_OutYMin };
 	static const BYTE OutYMaxTab [2] = { 0, FVF_OutYMax };
-	// C only: the MSVC __asm and the Loki AT&T asm (pre-C++11 multi-line string literals) are gone, as in
-	// the template; this is what ASM=0/ASMLINUX=0 compiled anyway.
 	Result.Point = InVector.TransformPointBy( Frame->Coords );
 	ClipXM = Frame->PrjXM * Result.Point.Z + Result.Point.X;
 	ClipXP = Frame->PrjXP * Result.Point.Z - Result.Point.X;
@@ -1629,11 +1627,8 @@ FSceneNode* URender::CreateChildFrame
 /*-----------------------------------------------------------------------------
 	World polygon rasterizer.
 -----------------------------------------------------------------------------*/
-// HackRaster is a shared per-scanline span table indexed by Viewport->SizeY (see SetupRaster) and used by
-// ALL render devices. Any SizeY>1200 (1440p/4K/...) overran the old [2880] cap, stomping the heap (BSP poly
-// flicker, adjacent-global corruption, then a wasm "memory access out of bounds"). Sized for 8K in any
-// orientation with margin; SetupRaster also hard-clamps EndY to this capacity so NO resolution can overflow
-// it (fail-soft, like SoftDrv's MaximumYScreenSize guard). Mirrors the engine-ut99 fix.
+// Per-scanline span table of the BSP rasterizer, indexed by screen Y whatever the render device. Sized for
+// 8K in either orientation; SetupRaster clamps EndY to it.
 #define MAX_RASTER_Y 8192
 FRasterSpan HackRaster[MAX_RASTER_Y];//max y res MAX_RASTER_Y
 INT RasterStartY, RasterEndY, RasterStartX, RasterEndX;
@@ -1641,8 +1636,7 @@ static UBOOL SetupRaster( FTransform** Pts, INT NumPts, FSpanBuffer* Span, INT E
 {
 	guard(SetupRaster);
 
-	// Clamp to the span-table capacity so a very tall viewport can never index HackRaster out of bounds
-	// (heap corruption / wasm OOB). A no-op at every realistic resolution (<= MAX_RASTER_Y, incl. 8K).
+	// Clamp to the span-table capacity so a taller viewport cannot index HackRaster out of bounds.
 	EndY = Min<INT>( EndY, MAX_RASTER_Y - 1 );
 
 	// Compute integer coords.

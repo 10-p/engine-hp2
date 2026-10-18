@@ -1,3 +1,5 @@
+# closure.py <Package>... -- the package dependency closure of the given roots in the content tree A (each file
+# with its size, the total, packages with no file, and the import edges).
 import sys, os, glob, json
 sys.path.insert(0, os.path.dirname(__file__))
 from upkg import Pkg

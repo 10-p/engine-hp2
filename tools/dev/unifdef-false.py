@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""unifdef-false.py MACRO file...  -- resolve preprocessor groups whose condition is exactly MACRO as FALSE.
+"""unifdef-false.py MACRO file...  -- resolve preprocessor groups whose condition is exactly MACRO as false,
+rewriting each file in place (prints "rewrote <file>" for each one changed).
 
 Handles `#if MACRO`, `#ifdef MACRO`, `#if defined(MACRO)`, `#if !MACRO`, `#ifndef MACRO`, `#if !defined(MACRO)`
-and the same forms after `#elif`. Other groups are left untouched (nesting-aware). Used to drop the PS2
-(`__PSX2_EE__`) and similar console branches that the port never builds (PLAN §1 rule 2). No unifdef on this box.
+and the same forms after `#elif`. Other groups are left untouched (nesting-aware). Drops the PS2 (`__PSX2_EE__`)
+and other console branches this port never builds.
 """
 import re, sys
 

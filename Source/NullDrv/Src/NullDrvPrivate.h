@@ -1,9 +1,8 @@
 /*=============================================================================
 	NullDrvPrivate.h: Null render device (GPU-free) private header.
-	ufront: a no-op URenderDevice for a headless / "poor-man's dedicated server" run.
 =============================================================================*/
 
-// HP2 433: no Render/Src/RenderPrivate.h; FSceneNode/FSurfaceInfo/FTransTexture/FSpanBuffer are declared
+// 433 has no Render/Src/RenderPrivate.h; FSceneNode/FSurfaceInfo/FTransTexture/FSpanBuffer are declared
 // in Engine's UnRender.h.
 #include "Engine.h"
 #include "UnRender.h"
@@ -13,13 +12,10 @@
 ------------------------------------------------------------------------------------*/
 
 //
-// ufront: a null render device — implements the URenderDevice interface (HP2: the 433 face) with no-op draw calls and no
-// GL context. Selected via -NULLRENDERER. The NSDL viewport decides GL-vs-software purely from the render
-// device NAME containing "OPENGL" (UNSDLViewport::OpenWindow, before Init runs; it ignores the BLIT_* type
-// and the device class). "NullDrv.NullRenderDevice" lacks "OPENGL", so the viewport creates an SDL_Texture
-// software surface and NO WebGL context — the game runs GPU-free. This mirrors, for the older UE1
-// immediate-mode interface, what UT2004's Engine.NullRenderDevice (UE2.5 / FRenderInterface) does: a valid
-// render device that draws nothing, so a listen server can run with an empty tab.
+// A null render device: the 433 URenderDevice interface with no-op draw calls and no GL context, selected
+// by -NULLRENDERER. The NSDL viewport picks GL or software from the render device name alone
+// (UNSDLViewport::OpenWindow, before Init runs): "NullDrv.NullRenderDevice" lacks "OPENGL", so it gets an
+// SDL_Texture software surface and no WebGL context.
 //
 class DLL_EXPORT UNullRenderDevice : public URenderDevice
 {
@@ -36,7 +32,7 @@ class DLL_EXPORT UNullRenderDevice : public URenderDevice
 	void Lock( FPlane FlashScale, FPlane FlashFog, FPlane ScreenClear, DWORD RenderLockFlags, BYTE* HitData, INT* HitSize );
 	void Unlock( UBOOL Blit );
 	void DrawComplexSurface( FSceneNode* Frame, FSurfaceInfo& Surface, FSurfaceFacet& Facet, DWORD PolyFlags, BYTE cAlpha );
-	// HP2 433: Render sizes its mesh/particle vertex buffers from MaxVertices() and fills them before calling the
+	// Render sizes its mesh/particle vertex buffers from MaxVertices() and fills them before calling the
 	// device, so it must be > 0 -- 256, like every retail HP2 device. DrawGouraudPolygon is a non-pure base
 	// forwarder to DrawTriangles; devices do not declare it.
 	INT MaxVertices();

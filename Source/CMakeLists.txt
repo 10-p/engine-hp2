@@ -2,11 +2,8 @@ cmake_minimum_required(VERSION 3.15)
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake)
 
 # HarryPotter2 (engine-hp2) — Harry Potter and the Chamber of Secrets, Unreal Engine 1 build 433.
-#
-# Templated on /home/ion/engines/engine-ut99/Source/CMakeLists.txt (UT99 v400 → web). Same shape: one
-# static binary per platform (UNREAL_STATIC + --whole-archive), the packages as static libraries, the
-# hardware render drivers FETCHED from their own repos, three web build modes. The Dreamcast/PSVita/KOS
-# device layers of the ut99dc base are deliberately absent — this game never targets them.
+# One static binary per preset (UNREAL_STATIC + --whole-archive over the packages' static libraries), the
+# hardware render drivers fetched from their own repos, three web build modes.
 project(HP2 CXX)
 
 set(CMAKE_CXX_STANDARD 17)
@@ -28,10 +25,8 @@ option(HP2_WEB_PERF "Emscripten: shipping build — link at -O3 -g0, assertions 
 option(HP2_WEB_DEBUG "Emscripten: -O0 instead of the -O2 dev default (nothing inlined, every local live)" OFF)
 option(USE_SDL "Use NSDLDrv (SDL2 window/input) — the only viewport driver this port builds" ON)
 option(BUILD_GAME "Build the launcher (executable `Game`; web artifact SDLLaunch.js)" ON)
-# The Editor package is a RUNTIME dependency of UE1 content (the template's ufront 2.39 finding: maps and
-# meshes reference Editor classes; without the native half the map load fails). It is the stripped,
-# no-GUI NullEdHook variant that links only Engine+Core. Whether HP2's content needs it is checked in
-# docs/porting; it stays ON unless that check proves otherwise.
+# The Editor package is built for the game too: UE1 maps and meshes can reference Editor classes, and their
+# load fails without its native half. It is the no-GUI NullEdHook variant, linking only Engine+Core.
 option(BUILD_EDITOR "Build the Editor package (a RUNTIME dependency — see above)" ON)
 option(BUILD_NOPENGLDRV "Build OpenGLDrv (UTGLR, Dohnal's legacy-GL device)" OFF)
 option(BUILD_NULLSOUNDDRV "Build SoundDrv (the null/silent audio subsystem)" ON)
@@ -39,8 +34,8 @@ option(BUILD_NOPENALDRV "Build NOpenALDrv (OpenAL SFX + Ogg Vorbis music; web + 
 option(HP2_BUNDLED_OPENAL "Native Linux: build openal-soft (the ufront fork) and ship libopenal.so.1 beside the binary, instead of linking whatever libopenal the system has" ON)
 option(BUILD_STATIC "Link everything into a single binary" OFF)
 
-# HW render devices: orthogonal per-renderer toggles. XOpenGLDrv (OldUnreal, WebGL2/GLES3) is the web
-# default; OpenGLDrv/UTGLR via gl4es is the WebGL1 fallback. There is no NOpenGLESDrv in this port.
+# Hardware render devices: orthogonal per-renderer toggles. XOpenGLDrv (OldUnreal, WebGL 2/GLES3) is the web
+# default; OpenGLDrv/UTGLR runs on the web through gl4es (WebGL 2, or WebGL 1 where that is all there is).
 if(EMSCRIPTEN)
   set(_HP2_DEF_XOPENGL ON)
   set(_HP2_DEF_GL4ES ON)
@@ -63,30 +58,30 @@ if(EMSCRIPTEN)
   set(BUILD_STATIC ON)            # single binary via UNREAL_STATIC + --whole-archive
   set(USE_SDL ON)                 # NSDLDrv (SDL2 window/GL context -> WebGL); provided by -sUSE_SDL=2
   set(BUILD_EDITOR ON)
-  set(BUILD_XOPENGLDRV ON)        # forced with set(): option() only supplies a DEFAULT, and an old build
-  set(USE_GL4ES ON)               # tree keeps its cached value (the template's 2.19 trap)
+  set(BUILD_XOPENGLDRV ON)        # forced with set(): option() only supplies a default, and an old build
+  set(USE_GL4ES ON)               # tree keeps its cached value
   set(BUILD_NOPENGLDRV ON)
   set(BUILD_NULLSOUNDDRV ON)
-  set(BUILD_NOPENALDRV ON)        # PLAN Phase E: HP2's ALAudio on openal-soft (web audio backend) + EA-XA +
-                                  # Ogg Vorbis music; the launcher sets AudioDevice=NOpenALDrv.NOpenALAudioSubsystem.
+  set(BUILD_NOPENALDRV ON)        # HP2's ALAudio on openal-soft (web audio backend) + EA-XA + Ogg Vorbis
+                                  # music; the launcher sets AudioDevice=NOpenALDrv.NOpenALAudioSubsystem.
   add_definitions(-DASM=0)        # Core/Render/SoftDrv use their portable (non-x86) code paths
   # -pthread must be a COMPILE option, not just a link option: it defines __EMSCRIPTEN_PTHREADS__, which the
   # threaded code paths (NSDLViewport's direct WebGL context creation, XOpenGL's entry-point resolver,
   # appRequestExit's MAIN_THREAD_EM_ASM) are guarded on, and it gives every object — including the
   # FetchContent'd gl4es, XOpenGL and utglr trees — the atomics/bulk-memory features a shared-memory link expects.
   add_compile_options(-pthread)
-  # The SDL2 port must be requested at COMPILE time too: Core/NSDLDrv include <SDL2/SDL.h>, which only exists in
-  # the Emscripten cache once the port is installed. As a link-only flag a fresh emsdk fails with "'SDL2/SDL.h'
-  # file not found" (why the old bootstrap said `embuilder build sdl2` first). Ported from engine-ut99 300c7bf.
+  # The SDL2 port must be requested at compile time too: Core/NSDLDrv include <SDL2/SDL.h>, which exists in the
+  # Emscripten cache only once the port is installed (a fresh emsdk otherwise fails with "'SDL2/SDL.h' file
+  # not found").
   add_compile_options(-sUSE_SDL=2)
   # UE1 assumes Win32 /Zp4 struct packing — the reflected C++ class sizes must equal the UnrealScript
   # property sizes. wasm32 does not match by default; force it for ALL sources so every class layout is uniform.
   add_compile_options(-fpack-struct=4 -Wno-address-of-packed-member)
   # clang rejects passing a non-POD FString through variadic debugf/appErrorf as an ERROR; GCC tolerates it.
   add_compile_options(-Wno-error=non-pod-varargs -Wno-non-pod-varargs)
-  # Exceptions: the ENGINE's objects rely on Emscripten's default (-fignore-exceptions). Recoverable load
-  # failures are patched to resolve to NULL one site at a time (docs/porting); errors abort. openal-soft is
-  # the one exception (its objects are -fexceptions, cmake/OpenALSoft.cmake) and the link enables catching.
+  # Exceptions: the engine's objects use Emscripten's default (-fignore-exceptions); recoverable load failures
+  # resolve to NULL site by site, and errors abort. openal-soft is the one exception (its objects are
+  # -fexceptions, cmake/OpenALSoft.cmake) and the link enables catching.
 endif()
 
 if(BUILD_STATIC)
@@ -172,10 +167,9 @@ if(TARGET_IS_WINDOWS)
     add_link_options(-static-libgcc -static-libstdc++)
     # A posix-thread-model MinGW (MSYS2, Arch/Fedora/Ubuntu's -posix packages) also pulls in libwinpthread-1.dll through
     # libstdc++; link it statically too, or the exe does not start outside the build machine (wine: exit 53).
-    # Ported from engine-ut99 300c7bf, which this repo was templated from just before (2026-10-10).
     add_link_options(-Wl,-Bstatic,--whole-archive -lwinpthread -Wl,--no-whole-archive,-Bdynamic)
-    # UE1 assumes Win32 /Zp4 struct packing; MinGW follows the MSVC ABI (double/int64 aligned to 8), so every
-    # class with a double came out long. Applied to ALL sources: packing must be uniform.
+    # UE1 assumes Win32 /Zp4 struct packing; MinGW follows the MSVC ABI (double/int64 aligned to 8), so without
+    # this every class with a double comes out too long. Applied to all sources: packing must be uniform.
     add_compile_options(-fpack-struct=4 -Wno-address-of-packed-member)
     # Windows puts in libraries what glibc keeps in libc: sockets are ws2_32, CoCreateGuid is ole32.
     link_libraries(ws2_32 ole32)
@@ -201,10 +195,10 @@ if(MSVC)
 else()
   message(STATUS "Building ${CMAKE_BUILD_TYPE} with GCC or Clang")
   if(EMSCRIPTEN)
-    # THE THREE WEB BUILD MODES (identical in every engine repo of the family):
+    # The three web build modes:
     #   preset        HP2_WEB_PERF  HP2_WEB_DEBUG  compile   what it is for
     #   wasm-perf     ON            -              -O2       shipping: link-time -O3 -g0, no assertions
-    #   wasm          OFF           OFF            -O2 -g    THE DEV DEFAULT: named stacks, DWARF, assertions
+    #   wasm          OFF           OFF            -O2 -g    the dev default: named stacks, DWARF, assertions
     #   wasm-debug    OFF           ON             -O0 -g    last resort: every local live, nothing inlined
     if(HP2_WEB_DEBUG)
       add_compile_options(-O0 -g)
@@ -253,10 +247,9 @@ if(USE_SDL)
 endif()
 
 # ---------------------------------------------------------------------------------------------------------
-# Render driver sources — FETCHED from their own repos (the 10-p forks), never vendored here. The engine
-# keeps only each driver's build-glue CMakeLists.txt (XOpenGLDrv/, OpenGLDrv/). The presets point
-# FETCHCONTENT_SOURCE_DIR_* at the sibling clones under /home/ion/hp2-ufrontend so the hp2 branches build
-# before they exist on GitHub; without the override the branch named here is fetched.
+# Render driver sources — fetched from their own repos (the 10-p forks), never vendored here. The engine
+# keeps only each driver's build-glue CMakeLists.txt (XOpenGLDrv/, OpenGLDrv/). The branch named here is
+# fetched; set FETCHCONTENT_SOURCE_DIR_XOPENGLDRV / _UTGLR to a local clone to build an unpushed change.
 # ---------------------------------------------------------------------------------------------------------
 if(BUILD_XOPENGLDRV)
   set(XOPENGL_GIT_REPOSITORY "https://github.com/10-p/XOpenGLDrv.git" CACHE STRING "XOpenGLDrv git repo (OldUnreal fork)")
@@ -294,14 +287,13 @@ add_subdirectory(Engine)
 add_subdirectory(Render)
 add_subdirectory(IpDrv)
 add_subdirectory(Fire)
-# ucc — command-line tool (commandlets, `make`, dedicated server). Native Linux only for now: no Windows UCC
-# until someone needs it (PLAN Phase B step 6 / Phase F).
+# ucc — the command-line tool (commandlets such as `make`). Native Linux only: there is no Windows or web ucc.
 if(NOT EMSCRIPTEN AND NOT MINGW)
   add_subdirectory(UCC)
 endif()
 
-# The WebRTC net driver is a WEB-ONLY package (its transport is the glue webrtc_* ABI, baked via
-# vendor/glue/webrtc-shim.js — not BSD sockets). Auto-switched from IpDrv.TcpNetDriver in the launcher.
+# The WebRTC net driver is a web-only package (its transport is the glue's webrtc_* ABI, linked in via
+# vendor/glue/webrtc-shim.js, not BSD sockets). The launcher makes it the web's NetworkDevice.
 if(EMSCRIPTEN)
   add_subdirectory(WebRTCDrv)
   list(APPEND INSTALL_TARGETS WebRTCDrv)

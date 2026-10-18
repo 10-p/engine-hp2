@@ -1,12 +1,9 @@
 /*=============================================================================
 	NOpenALDrvPrivate.h: HP2's OpenAL audio subsystem (NOpenALDrv.NOpenALAudioSubsystem).
 
-	HP2 433 port (PLAN Phase E): the retail driver Source/ALAudio (UALAudioSubsystem, OpenAL 1.0 + the closed
-	`coda` EA-XA decoder + a Win32 streaming thread) ported to OpenAL 1.1 / openal-soft on the pattern of the
-	template's NOpenALDrv (engine-ut99). The game logic -- voices, priorities, occlusion, fades, lip sync,
-	ambient sounds, the per-Id stream bookkeeping on USound -- is ALAudio's; the device/EFX/HRTF setup and the
-	"everything pumped from Update(), no thread" rule are the template's. The replacement table this follows
-	line by line is docs/porting/analysis/template-drivers.md §11.3.
+	Source/ALAudio's UALAudioSubsystem on OpenAL 1.1 / openal-soft. The game logic -- voices, priorities,
+	occlusion, fades, lip sync, ambient sounds, the per-Id stream bookkeeping on USound -- is ALAudio's; the
+	device/EFX/HRTF setup and the streams (decoded in-tree and pumped from Update(), no thread) are the driver's.
 =============================================================================*/
 
 #ifndef _INC_NOPENALDRVPRIVATE
@@ -30,10 +27,9 @@
 // Maximum source velocity in meters/ seconds.
 #define MAX_SOURCE_VELOCITY 300
 
-// Streams: AL buffers per stream and bytes per buffer. ALAudio had 3 x 32 KB (XA) / 3 x 64 KB (Ogg), filled
-// by a 1 ms background thread; here one Update() refills EVERY processed buffer, so a fourth buffer is the
-// cushion (4 x 32 KB = 0.74 s of 22.05 kHz mono XA, 0.19 s x 4 of 44.1 kHz stereo music). Both are config
-// (StreamBuffers / StreamChunkSize, not in the shipped ini) for web tuning (§11.3).
+// Streams: AL buffers per stream and bytes per buffer. One Update() refills every processed buffer, so four
+// buffers are the cushion (32 KB = 0.74 s of 22.05 kHz mono XA, 0.19 s of 44.1 kHz stereo music). Both are
+// config (StreamBuffers / StreamChunkSize, not in the shipped ini).
 #define MAX_STREAM_BUFFERS         8
 #define DEFAULT_STREAM_BUFFERS     4
 #define DEFAULT_STREAM_CHUNKSIZE   32768
@@ -44,15 +40,14 @@
 // Priority modifier for playing sounds.
 #define PLAYING_PRIORITY_MULTIPLIER 1.0f
 
-// Conversion factor for Unreal units -> meter. HP2's (the game's radii were tuned against it), not the
-// template's DISTANCE_SCALE.
+// Conversion factor for Unreal units -> meter: ALAudio's (the game's radii are tuned against it).
 #define DISTANCE_FACTOR ( 0.0254f / 2.f )
 
-// Output rate when the ini has none (template).
+// Output rate when the ini has none.
 #define DEFAULT_OUTPUT_RATE 44100
 
 /*------------------------------------------------------------------------------------
-	Lip-sync animation manager (ALAudioSubsystem.h, verbatim + an initialised channel pointer).
+	Lip-sync animation manager (ALAudioSubsystem.h, plus Involves/Detach).
 ------------------------------------------------------------------------------------*/
 
 class FLipSyncAnimMgr
@@ -65,8 +60,8 @@ public:
 	void	Update( FLOAT fTime );
 	void	EatPauseTime( FLOAT fDeltaTime );
 
-	// HP2 port: the actor (or its mouth channel) is being destroyed -- forget both so the destructor does not
-	// touch them (retail kept raw pointers past NoteDestroy).
+	// NoteDestroy: the actor (or its mouth channel) is being destroyed -- forget both so the destructor does
+	// not touch them.
 	UBOOL	Involves( AActor* Actor ) const { return Actor && ( Actor == m_ParentActor || Actor == m_LipSyncAnimChan ); }
 	void	Detach() { m_ParentActor = NULL; m_LipSyncAnimChan = NULL; }
 
@@ -140,7 +135,7 @@ struct FNALStream
 	UBOOL			Eof;			// nothing more to queue
 	INT				Underruns;
 	FEAXADecoder	Xa;
-	void*			Ogg;			// OggVorbis_File* (heap; see NOpenALDrv.cpp for why it is opaque here)
+	void*			Ogg;			// OggVorbis_File* (heap; opaque so only NOpenALDrv.cpp includes vorbisfile, under pack(8))
 };
 
 // An ambient sound candidate (ALAudio's ALAmbient).
@@ -162,7 +157,7 @@ class DLL_EXPORT UNOpenALAudioSubsystem : public UAudioSubsystem
 
 	// Configuration -- [NOpenALDrv.NOpenALAudioSubsystem]. ALAudio's names with FLOAT 0..1 volumes (the HGame
 	// options page reads and writes `ini:Engine.Engine.AudioDevice MusicVolume|SoundVolume` as floats) minus
-	// its UseEAX/CompatibilityMode device switches, plus the template's OutputRate/UseHRTF/UseReverb.
+	// its UseEAX/CompatibilityMode device switches, plus OutputRate/UseHRTF/UseReverb and the stream sizes.
 	FLOAT		DopplerFactor,
 				MusicVolume,
 				SoundVolume,
@@ -173,7 +168,7 @@ class DLL_EXPORT UNOpenALAudioSubsystem : public UAudioSubsystem
 	INT			StreamChunkSize;
 	UBOOL		ReverseStereo,
 				UsePrecache,
-				Use3dHardware,		// read by HGame's Harry.uc only; no meaning here (retail had no such key)
+				Use3dHardware,		// read by HGame's Harry.uc only; no meaning here (ALAudio has no such key)
 				UseHRTF,
 				UseReverb;
 
@@ -185,7 +180,7 @@ class DLL_EXPORT UNOpenALAudioSubsystem : public UAudioSubsystem
 	UBOOL		LastRealtime;
 	UBOOL		LastPaused;
 	UBOOL		RestartSounds;
-	UBOOL		OggUsable;			// libvorbisfile's struct layout matches ours (the A5 guard)
+	UBOOL		OggUsable;			// libvorbisfile's struct layout matches ours (Init, VorbisLayout.c)
 	FPointRegion RegionListener;
 
 	// Channels.
@@ -197,7 +192,7 @@ class DLL_EXPORT UNOpenALAudioSubsystem : public UAudioSubsystem
 	// AL specific.
 	ALCdevice*	SoundDevice;
 	ALCcontext* SoundContext;
-	INT			ReverbKind;			// resolved at Init (template): 0 = EFX EAX reverb, 1 = none
+	INT			ReverbKind;			// resolved at Init: 0 = EFX EAX reverb, 1 = none
 	ALuint		ReverbEffect;
 	ALuint		ReverbSlot;
 	UBOOL		ReverbOn;

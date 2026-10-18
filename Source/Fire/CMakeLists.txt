@@ -1,7 +1,7 @@
 project(Fire CXX)
 
-# The x86 .asm files (UnFire.asm, UnFireP2.asm, UnWater.asm) are not built: UnFractal.cpp carries the
-# portable paths under ASM=0, as in the template.
+# The x86 .asm files (UnFire.asm, UnFireP2.asm, UnWater.asm) are not built: with ASM=0 UnFractal.cpp
+# compiles its portable C paths.
 set(SRC_FILES
   "Src/UnFractal.cpp"
 )

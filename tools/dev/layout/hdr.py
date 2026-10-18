@@ -1,4 +1,5 @@
-# template-engine analyst: EngineClasses.h data-member parser
+# EngineClasses.h parser: each native class's superclass and data members (type, name, array dim, bitfield,
+# GCC_PACK/GCC_ALIGN). Imported by compare.py and emit_asserts.py.
 import re
 MEM=re.compile(r'^(class\s+\w+\s*\*|struct\s+\w+\s*\*|\w+(?:<[^>]*>)?\s*\*?)\s*(\w+)(\[(\w+)\])?(\s*:\s*\d+)?$')
 def parse_header(path):

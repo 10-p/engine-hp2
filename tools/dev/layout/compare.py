@@ -1,4 +1,5 @@
-# template-engine analyst: EngineClasses.h vs shipped .u (names, order, per-property offsets, sizes)
+# compare.py <EngineClasses.h> <Core.u> <Engine.u>... -- check EngineClasses.h against the shipped packages: member
+# names and order, per-property offsets and class sizes under the gcc and msvc models. CMPFLAGS=-v prints every class.
 import sys,os
 sys.path.insert(0,os.path.dirname(os.path.abspath(sys.argv[0])))
 import layout; from hdr import parse_header; from model import place

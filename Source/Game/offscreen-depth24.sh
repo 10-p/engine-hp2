@@ -1,18 +1,16 @@
 #!/bin/sh
-# ufront 2.72 — 24-bit depth for Emscripten's emulated default framebuffer.
+# offscreen-depth24.sh <SDLLaunch.js> — give Emscripten's emulated default framebuffer 24-bit depth, by
+# rewriting the emitted loader in place. Run POST_BUILD by Source/Game/CMakeLists.txt.
 #
-# Under -sOFFSCREEN_FRAMEBUFFER (the 2.43 present-path fix) the engine draws into a framebuffer Emscripten
-# creates itself (libwebgl.js createOffscreenFramebuffer / resizeOffscreenFramebuffer), and that code
-# allocates the depth attachment as GL_DEPTH_COMPONENT16 unconditionally — its own TODO says it never reads
-# the context's depth/stencil attributes. Every render device that draws into framebuffer 0 (NOpenGLESDrv,
-# UTGLR; not XOpenGL, which owns its FBO) therefore gets 16 bits of depth, and with the drivers' 1..65k
-# frustum that is whole units of z at mid distance: surfaces trade places in bands as the player moves
-# — the z-fight the owner reported on NOpenGLES. Rewrite the emitted loader so the renderbuffer is
-# DEPTH_STENCIL (D24S8 on every desktop implementation; valid on WebGL 1 and 2) on the
-# DEPTH_STENCIL_ATTACHMENT. The literals are Emscripten's GL enums in decimal, as -O2 emits them; the
-# counts are asserted so a toolchain change fails the build loudly instead of silently shipping 16-bit
-# depth again. Runs POST_BUILD on SDLLaunch.js (both the minified and the -g loader spell them the same,
-# up to a space).
+# Under -sOFFSCREEN_FRAMEBUFFER the engine draws into a framebuffer Emscripten creates itself (libwebgl.js
+# createOffscreenFramebuffer / resizeOffscreenFramebuffer), which allocates the depth attachment as
+# GL_DEPTH_COMPONENT16 whatever the context's depth/stencil attributes say. A render device that draws into
+# framebuffer 0 (UTGLR; not XOpenGL, which owns its FBO) then gets 16 bits of depth, which over the drivers'
+# 1..65k frustum is whole units of z at mid distance: surfaces z-fight in bands. The rewrite makes the
+# renderbuffer DEPTH_STENCIL (D24S8 on desktop implementations; valid on WebGL 1 and 2) on the
+# DEPTH_STENCIL_ATTACHMENT. The literals are Emscripten's GL enums in decimal, as -O2 emits them (the minified
+# and the -g loader spell them the same, up to a space); the counts are asserted, so a toolchain change fails
+# the build instead of shipping 16-bit depth.
 set -eu
 f="$1"
 [ -f "$f" ] || { echo "offscreen-depth24: no such file: $f" >&2; exit 1; }

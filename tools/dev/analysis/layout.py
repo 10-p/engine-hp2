@@ -1,3 +1,5 @@
+# Emulates HP2 433's UStruct::Link over the .u packages named on the command line: per-property offsets (LAYOUT)
+# and PropertiesSize (SIZE). compare.py runs it in its own namespace.
 import sys,struct,re
 sys.path.insert(0,sys.argv[0].rsplit('/',1)[0])
 from upkg import *
@@ -18,7 +20,6 @@ def resolve(pk,r):
     if r==0: return None
     if r>0: return pk.exports[r-1]
     im=pk.imports[-r-1]
-    # find top package of import
     return byname.get(im['name']) if im['cls'] in ('Class','Struct') else None
 def parse_field(e):
     if 'parsed' in e: return

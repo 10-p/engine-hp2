@@ -252,7 +252,7 @@ UBOOL UViewport::SetDrag( UBOOL NewDrag )
 }
 
 /*-----------------------------------------------------------------------------
-	ufront AutoFOV (template step 2.16; declarations and rationale in UnCamera.h).
+	AutoFOV - aspect-correct field of view.
 -----------------------------------------------------------------------------*/
 
 ENGINE_API FLOAT GAutoFovFrameBase = 90.0f;
@@ -269,8 +269,7 @@ static void ufrontParseAutoFov()
 	guard(ufrontParseAutoFov);
 	GAutoFovParsed = 1;
 
-	// A plain config section, not a class: it is read from UGameEngine::Draw (Engine), no retail-Engine.u
-	// class may gain properties, and the section is spelled identically in every ufront engine.
+	// A plain config section, not class properties: no class of the shipped Engine.u may gain properties.
 	INT   Mode = GAutoFovMode;
 	FLOAT Ref  = GAutoFovRef;
 	GConfig->GetInt  ( TEXT("ufront.AutoFOV"), TEXT("AutoFOV"),         Mode );
@@ -298,8 +297,8 @@ ENGINE_API FLOAT ufrontEffectiveFov( FLOAT BaseFov, INT SizeX, INT SizeY, UBOOL 
 	FLOAT Eff     = ( GAutoFovMode == AUTOFOV_Adaptive ) ? Max( Base, HorPlus ) : HorPlus;
 	Eff = Clamp( Eff, 1.0f, 170.0f );
 
-	// Log when the INPUTS change: the viewport size (the resize the E2E asserts on) or the base FOV (HP2's
-	// cameras and cut scenes move it; UE interpolates, so a change costs a handful of lines, once).
+	// Log when the inputs change: the viewport size (the E2E checks this line after a resize) or the base
+	// FOV by more than half a degree (cameras and cut scenes interpolate it, so a change logs a few lines).
 	if( bLog && ( SizeX != GAutoFovLastX || SizeY != GAutoFovLastY || Abs(Base - GAutoFovLastBase) > 0.5f ) )
 	{
 		GAutoFovLastX    = SizeX;
@@ -448,9 +447,8 @@ void UViewport::Destroy()
 
 	#endif
 
-	// Shut down rendering. Outside the _MSC_VER block as in Epic/the template: HP2 had moved the
-	// #endif below it, so on GCC/clang RenDev->Exit() never ran and every viewport close/recreate
-	// (resolution change, FLUSH, fullscreen toggle) leaked the device and initialised a second one.
+	// Shut down rendering. Outside the _MSC_VER block: every viewport close/recreate (resolution change,
+	// FLUSH, fullscreen toggle) must exit the device on every compiler, or it leaks and a second one starts.
 	guard(DeleteRenDev);
 	if( RenDev )
 	{
@@ -593,9 +591,7 @@ UBOOL  UViewport::ScreenShot( const TCHAR* Filename )
 		IH.biClrImportant	= 0;
 		Ar->Serialize( &IH, sizeof(IH) );
 
-		// Colors. BMP rows are bottom-up; the renderers' ReadPixels return top-down rows on every target,
-		// so the MSVC loop is right everywhere. (Epic's Loki "i=SizeY; i>0" branch read one row past the
-		// SizeX*SizeY buffer and never wrote row 0.)
+		// Colors. BMP rows are bottom-up and the renderers' ReadPixels return top-down rows on every target.
 		for( INT i=SizeY-1; i>=0; i-- )
 			for( INT j=0; j<SizeX; j++ )
 				Ar->Serialize( &Buf[i*SizeX+j], 3 );
@@ -810,10 +806,8 @@ UBOOL UViewport::Exec( const TCHAR* Cmd, FOutputDevice& Ar )
 		if( ThumbSizeX == 0 ) ThumbSizeX = 160;
 		if( ThumbSizeY == 0 ) ThumbSizeY = 120;
 		
-		// HP2 port: the retail thumbnail assumed 4:3. With shrinkage = SizeX/ThumbSizeX alone, a 16:9 viewport
-		// (1280x720: shrinkage 8) reads ThumbSizeY*8 = 960 source rows from a 720-row frame -- past the end of
-		// SrcBuff (a page fault under wine, silent garbage elsewhere). Shrink by the factor that fits BOTH axes and
-		// sample the centred block.
+		// Shrink by the factor that fits both axes and sample the centred block: SizeX/ThumbSizeX alone would
+		// read past the end of SrcBuff on a viewport wider than 4:3 (1280x720 needs 960 rows).
 		int shrinkage    = Max( 1, Min( SizeX / ThumbSizeX, SizeY / ThumbSizeY ) );
 		const int SnapOffX = Max( 0, (SizeX - ThumbSizeX*shrinkage) / 2 );
 		const int SnapOffY = Max( 0, (SizeY - ThumbSizeY*shrinkage) / 2 );

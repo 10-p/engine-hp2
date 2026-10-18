@@ -12,7 +12,7 @@
 ----------------------------------------------------------------------------*/
 
 // Resolution thread entrypoint.
-// ufront 2.33: platform, not compiler — see IpDrvPrivate.h, where the matching declaration lives.
+// Keyed on the platform, not the compiler, like its declaration in IpDrvPrivate.h.
 #ifdef PLATFORM_WIN32
 DWORD STDCALL ResolveThreadEntry( void* Arg )
 #else
@@ -208,10 +208,8 @@ TCHAR* SocketError( INT Code )
 		case ESTALE:				return TEXT("ESTALE");
 		case EREMOTE:				return TEXT("EREMOTE");
 #ifndef __EMSCRIPTEN__
-		// ufront 2.7b: <netdb.h> resolver codes (HOST_NOT_FOUND=1/TRY_AGAIN=2/NO_RECOVERY=3). Under musl
-		// (emscripten) their small values collide with errno cases above (glibc's differ, so native is fine).
-		// Web has no real socket resolver — WebRTCDrv replaces IpDrv (2.7d) — so drop them from this
-		// diagnostic string map to avoid duplicate-case errors.
+		// <netdb.h> resolver codes. Under Emscripten's musl their small values (1/2/3) duplicate errno
+		// cases above, so the web build leaves them out.
 		case HOST_NOT_FOUND:		return TEXT("HOST_NOT_FOUND");
 		case TRY_AGAIN:				return TEXT("TRY_AGAIN");
 		case NO_RECOVERY:			return TEXT("NO_RECOVERY");

@@ -1,7 +1,8 @@
+# undc.py <file> > out -- print the file with #ifdef/#if defined PLATFORM_DREAMCAST / PLATFORM_LOW_MEMORY blocks
+# resolved as false (their else branch kept).
 import sys,re
-# Evaluate only #ifdef/#if defined PLATFORM_DREAMCAST / PLATFORM_LOW_MEMORY blocks as false, keep else-branch.
 lines=open(sys.argv[1],encoding='latin-1').read().replace('\r','').split('\n')
-out=[];stack=[]  # each: (is_dc, in_dc_true_branch)
+out=[];stack=[]  # each: [kind ('dc'|'other'), skipping]
 for l in lines:
     s=l.strip()
     m=re.match(r'#\s*(ifdef|ifndef|if)\b(.*)',s)

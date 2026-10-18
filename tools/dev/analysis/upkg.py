@@ -1,3 +1,4 @@
+# Minimal UE1 package reader: names, imports, exports and an export's tagged property list.
 import struct, sys
 class R:
     def __init__(s,d,p=0): s.d=d; s.p=p

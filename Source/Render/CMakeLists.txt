@@ -1,7 +1,7 @@
 project(Render CXX)
 
-# HP2 build 433 Render: Render.dsp's list minus UnTest.cpp (the stock test harness; MSVC-only, the template
-# does not build it either). UnParticleRn.cpp is the 433 particle renderer.
+# HP2 build 433 Render: Render.dsp's list minus UnTest.cpp (Epic's MSVC optimisation test file).
+# UnParticleRn.cpp is the 433 particle renderer.
 set(SRC_FILES
   "Src/Render.cpp"
   "Src/UnLight.cpp"

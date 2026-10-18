@@ -1,4 +1,4 @@
-# template-engine analyst: minimal UE1 (v61-79) package reader
+# Minimal UE1 package reader (package versions 61-79): name, import and export tables, field headers.
 import struct,sys,os
 RF_HasStack=0x02000000
 CPF_Net=0x20

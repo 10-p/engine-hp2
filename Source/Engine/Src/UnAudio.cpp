@@ -795,8 +795,8 @@ UBOOL FWaveModInfo::ReadWaveInfo( TArray<BYTE>& WavData )
 
 	pMasterSize = &RiffHdr->ChunkLen;
 
-	// The appMemcpy indirect accessing is necessary to avoid PSX2 read alignment problems but
-	// somehow causes a crash on PCs in "Look for a 'smpl' chunk."
+	// Walk the RIFF chunks through direct FRiffChunkOld pointers, from the start each time, for 'fmt ',
+	// 'data' and the optional 'smpl'; only the smpl header is copied out with appMemcpy.
 
 	
 	FRiffChunkOld* RiffChunk = (FRiffChunkOld*)&WavData(3*4);

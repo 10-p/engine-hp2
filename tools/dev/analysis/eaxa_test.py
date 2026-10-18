@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Sanity-decode HP2 'XA' sound data as EA-XA ADPCM v2 (15-byte blocks, 28 samples, mono).
-Uses uaxdump's parser to find the export, decodes, prints stats and writes a WAV to the scratchpad."""
+"""eaxa_test.py <file.uax> <SoundName> -- sanity-decode an HP2 'XA' sound as EA-XA ADPCM v2 (15-byte blocks,
+28 samples, mono): finds the export with uaxdump's readers, prints stats and writes <SoundName>.wav beside this script."""
 import sys, struct, wave, os
 sys.path.insert(0, os.path.dirname(__file__))
 import uaxdump as U

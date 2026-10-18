@@ -122,13 +122,10 @@ public:
 		}
 		unguardSlow;
 	}
-	// HP2 persistent actors (ULevel::Save/LoadPersistentActors write <Map>_pa.usa through a PLAIN file archive,
-	// so the property tags' FNames need a file form): an INT byte length including the terminator, then the
-	// TCHARs -- retail FFileManagerWindows.h, "Added for LoadPersistence support". Without it the base FArchive
-	// skips names: the writer stored none and the reader left FPropertyTag::Name uninitialised, and reloading a
-	// revisited level crashed in appStrcpy(PrevTag,*Tag.Name). Hardened over retail: an implausible length or
-	// an unterminated string (e.g. a file written before this fix) sets the archive error and yields NAME_None,
-	// so the tag loop ends without applying garbage and the loader stops at its error check.
+	// FName file form for HP2's persistent actors (ULevel::Save/LoadPersistentActors write <Map>_pa.usa through a
+	// plain file archive), as in FFileManagerWindows.h: an INT byte length including the terminator, then the
+	// TCHARs. An implausible length or an unterminated string sets the archive error and yields NAME_None, so the
+	// tag loop stops instead of applying garbage.
 	FArchive& operator<<( FName& Name )
 	{
 		guard(FArchiveFileReader<<Name);
@@ -228,8 +225,7 @@ public:
 			BufferCount += Length;
 		}
 	}
-	// HP2 persistent actors: the writer half of FArchiveFileReader's FName form (see there) -- retail
-	// FFileManagerWindows.h, "Added for SavePersistence support".
+	// The writer half of FArchiveFileReader's FName form (persistent actors).
 	FArchive& operator<<( FName& Name )
 	{
 		guard(FArchiveFileWriter<<Name);
@@ -263,13 +259,10 @@ protected:
 
 class FFileManagerLinux : public FFileManagerGeneric
 {
-	// HP2 port: path normalisation for every entry point. HP2 content hard-codes Windows paths and mixed
-	// case -- HGame.u opens "Cutscenes\\<file>.int" (the directory is System/CUTSCENES), music is
-	// "..\\music\\<Song>.ogg", map strings in HGame.u use a different case from the files on disk. So:
-	// '\\' becomes '/', and when the exact path does not exist each component is resolved case-insensitively
-	// against the directory listing. A component that matches nothing is kept as given (a file about to be
-	// created). Positive resolutions are cached. The web needs the same: under -sWASMFS the glue does not fold
-	// case for direct opens (PLAN §2 "Path normalisation", critique M2-2/M3-2).
+	// Path normalisation for every entry point: HP2 content uses Windows paths in mixed case (HGame.u opens
+	// "Cutscenes\\<file>.int" in System/CUTSCENES, music is "..\\music\\<Song>.ogg"). '\\' becomes '/', and when
+	// the exact path does not exist each component is resolved case-insensitively against its directory; a
+	// component that matches nothing is kept as given (a file about to be created). Positive resolutions are cached.
 	class FFixedPath
 	{
 	public:
@@ -435,9 +428,8 @@ public:
 		guard(FFileManagerLinux::MakeDirectory);
 		if( Tree )
 			return FFileManagerGeneric::MakeDirectory( Path, Tree );
-		// ufront 2.33: Windows' mkdir takes no mode — permissions are not a filesystem attribute there.
-		// (This manager is the launcher's on every platform; see UnrealTournament/Src/Launch.cpp.)
 #ifdef PLATFORM_WIN32
+		// The launcher and ucc use this manager on Windows too; mkdir takes no mode there.
 		return mkdir(FFixedPath(Path))==0 || errno==EEXIST;
 #else
 		return mkdir(FFixedPath(Path), S_IRUSR | S_IWUSR | S_IXUSR)==0 || errno==EEXIST;
@@ -465,7 +457,7 @@ public:
 		char *Cur;
 		UBOOL Match;
 
-		// Initialize Path to Filename. HP2 port: FixPath also folds the directory part's case ('\\' -> '/').
+		// Initialize Path to Filename; FixPath also turns '\\' into '/' and folds the directory part's case.
 		FixPath( Filename, Path, ARRAY_COUNT(Path) );
 	
 		// Separate path and filename.
@@ -491,13 +483,11 @@ public:
 		// Check each entry.
 		while( Direntp != NULL )
 		{
-			// HP2 port: a real wildcard match ('*' and '?' anywhere, case-insensitive, "*.*" = everything), the
-			// semantics of the Win32 FindFirstFile the retail game ran on. The stock Linux matcher only knew a few
-			// shapes and treated "*.ext" as a substring test, so HP2's "*_pa.*" (the persistent-actor files
-			// SavePersistentActorCache copies into the save slot) matched nothing and level progress was lost.
+			// A real wildcard match like Win32 FindFirstFile ('*' and '?' anywhere, case-insensitive, "*.*" =
+			// everything): SavePersistentActorCache copies the "*_pa.*" files into the save slot by pattern.
 			Match = appStrcmp( File, "*.*" ) == 0 || WildcardMatch( File, Direntp->d_name );
 
-			// HP2 port: honour the Files/Directories flags (the stock body returned both, and "." / "..").
+			// Honour the Files/Directories flags and skip "." and "..".
 			if( Match && (!appStrcmp(Direntp->d_name,".") || !appStrcmp(Direntp->d_name,"..")) )
 				Match = false;
 			if( Match && !(Files && Directories) )

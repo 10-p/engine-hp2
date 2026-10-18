@@ -1,27 +1,22 @@
 project(XOpenGLDrv C CXX)
 
-# ufront step 2.7 (engine-ut99): XOpenGLDrv — the full OldUnreal OpenGL renderer, ported to vanilla
-# UT99 v400 (UE1). All v400 adaptations in Src/Inc are gated behind `#if ENGINE_VERSION==400` so the
-# same tree can later target Unreal v200. See the repo-root plan + ENGINE_CHANGES.md.
-#
-# Like NOpenGLESDrv, this device does NOT create its own GL context on v400 — it reuses the context
-# NSDLViewport already makes current (see Src/XOpenGL.cpp Init, gated). So it needs SDL/NSDLDrv.
+# XOpenGLDrv — the OldUnreal OpenGL renderer (WebGL 2 / GLES3 on the web), fetched from the 10-p fork. Its UE1
+# adaptations are gated on XOGL_UE1_V4XX (the v400-family engines, HP2 433 included) and XOGL_HP2 (433's
+# render-device face). It creates no GL context of its own: it adopts the one NSDLViewport makes current, so
+# it needs SDL/NSDLDrv.
 if(NOT USE_SDL)
   message(FATAL_ERROR "XOpenGLDrv requires NSDLDrv (SDL) to function.")
 endif()
 
 # All Src/*.cpp are standalone translation units (incl. the *_GLSL.cpp shader files and the vendored
-# desktop-GL glad.cpp loader). Source is FETCHED (${XOPENGL_SOURCE_DIR}, set in the top-level
+# desktop-GL glad.cpp loader). Source is fetched (${XOPENGL_SOURCE_DIR}, set in the top-level
 # CMakeLists.txt); only this build glue lives in the engine tree.
 file(GLOB SRC_FILES "${XOPENGL_SOURCE_DIR}/Src/*.cpp")
 
 add_library(${PROJECT_NAME} ${LIB_TYPE} ${SRC_FILES})
 
-# Isolated include set: the driver vendors its OWN desktop-GL `glad.h`/`glext.h` (Inc/) and its own
-# glm (glm/) — deliberately NOT the engine's Thirdparty/glad_es (GLES loader) or trimmed Thirdparty/glm
-# (missing gtc/), to avoid header/symbol clashes with NOpenGLESDrv. Inc/ and glm/ come from the fetched
-# driver source (${XOPENGL_SOURCE_DIR}); Render private headers (RenderPrivate.h/UnRender.h) come from
-# the engine's ../Render/Src (relative to this in-tree build glue), exactly as NOpenGLESDrv does.
+# Isolated include set: the driver vendors its own desktop-GL `glad.h`/`glext.h` (Inc/) and glm (glm/), from
+# the fetched source (${XOPENGL_SOURCE_DIR}). Render.h comes from Render/Inc through the Render target.
 target_include_directories(${PROJECT_NAME}
   PRIVATE
   ${XOPENGL_SOURCE_DIR}/Inc

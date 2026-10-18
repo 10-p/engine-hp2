@@ -1,31 +1,10 @@
 /*=============================================================================
 	NOpenALDrv.cpp: HP2's OpenAL audio subsystem (NOpenALDrv.NOpenALAudioSubsystem).
 
-	HP2 433 port, PLAN Phase E. This is Source/ALAudio/Src/ALAudioSubsystem.cpp (the retail driver, by Daniel
-	Vogel + TG's HP2 changes) ported per docs/porting/analysis/template-drivers.md §11.3 onto the template's
-	NOpenALDrv pattern (engine-ut99):
-
-	  ALAudio                                          here
-	  OpenAL 1.0 SDK, alcOpenDevice("DirectSound3D")    openal-soft (cmake/OpenALSoft.cmake), alcOpenDevice(NULL),
-	                                                    the template's ALC attribute list (OutputRate, HRTF)
-	  EAX (compiled out in retail)                      EFX resolved at run time (template), UseReverb default off
-	  GFileStream + a 1 ms Win32 thread + coda          a driver-owned stream table, decoded synchronously from
-	                                                    Update() (no thread: WasmFS only answers the main thread)
-	  CEAXABLKDec (closed)                              FEAXADecoder (EAXADecoder.cpp, tested by Test/EAXAOracle)
-	  vorbisfile on fopen("..\\music\\x.ogg")           vorbisfile over GFileManager (case + '\' folding),
-	                                                    ../Music/<Song>.ogg then ../Music/<Song>
-	  listener axes tuned for Creative's DS3D           the template's right-handed conversion (Z negated)
-
-	What stays ALAudio's: voice allocation and priorities (SLOT_Talk boost, FindLeastImportantSound), the
-	occlusion/radius smoothing, fades (FADE_In/FADE_Out), ModifySound, flag-driven stops, ambient sounds, the
-	PlayMusic/StopMusic handle contract (index+1, 0 = failure), the USound per-Id stream bookkeeping
-	(AddStreamHandle/BindStream/GetHandle), FLipSyncAnimMgr, the Exec commands, DISTANCE_FACTOR and
-	AL_INVERSE_DISTANCE_CLAMPED with reference distance = radius.
-
-	Fixed on the way (§11.2 A2/A7/A14): volumes apply live; every processed stream buffer is refilled per
-	Update and an underrun restarts the source (music included); USound::Data of an XA sound is unloaded once
-	its last stream ends; delete[] for arrays; FLipSyncAnimMgr's channel pointer initialised and dropped when
-	its actor is destroyed; PLAYINGSOUNDSTATS stays inside Sources.
+	Source/ALAudio's UALAudioSubsystem (voices, priorities, occlusion, fades, ambient sounds, lip sync, the
+	PlayMusic/StopMusic handle contract, the Exec commands) on openal-soft, with EFX resolved at run time and a
+	stream table decoded synchronously from Update() (no streaming thread): EA-XA sounds through FEAXADecoder,
+	Ogg Vorbis music through vorbisfile over GFileManager.
 =============================================================================*/
 
 #include <stdlib.h>
@@ -33,8 +12,8 @@
 #include "AL/al.h"
 #include "AL/alc.h"
 #include "AL/alext.h"
-// EFX IS RESOLVED AT RUN TIME AND NEVER LINKED (template, ufront 2.76): the pointers live in `Efx` below, so a
-// core OpenAL 1.1 without EFX still links and plays everything but reverb.
+// EFX is resolved at run time and never linked: the pointers live in `Efx` below, so a core OpenAL 1.1
+// without EFX still links and plays everything but reverb.
 #if defined(__has_include)
 #  if __has_include("AL/efx.h")
 #    define NOPENAL_HAVE_EFX_HEADERS 1
@@ -62,7 +41,7 @@ typedef void (AL_APIENTRY *LPALAUXILIARYEFFECTSLOTI)( ALuint, ALenum, ALint );
 #define AL_FILTER_NULL                           0x0000
 #define AL_AUXILIARY_SEND_FILTER                 0x20006
 #endif
-// openal-soft's output-mode / HRTF extensions, spelled out for older alext.h headers (template).
+// openal-soft's output-mode / HRTF extensions, spelled out for older alext.h headers.
 #ifndef ALC_HRTF_SOFT
 #define ALC_HRTF_SOFT 0x1992
 #endif
@@ -79,10 +58,9 @@ typedef void (AL_APIENTRY *LPALAUXILIARYEFFECTSLOTI)( ALuint, ALenum, ALint );
 #include "Engine.h"
 #include "UnRender.h"
 
-// libvorbisfile, built WITHOUT the engine's -fpack-struct=4 (NOpenALDrv/CMakeLists.txt), so its structs must
-// be seen here at natural alignment: OggVorbis_File has ogg_int64_t/double members, 8-aligned on wasm32 (the
-// retail driver guarded the same include the same way, ALAudioSubsystem.cpp:15-22). Init() cross-checks the
-// size with the library's own (VorbisLayout.c).
+// libvorbisfile, built without the engine's -fpack-struct=4 (NOpenALDrv/CMakeLists.txt), so its structs must
+// be seen here at natural alignment: OggVorbis_File has ogg_int64_t/double members, 8-aligned on wasm32.
+// Init() cross-checks the size with the library's own (VorbisLayout.c).
 #if SUPPORTS_PRAGMA_PACK
 #pragma pack (push,8)
 #endif
@@ -104,7 +82,7 @@ IMPLEMENT_PACKAGE(NOpenALDrv);
 IMPLEMENT_CLASS(UNOpenALAudioSubsystem);
 
 /*-----------------------------------------------------------------------------
-	EFX entry points (template, verbatim in behaviour).
+	EFX entry points.
 -----------------------------------------------------------------------------*/
 
 enum { NAL_REVERB_EAX=0, NAL_REVERB_NONE=1 };
@@ -122,7 +100,7 @@ static struct FNOpenALEfx
 	UBOOL                          Present;
 } Efx;
 
-// Resolve them. Call with the context CURRENT: alGetProcAddress is context-dependent.
+// Resolve them. Call with the context current: alGetProcAddress is context-dependent.
 static UBOOL ResolveEfx( ALCdevice* InDevice )
 {
 	appMemzero( &Efx, sizeof(Efx) );
@@ -146,7 +124,7 @@ static UBOOL ResolveEfx( ALCdevice* InDevice )
 	Helpers.
 -----------------------------------------------------------------------------*/
 
-// Unreal space (left-handed, Z up, units) -> OpenAL space (right-handed, meters): negate Z (template §A8).
+// Unreal space (left-handed, Z up, units) -> OpenAL space (right-handed, meters): negate Z.
 static inline FVector ToALSpace( const FVector& V )
 {
 	return FVector( V.X * DISTANCE_FACTOR, V.Y * DISTANCE_FACTOR, -V.Z * DISTANCE_FACTOR );
@@ -194,9 +172,9 @@ static long NalOggTell( void* Source )
 UNOpenALAudioSubsystem::UNOpenALAudioSubsystem()
 {
 	guard(UNOpenALAudioSubsystem::UNOpenALAudioSubsystem);
-	// ALAudio's retail values (Config/System/Default.ini [ALAudio.ALAudioSubsystem]) + the template's. The C++
-	// constructor runs after the class defaults are copied in, so these are what an instance starts with;
-	// Init() then LoadConfig()s the ini on top.
+	// ALAudio's shipped values (Config/System/Default.ini [ALAudio.ALAudioSubsystem]) plus the driver's own
+	// keys. The C++ constructor runs after the class defaults are copied in, so these are what an instance
+	// starts with; Init() then LoadConfig()s the ini on top.
 	DopplerFactor	= 1.f;
 	MusicVolume		= 0.5f;
 	SoundVolume		= 0.9f;
@@ -244,11 +222,11 @@ void UNOpenALAudioSubsystem::StaticConstructor()
 	new(GetClass(),TEXT("DopplerFactor"),	RF_Public)UFloatProperty (CPP_PROPERTY(DopplerFactor   ), TEXT("Audio"), CPF_Config );
 	new(GetClass(),TEXT("RollOff"),			RF_Public)UFloatProperty (CPP_PROPERTY(RollOff         ), TEXT("Audio"), CPF_Config );
 	new(GetClass(),TEXT("Use3dHardware"),	RF_Public)UBoolProperty  (CPP_PROPERTY(Use3dHardware   ), TEXT("Audio"), CPF_Config );
-	// The template's: the frontend's HRTF toggle writes -ini:System:[NOpenALDrv.NOpenALAudioSubsystem]:UseHRTF=.
+	// The driver's own: the frontend's HRTF toggle writes -ini:System:[NOpenALDrv.NOpenALAudioSubsystem]:UseHRTF=.
 	new(GetClass(),TEXT("OutputRate"),		RF_Public)UIntProperty   (CPP_PROPERTY(OutputRate      ), TEXT("Audio"), CPF_Config );
 	new(GetClass(),TEXT("UseHRTF"),			RF_Public)UBoolProperty  (CPP_PROPERTY(UseHRTF         ), TEXT("Audio"), CPF_Config );
 	new(GetClass(),TEXT("UseReverb"),		RF_Public)UBoolProperty  (CPP_PROPERTY(UseReverb       ), TEXT("Audio"), CPF_Config );
-	// Stream tuning (§11.3; not in the shipped ini -- the defaults are the constructor's).
+	// Stream tuning (not in the shipped ini -- the defaults are the constructor's).
 	new(GetClass(),TEXT("StreamBuffers"),	RF_Public)UIntProperty   (CPP_PROPERTY(StreamBuffers   ), TEXT("Audio"), CPF_Config );
 	new(GetClass(),TEXT("StreamChunkSize"),	RF_Public)UIntProperty   (CPP_PROPERTY(StreamChunkSize ), TEXT("Audio"), CPF_Config );
 	unguard;
@@ -266,7 +244,7 @@ void UNOpenALAudioSubsystem::PostEditChange()
 	SoundVolume = Clamp(SoundVolume,0.f,1.f);
 	MusicVolume = Clamp(MusicVolume,0.f,1.f);
 
-	// ALAudio's SetVolumes() was empty, so a slider only reached the NEXT sound (§11.2 A2). Apply it now.
+	// Apply the volumes to the playing voices too, not only to the next sound.
 	ApplyVolumes();
 
 	unguard;
@@ -353,8 +331,7 @@ UBOOL UNOpenALAudioSubsystem::Init()
 		return 1;
 
 	// The engine ConstructObject()s us and never LoadConfig()s the instance, and the C++ constructor above ran
-	// after the class defaults were copied in -- so apply the [NOpenALDrv.NOpenALAudioSubsystem] ini here
-	// (template, ufront 2.12).
+	// after the class defaults were copied in -- so apply the [NOpenALDrv.NOpenALAudioSubsystem] ini here.
 	LoadConfig();
 	SoundVolume		= Clamp( SoundVolume, 0.f, 1.f );
 	MusicVolume		= Clamp( MusicVolume, 0.f, 1.f );
@@ -380,9 +357,9 @@ UBOOL UNOpenALAudioSubsystem::Init()
 		return 0;
 	}
 
-	// Template (ufront 2.61): ALC_HRTF_SOFT (the attribute KEY, not the ALC_SOFT_HRTF presence macro), and
-	// HRTF is a stereo rendering, so UseHRTF also asks for the stereo-HRTF output mode. Off by default: the
-	// player's choice (the frontend's "Headphone audio"), no browser can tell headphones from speakers.
+	// ALC_HRTF_SOFT is the attribute key (not the ALC_SOFT_HRTF presence macro), and HRTF is a stereo
+	// rendering, so UseHRTF also asks for the stereo-HRTF output mode. Off by default: the player's choice
+	// (the frontend's "Headphone audio"), no browser can tell headphones from speakers.
 	const ALCint AttrList[] =
 	{
 		ALC_FREQUENCY, OutputRate,
@@ -405,9 +382,9 @@ UBOOL UNOpenALAudioSubsystem::Init()
 		return 0;
 	}
 
-	// Reverb (template, ufront 2.76): EFX's EAX reverb when the LINKED library has EFX, otherwise none. Retail
-	// HP2 had no reverb at all (EAX compiled out) and no map carries I3DL2 data, so UseReverb defaults off
-	// (§11.2 A9); the machinery is kept for the two bReverbZone maps.
+	// Reverb: EFX's EAX reverb when the OpenAL library has EFX, otherwise none. UseReverb defaults off:
+	// ALAudio's EAX path is compiled out and no map carries I3DL2 data; with it on, the two bReverbZone maps
+	// get a generic reverb.
 	ResolveEfx( SoundDevice );
 	ReverbKind = ( UseReverb && Efx.Present ) ? NAL_REVERB_EAX : NAL_REVERB_NONE;
 #if NOPENAL_NO_EAX
@@ -451,7 +428,7 @@ UBOOL UNOpenALAudioSubsystem::Init()
 	ReverbOn	= 0;
 	ReverbZone	= NULL;
 
-	// §11.2 A5: libvorbisfile was compiled at natural alignment and we include its headers under pack(8); an
+	// libvorbisfile was compiled at natural alignment and we include its headers under pack(8); an
 	// OggVorbis_File of another size would be overrun by ov_open. Music is disabled (SFX still play) rather
 	// than corrupt the heap.
 	OggUsable = NOpenALDrv_VorbisFileSize() == (int)sizeof(OggVorbis_File);
@@ -509,7 +486,7 @@ void UNOpenALAudioSubsystem::SetViewport( UViewport* InViewport )
 		if( Viewport && UsePrecache && Initialized )
 		{
 			// Register everything that is a plain buffer. (Streams are per play; registering every XA sound
-			// would only exhaust the stream table -- retail shipped UsePrecache=False.)
+			// would only exhaust the stream table; the shipped ini has UsePrecache=False.)
 			for( TObjectIterator<USound> SoundIt; SoundIt; ++SoundIt )
 				if( !(SoundIt->CoreFlags & SF_Streaming) )
 					RegisterSound( *SoundIt );
@@ -587,8 +564,8 @@ UBOOL UNOpenALAudioSubsystem::OpenStream( FNALStream& Stream, USound* Sound, INT
 
 	if( appStricmp( *Sound->FileType, TEXT("XA") ) == 0 )
 	{
-		// EA-XA (C4): mono 16-bit at raw_SampleRate. The data must stay loaded while any stream reads it;
-		// UnregisterSound unloads it again once the last one is gone (M5-6).
+		// EA-XA: mono 16-bit at raw_SampleRate. The data must stay loaded while any stream reads it;
+		// UnregisterSound unloads it again once the last one is gone.
 		Sound->Data.Load();
 		if( Sound->Data.Num() < EAXA_FRAME_BYTES || Sound->raw_NumChannels > 1 || ( Sound->raw_BitsPerSample && Sound->raw_BitsPerSample != 16 ) )
 		{
@@ -690,7 +667,7 @@ INT UNOpenALAudioSubsystem::GetNewStreamStruct()
 		if( Streams(i).Kind == NALSTREAM_None )
 			return i;
 	// Full: take back a stream that was registered but never bound to a voice (PlaySound's early returns
-	// leave those behind; retail kept them until the sound was destroyed).
+	// leave those behind).
 	const INT Reclaimed = ReclaimIdleStream();
 	if( Reclaimed >= 0 )
 		return Reclaimed;
@@ -736,8 +713,8 @@ FNALStream* UNOpenALAudioSubsystem::StreamForSource( INT i )
 	return &Streams(Handle-1);
 }
 
-// Refill every processed buffer of a streaming voice (A14: retail refilled one per Update, which underruns
-// at a throttled frame rate) and restart it after an underrun. Returns false once the stream has played out.
+// Refill every processed buffer of a streaming voice (one per Update underruns at a throttled frame rate)
+// and restart it after an underrun. Returns false once the stream has played out.
 UBOOL UNOpenALAudioSubsystem::PumpStream( INT i )
 {
 	guard(UNOpenALAudioSubsystem::PumpStream);
@@ -956,7 +933,7 @@ void UNOpenALAudioSubsystem::UnregisterSound( USound* Sound, INT Id )
 				Sound->DeleteStreamHandle( Handle );
 			}
 		}
-		// M5-6: the last stream of an XA sound is gone -- drop the encoded bytes (dialog would otherwise pile up
+		// The last stream of an XA sound is gone -- drop the encoded bytes (dialog would otherwise pile up
 		// line after line; AllDialog.uax is 97 MB).
 		if( !Sound->OpenStreams.Num() && appStricmp( *Sound->FileType, TEXT("XA") ) == 0 )
 			UnloadSoundData( Sound );
@@ -964,7 +941,7 @@ void UNOpenALAudioSubsystem::UnregisterSound( USound* Sound, INT Id )
 	else
 	{
 		// Plain buffers stay until the sound itself is destroyed (Id == -1): replaying a sound then costs
-		// nothing, and the whole PCM set is 6 MB. Retail deleted at RefCount 0 and re-read the package.
+		// nothing, and the whole PCM set is 6 MB.
 		if( Id == -1 )
 		{
 			const INT Handle = Sound->GetHandle();
@@ -1013,7 +990,7 @@ INT UNOpenALAudioSubsystem::PlaySound( AActor* Actor, INT Id, USound* Sound, FVe
 	if( !Viewport || !Sound || !Initialized )
 		return -1;
 	if( Radius <= 0.f )
-		Radius = GAudioDefaultRadius;	// retail check(Radius)'d here
+		Radius = GAudioDefaultRadius;
 
 	debugf( NAME_DevSound, TEXT("Playing %ssound %s"), (Sound->CoreFlags & SF_Streaming) ? TEXT("streaming ") : TEXT(""), Sound->GetName() );
 
@@ -1374,10 +1351,9 @@ void UNOpenALAudioSubsystem::NoteDestroy( AActor* Actor )
 	Music: Ogg Vorbis by path.
 ------------------------------------------------------------------------------------*/
 
-// ALAudio built "..\\music\\" + Song [+ ".ogg"] and fopen'd it. Here: ../Music/<Song>.ogg, then ../Music/<Song>
-// as given (Music/Peeves_chase_v2 has no extension, M5-4), through GFileManager, whose Unix file manager folds
-// '\' to '/' and resolves the case of every component (the directory is `Music`, retail said `music`). A song
-// name that carries its own path is tried as given too.
+// A song name that carries its own path is tried as given first; then ../Music/<Song>.ogg, then
+// ../Music/<Song> as given (Music/Peeves_chase_v2 has no extension). All through GFileManager, which folds
+// '\' to '/' and resolves the case of every component.
 UBOOL UNOpenALAudioSubsystem::ResolveMusic( const FString& Song, FString& Path, void* )
 {
 	guard(UNOpenALAudioSubsystem::ResolveMusic);
@@ -1420,12 +1396,12 @@ INT UNOpenALAudioSubsystem::PlayMusic( FString Song, FLOAT FadeInTime )
 	FString Filename;
 	if( !ResolveMusic( Song, Filename, NULL ) )
 	{
-		// Retail silently played nothing (e.g. Ch1Rictusempra names a song that exists nowhere, §11.2 A6).
+		// Nothing to play (e.g. Ch1Rictusempra names a song that exists nowhere).
 		debugf( TEXT("NOpenALDrv: PlayMusic '%s' -- no ../Music/%s.ogg or ../Music/%s"), *Song, *Song, *Song );
 		return 0;
 	}
 
-	// A transient USound (retail): garbage-collected at the next map change, which stops the song.
+	// A transient USound, as in ALAudio: garbage-collected at the next map change, which stops the song.
 	USound* Music = new USound( *Filename, SF_Streaming | SF_Music );
 	if( !Music )
 		return 0;
@@ -1451,7 +1427,7 @@ UBOOL UNOpenALAudioSubsystem::StopMusic( INT SongHandle, FLOAT FadeOutTime )
 	SongHandle--;
 	if( SongHandle >= 0 && SongHandle < Sources.Num() )
 	{
-		// (Retail stopped whatever occupied the channel; a stale handle must not cut off a sound effect.)
+		// A stale handle must not cut off a sound effect that took the channel since.
 		if( !(Sources(SongHandle).Flags & SF_Music) )
 			return 0;
 		debugf( NAME_DevSound, TEXT("NOpenALDrv: StopMusic channel %i (fade out %1.1f s)"), SongHandle, FadeOutTime );
@@ -1556,9 +1532,9 @@ void UNOpenALAudioSubsystem::Update( FSceneNode* SceneNode )
 	LastRealtime	= Realtime;
 	LastPaused		= Paused;
 
-	// Streams first (every processed buffer refilled), then finished sounds. Retail skipped SF_Looping and
-	// SF_Music here; a looping stream never ends, and a song whose file breaks off is released instead of
-	// holding its channel forever.
+	// Streams first (every processed buffer refilled), then finished sounds. A stream that plays out frees
+	// its voice, music included (a looping stream never does, and a song whose file breaks off does not hold
+	// its channel); a plain buffer is checked unless it loops.
 	guard(PumpAndCheckFinished);
 	for( INT i=0; i<Sources.Num(); i++ )
 	{
@@ -1770,8 +1746,8 @@ void UNOpenALAudioSubsystem::Update( FSceneNode* SceneNode )
 
 	guard(UpdateListenerVelocityAndPos);
 	// Listener: position and velocity in AL space, orientation from the view axes (Coords: X right, Y down,
-	// Z forward) the template's way -- at = Z, up = -Y, both with Z negated into the right-handed frame (§11.2
-	// A8). ReverseStereo flips "up", which mirrors left and right (an escape hatch, as ALAudio's was).
+	// Z forward) -- at = Z, up = -Y, both with Z negated into the right-handed frame. ReverseStereo flips
+	// "up", which mirrors left and right.
 	const FVector At = SceneNode->Coords.ZAxis;
 	const FVector Up = ReverseStereo ? SceneNode->Coords.YAxis : -SceneNode->Coords.YAxis;
 	const ALfloat Orientation[6] = { At.X, At.Y, -At.Z, Up.X, Up.Y, -Up.Z };
@@ -1784,7 +1760,7 @@ void UNOpenALAudioSubsystem::Update( FSceneNode* SceneNode )
 		alListenerfv( AL_VELOCITY, (ALfloat*)&ALVelocity );
 	unguard;
 
-	// Zone reverb (template; retail's I3DL2 listener was compiled out).
+	// Zone reverb (EFX, UseReverb only).
 	if( ReverbKind != NAL_REVERB_NONE )
 		UpdateReverb( RegionListener.Zone );
 
@@ -1792,7 +1768,7 @@ void UNOpenALAudioSubsystem::Update( FSceneNode* SceneNode )
 }
 
 /*------------------------------------------------------------------------------------
-	Reverb (template's EFX EAX reverb, default off).
+	Reverb (EFX EAX reverb, default off).
 ------------------------------------------------------------------------------------*/
 
 void UNOpenALAudioSubsystem::UpdateReverb( AZoneInfo* Zone )
@@ -1865,7 +1841,7 @@ void UNOpenALAudioSubsystem::InitReverbEffect()
 }
 
 /*------------------------------------------------------------------------------------
-	Exec (ALAudio's commands).
+	Exec (ALAudio's commands, plus NOPENALSTATS).
 ------------------------------------------------------------------------------------*/
 
 UBOOL UNOpenALAudioSubsystem::Exec( const TCHAR* Cmd, FOutputDevice& Ar )
@@ -2083,7 +2059,7 @@ INT UNOpenALAudioSubsystem::FindLeastImportantSound( USound *pIncomingSound )
 }
 
 /*-----------------------------------------------------------------------------
-	FLipSyncAnimMgr (ALAudioSubsystem.cpp:2142-2222).
+	FLipSyncAnimMgr (ALAudio's).
 -----------------------------------------------------------------------------*/
 
 FLipSyncAnimMgr::FLipSyncAnimMgr( AActor *ParentActor, FLipSyncData *pLipSyncData )
@@ -2093,7 +2069,7 @@ FLipSyncAnimMgr::FLipSyncAnimMgr( AActor *ParentActor, FLipSyncData *pLipSyncDat
 	m_StartTime			= 0.f;
 	m_LastElapsedTime	= 0.f;
 	m_LastAmp			= 0;
-	m_LipSyncAnimChan	= NULL;		// retail left it uninitialised until Start()
+	m_LipSyncAnimChan	= NULL;		// the destructor reads it even if Start() never ran
 }
 
 FLipSyncAnimMgr::~FLipSyncAnimMgr( )
@@ -2112,8 +2088,7 @@ UBOOL FLipSyncAnimMgr::Start( FLOAT fTime )
 	m_LastAmp			= 0;
 	m_LipSyncAnimChan	= NULL;
 
-	// (Retail first did LoadObject<UClass>(AActor::StaticClass(), "AnimChannel", ...): a lookup of an object
-	// that does not exist -- AnimChannel is a native Engine class, registered at boot. Dropped.)
+	// AAnimChannel is a native Engine class, registered at boot: no LoadObject needed.
 	if( m_ParentActor && !m_ParentActor->bDeleteMe )
 		m_LipSyncAnimChan = m_ParentActor->CreateAnimChannel( AAnimChannel::StaticClass(), AT_Replace, TEXT("mouth_root"), false, true );
 	if( m_LipSyncAnimChan )

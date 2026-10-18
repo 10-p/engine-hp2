@@ -1,11 +1,9 @@
 /*=============================================================================
-	WebRTCLan.h — the IpDrv-facing face of the synthetic LAN (ufront 2.38).
+	WebRTCLan.h — the IpDrv-facing face of the synthetic LAN (WebRTCLan.cpp).
 
-	Deliberately free of IpDrv types (no AUdpLink, no sockaddr): IpDrv calls INTO
-	WebRTCDrv, never the reverse, so there is no module cycle. The link is
-	identified by an opaque id — AUdpLink passes its own `this`.
-
-	See WebRTCLan.cpp for what this simulates and why it has to be at the UDP layer.
+	Free of IpDrv types (no AUdpLink, no sockaddr): IpDrv calls into WebRTCDrv,
+	never the reverse, so there is no module cycle. The link is identified by an
+	opaque id — AUdpLink passes its own `this`.
 =============================================================================*/
 
 #ifndef WEBRTCLAN_H
@@ -18,8 +16,8 @@ void WebRTCLan_Bind( const void* LinkId, INT Port );
 void WebRTCLan_Unbind( const void* LinkId );
 
 /**
- * A UdpLink is sending. Returns TRUE if the synthetic LAN handled it, in which case the caller must
- * NOT attempt a real sendto (there is no UDP in a browser, and a failed send only logs a red herring).
+ * A UdpLink is sending. Returns TRUE if the synthetic LAN answered or swallowed it. On the web AUdpLink
+ * has no socket and never calls sendto(), whatever this returns.
  */
 UBOOL WebRTCLan_Send( const void* LinkId, DWORD DestAddr, INT DestPort, const TCHAR* Text );
 

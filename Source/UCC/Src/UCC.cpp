@@ -82,8 +82,8 @@ void ShowBanner( FOutputDevice& Warn )
 }
 int main( int argc, char* argv[] )
 {
-	// ufront 2.12 (native ucc): __Context (the legacy setjmp exception context) was removed in the modern
-	// ut99 native port — the modernized Launch.cpp never initializes it. Guarded out to build against Core.
+	// Never compiled: nothing defines UE_LEGACY_CONTEXT, and __Context (the legacy setjmp exception context)
+	// is not part of this Core.
 	#if !_MSC_VER && defined(UE_LEGACY_CONTEXT)
 		__Context::StaticInit();
 	#endif
@@ -106,7 +106,7 @@ int main( int argc, char* argv[] )
 		#endif
 		
 		// Parse command line.
-		// ufront: 4096 (Core's GCmdLine), a token that does not fit dropped whole, with a warning (it cut at 1,023).
+		// Up to 4096 characters (Core's GCmdLine); a token that does not fit is dropped whole, with a warning.
 		TCHAR CmdLine[4096], *CmdLinePtr=CmdLine;
 		*CmdLinePtr = 0;
 		UBOOL CmdLineCut = 0;
@@ -134,8 +134,8 @@ int main( int argc, char* argv[] )
 		#endif
 
 		// Init.
-		// HP2 retail ucc read/wrote its own HP.ini (the "HP" literal in UCC.exe), keeping `make`'s EditPackages
-		// edits out of the game's Game.ini.
+		// ucc reads and writes its own HP.ini, as retail UCC.exe does, so `make`'s EditPackages edits stay out of
+		// the game's Game.ini.
 		appInit( TEXT("HP"), CmdLine, &Malloc, &Log, &Error, &Warn, &FileManager, FConfigCacheIni::Factory, 1 );
 		if( CmdLineCut )
 			debugf( NAME_Warning, TEXT("The command line is longer than %i characters: the arguments after '%s' were dropped"), ARRAY_COUNT(CmdLine), CmdLine + Max(0, appStrlen(CmdLine) - 40) );
@@ -197,7 +197,7 @@ int main( int argc, char* argv[] )
 				Class = UObject::StaticLoadClass( UCommandlet::StaticClass(), NULL, *(Token+TEXT("Commandlet")), NULL, LoadFlags, NULL );
 			if( !Class )
 			{
-				INT i; // ufront 2.12: hoisted out of the for (retail code relied on MSVC's old for-scope; used below)
+				INT i; // declared outside the for: used after the loop (the retail code relied on MSVC's old for-scope)
 				for( i=0; i<List.Num(); i++ )
 				{
 					FString Str = List(i).Object;

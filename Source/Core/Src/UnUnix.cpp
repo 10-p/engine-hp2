@@ -18,7 +18,7 @@
 #endif
 
 #ifdef __EMSCRIPTEN__
-#include <emscripten.h>  // ufront 2.12: EM_ASM for the return-to-launcher reload on normal exit (appRequestExit)
+#include <emscripten.h>  // EM_ASM for the return-to-launcher reload in appRequestExit
 #endif
 
 // Standard includes.
@@ -38,10 +38,8 @@
 #ifndef UNREAL_STATIC
 #include <dlfcn.h>
 #endif
-// ufront 2.33 (Windows/MinGW): this file is the platform layer for every GCC/Clang target now, Windows
-// included (Core/CMakeLists.txt gives UnVcWin32.cpp to MSVC only). Name resolution there is WinSock, and
-// UnMinGW.cpp holds the calls with no POSIX equivalent at all.
 #ifdef PLATFORM_WIN32
+// MinGW: name resolution is WinSock; UnMinGW.cpp holds the calls with no POSIX equivalent.
 #include <winsock2.h>
 #include <windows.h>
 #include <process.h>	// _spawnl / _spawnv
@@ -49,7 +47,7 @@
 #include <netdb.h>
 #endif
 #if !defined(PLATFORM_WIN32) && !defined(__EMSCRIPTEN__)
-#include <sys/wait.h>	// HP2 433: appGetProcReturnCode (waitpid)
+#include <sys/wait.h>	// waitpid, for appGetProcReturnCode
 #endif
 
 // Core includes.
@@ -135,8 +133,7 @@ UBOOL USystem::Exec( const TCHAR* Cmd, FOutputDevice& Ar )
 		appStrncpy( Arg0, Cmd, (CmdLen - RestLen) + 1 );
 
 #ifdef PLATFORM_WIN32
-		// ufront 2.33: no fork() on Windows. _spawnl already means "start a new process and keep going",
-		// so the child/parent split collapses into spawn-then-exit.
+		// No fork() on Windows: _spawnl(_P_NOWAIT) starts the new process, then this one exits.
 		if( _spawnl( _P_NOWAIT, "./ucc.exe", "ucc", "server", Arg0, (char*)NULL ) == -1 )
 			appErrorf( TEXT("Failed to launch process.") );
 		appRequestExit( 0 );
@@ -211,17 +208,9 @@ CORE_API void appRequestExit( UBOOL Force )
 		//!UNIX No quit message in UNIX.
 		GIsRequestingExit = 1;
 #ifdef __EMSCRIPTEN__
-		// ufront 2.12 (web): a NORMAL exit (Exit menu / `exit` console command / RELAUNCH route here; the crash
-		// path is the Force branch above — exit(1), typically via the error device — NOT this one) returns the
-		// page to the launcher instead of leaving a dead canvas. Navigate to location.pathname, which strips any
-		// autostart query (?map=…) so the shared frontend shows the launcher (its autostart gate keys off
-		// location.search). Deferred via setTimeout(0) so it fires after the blocking ASYNCIFY main loop unwinds.
-		// Crashes never reach here, so their console/error stays on screen. Mirrors engine-unreal1/engine-ut2004.
-		// ufront 2.13.2: MAIN_THREAD_EM_ASM, not EM_ASM. Under -sPROXY_TO_PTHREAD this runs on the worker,
-		// where `window` does not exist and WorkerLocation is read-only — the guard below would simply skip
-		// and the page would sit on a dead canvas forever (the E2E caught exactly that on the pilot:
-		// waitForURL timed out). Only the browser main thread can navigate. It is a plain EM_ASM on a
-		// non-threaded build, so both configurations keep working.
+		// A normal exit returns the page to the launcher: navigate to location.pathname, which drops any
+		// autostart query, after the Asyncify main loop unwinds (setTimeout 0). Only the browser main thread
+		// can navigate, hence MAIN_THREAD_EM_ASM under pthreads.
 #ifdef __EMSCRIPTEN_PTHREADS__
 		MAIN_THREAD_EM_ASM({
 #else
@@ -395,8 +384,8 @@ void appDebugBreak()
 	External processes.
 -----------------------------------------------------------------------------*/
 
-// HP2 433 API (Inc/UnFile.h): returns a handle the caller polls with appGetProcReturnCode (Engine AStatLog
-// and the editor-only XA encoder in UnAudio.cpp). The template's 2-arg fire-and-forget form does not fit.
+// Returns a handle the caller polls with appGetProcReturnCode (AStatLog, the editor-only XA encoder in
+// UnAudio.cpp).
 void* appCreateProc( const TCHAR* URL, const TCHAR* Parms, UBOOL bRealTime )
 {
 	guard(appCreateProc);
@@ -443,7 +432,7 @@ void* appCreateProc( const TCHAR* URL, const TCHAR* Parms, UBOOL bRealTime )
 }
 
 // Returns 1 once the process has finished (exit code in *ReturnCode), 0 while it still runs. A NULL handle
-// (spawn failed, or the web) is reported as finished with -1 so polling loops terminate.
+// (no process started) is reported as finished with -1 so polling loops terminate.
 UBOOL appGetProcReturnCode( void* ProcHandle, INT* ReturnCode )
 {
 	guard(appGetProcReturnCode);
@@ -708,8 +697,7 @@ CORE_API const char* appBaseDir()
 	{
 		// Get directory this executable was launched from.
 #if defined(__EMSCRIPTEN__)
-		// ufront 2.7b: SDL_GetBasePath() returns "/" under Emscripten. The launcher chdir's to /System, so
-		// use getcwd() — config + the package-search Paths then resolve like a native install.
+		// SDL_GetBasePath() returns "/" here; the launcher chdirs to /System, so use getcwd().
 		if( getcwd( BaseDir, sizeof(BaseDir) ) )
 			appStrcat( BaseDir, "/" );
 #elif defined(PLATFORM_SDL)
@@ -731,9 +719,8 @@ CORE_API const TCHAR* appComputerName()
 	static TCHAR Result[256]="";
 	if( !Result[0] )
 	{
-		// ufront 2.33: on Windows gethostname is a WinSock call and fails with WSANOTINITIALISED until
-		// WSAStartup has run — and this can be reached before IpDrv is loaded at all.
 #ifdef PLATFORM_WIN32
+		// gethostname is a WinSock call, and this can run before IpDrv loads.
 		appWinSockInit();
 #endif
 		gethostname( Result, sizeof(Result) );
@@ -750,8 +737,7 @@ CORE_API const TCHAR* appUserName()
 	if( !Result[0] )
 #ifdef PLATFORM_WIN32
 	{
-		// ufront 2.33: no getlogin() on Windows. GetUserName is the equivalent; fall back to a constant
-		// rather than leaving the buffer empty, since callers treat this as always-valid.
+		// No getlogin() on Windows. Callers expect a name, so fall back to a constant.
 		DWORD Size = ARRAY_COUNT(Result);
 		if( !GetUserNameA( Result, &Size ) )
 			appStrcpy( Result, TEXT("Player") );
@@ -809,7 +795,7 @@ void appPlatformInit()
 	// Get CPU info.
 	GPageSize = 4096; // TODO: sysconf?
 	GProcessorCount = SDL_GetCPUCount();
-#endif // PLATFORM_
+#endif // PLATFORM_SDL
 	unguard;
 }
 
@@ -858,7 +844,7 @@ unsigned long appGetLocalIP( void )
 		struct hostent *Hostinfo;
 		char Hostname[256];
 #ifdef PLATFORM_WIN32
-		appWinSockInit();	// ufront 2.33 — see appComputerName above.
+		appWinSockInit();	// gethostname is a WinSock call
 #endif
 		gethostname( Hostname, sizeof(Hostname) );
 		Hostinfo = gethostbyname( Hostname );
@@ -872,7 +858,7 @@ unsigned long appGetLocalIP( void )
 //
 // Get time in seconds.
 //
-// HP2 433: returns FTime (32.32 fixed point). The counter is rebased on its first reading so FTime::GetFloat()
+// Returns FTime (32.32 fixed point). The counter is rebased on its first reading so FTime::GetFloat()
 // (a FLOAT) keeps sub-millisecond precision however long the machine has been up.
 static QWORD GStartCounter = 0;
 static QWORD appReadCounter()
@@ -902,14 +888,13 @@ CORE_API DWORD appCycles()
 }
 
 /*-----------------------------------------------------------------------------
-	HP2 433 additions: platform functions HP2's headers declare that only the
-	Win32 core (UnVcWin32.cpp, MSVC-only) defines.
+	Platform functions HP2's 433 headers declare that only the Win32 core
+	(UnVcWin32.cpp, MSVC-only) defines.
 -----------------------------------------------------------------------------*/
 
 //
 // Per-user directory prefix for inis, the log and saves. Empty: everything stays relative to the
-// working directory (System/), the template's UT99 layout and the web's /System MEMFS/IDB tree.
-// Callers concatenate, so a non-empty value must end with a path separator.
+// working directory (System/). Callers concatenate, so a non-empty value must end with a path separator.
 //
 CORE_API const TCHAR* appUserDir()
 {
@@ -917,12 +902,13 @@ CORE_API const TCHAR* appUserDir()
 }
 
 //
-// Process CPU time (UnGame.cpp load-time line, UnRender.cpp stats). Wall time on the web.
-// NOTE: never call clock() in Core -- UnFile.h #defines clock(Timer) as a stat macro.
+// Process CPU time (UnGame.cpp load-time line, UnRender.cpp stats). Never call clock() in Core:
+// UnFile.h #defines clock(Timer) as a stat macro.
 //
 CORE_API FTime appProcessSeconds()
 {
 #if defined(__EMSCRIPTEN__) || defined(PLATFORM_WIN32)
+	// Wall time here.
 	return appSeconds();
 #else
 	struct timespec ts;

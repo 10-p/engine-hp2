@@ -44,8 +44,8 @@ void MoveActors( ULevel* Level, FVector Delta, FRotator DeltaRot, UBOOL Constrai
 
 // Global variables.
 #if 1 //U2Ed
-// HP2 wrote __declspec(dllexport) for the Win32 UnrealEd/EdHook importers; DLL_EXPORT is that on MSVC and
-// empty on GCC/clang (UnGnuG.h), where __declspec is undefined.
+// Exported for the Win32 UnrealEd/EdHook importers: DLL_EXPORT is __declspec(dllexport) on MSVC and empty on
+// GCC/clang (UnGnuG.h).
 DLL_EXPORT INT GLastScroll=0;
 #else
 INT GLastScroll=0;
@@ -61,7 +61,7 @@ FString GTexNameFilter;
 UBOOL GPivotShown=0, GSnapping=0;
 FVector GPivotLocation, GSnappedLocation, GGridBase;
 FRotator GPivotRotation, GSnappedRotation;
-//milestone 4 addition (DLL_EXPORT: see GLastScroll above)
+//milestone 4 addition
 DLL_EXPORT bool GPawnsLabel =0;
 DLL_EXPORT bool GTriggersLabel;
 DLL_EXPORT bool GLightsLabel;
@@ -2312,7 +2312,7 @@ void UEditorEngine::Draw( UViewport* Viewport, UBOOL Blit, BYTE* HitData, INT* H
 								iY=(int)Y;
 								tagName=Actor->Tag;
 								tName=tagName.GetEntry(tagName.GetIndex())->Name;
-								// Retail was a UNICODE build (wcscmp); the port is ANSI TCHAR on every target, so appStrcmp.
+								// appStrcmp, not wcscmp: TCHAR is ANSI on every target.
 								if(appStrcmp(tName,TEXT(""))!=0)
 									Viewport->DrawString(0, Frame->Viewport->Canvas->SmallFont, iX, iY,tName, ControlPointColor);
 								else

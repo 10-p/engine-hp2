@@ -1,5 +1,7 @@
+# nonpod2.py FILE... (run from Source/) -- print printf-style call arguments that are FString variables/members
+# or FString-valued expressions passed by value through varargs.
 import re,sys,glob
-# collect FString-typed member/variable names across headers+sources
+# collect FString-typed member/variable names across the files and Core/Inc, Engine/Inc headers
 names=set()
 files=sys.argv[1:]
 for f in files+glob.glob('Core/Inc/*.h')+glob.glob('Engine/Inc/*.h'):
