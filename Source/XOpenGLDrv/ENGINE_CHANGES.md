@@ -1,226 +1,126 @@
-# XOpenGLDrv (HP2 433 port, on the UT99 v400 port) — engine-tree changes & driver-local adaptations
+# XOpenGLDrv — the OldUnreal renderer on HP2 (UE1 build 433)
 
-## 0. HP2 — Harry Potter and the Chamber of Secrets, Unreal Engine 1 build 433 (branch `hp2-v433-compat`)
+`XOpenGLDrv.XOpenGLRenderDevice` is the OldUnreal OpenGL 3/4 renderer, in the fork that runs it on the vanilla
+v400-family engines (UT99 v400 and HP2 433), on desktop GL and on WebGL 2. It is the default hardware device.
+Building and testing it for the browser is in [`WEB_INTEGRATION.md`](WEB_INTEGRATION.md).
 
-The driver source is the OldUnreal fork, FetchContent'd from branch **`hp2-v433-compat`** (locally
-`/home/ion/hp2-ufrontend/XOpenGLDrv` via `FETCHCONTENT_SOURCE_DIR_XOPENGLDRV`), which is the template's
-`ut99-v400-compat` plus the HP2 commits (`git log ut99-v400-compat..hp2-v433-compat`). HP2's
-`Core/Inc/UnObjVer.h` defines `ENGINE_VERSION 433`. Nothing outside `Source/XOpenGLDrv/` (this glue) and
-the fork changed for it. Plan and evidence: `docs/porting/analysis/renderer-forks.md` §2–§5, §10.4.
+## What this folder holds
 
-### 0.1 Gates (`Inc/XOpenGLDrv.h`)
+- [`CMakeLists.txt`](CMakeLists.txt), the build glue. The driver source is fetched.
+- [`XOpenGLDrv.int`](XOpenGLDrv.int), a copy of the fork's localisation file. No build or run step installs it.
+
+| | |
+|---|---|
+| Repository | `XOPENGL_GIT_REPOSITORY`, default `https://github.com/10-p/XOpenGLDrv.git` |
+| Branch | `XOPENGL_GIT_TAG`, default `hp2-v433-compat` |
+| Local clone | `-DFETCHCONTENT_SOURCE_DIR_XOPENGLDRV=<path>` builds an unpushed change |
+| Compiled | every `Src/*.cpp` of the fetched tree (`file(GLOB)`: shaders `*_GLSL.cpp`, the vendored desktop-GL `glad.cpp`, the DXT1 decoder `decompress.cpp`) |
+| Includes | the fork's `Inc/` (its own `glad.h`/`glext.h`) and `glm/`; `Render.h` from `Source/Render/Inc` through the `Render` target |
+| Definitions | `XOPENGLDRV_EXPORTS`, `UPACKAGE_NAME=XOpenGLDrv`, `SDLBUILD=1 SDL2BUILD=1 SDL3BUILD=0` (the fork picks its SDL flavour from `__LINUX__`/`MACOSX`, which this engine does not define) |
+| Links | `Render`, `Engine`, `Core` and SDL2 |
+
+`UPACKAGE_NAME` must stay identical to `IMPLEMENT_PACKAGE(XOpenGLDrv)` and to the ini value
+`XOpenGLDrv.XOpenGLRenderDevice`: the static build mangles the package symbols from it.
+
+## Build and selection
+
+`BUILD_XOPENGLDRV` defaults to `OFF` natively and is forced `ON` under Emscripten; the `native`, `native64`,
+`windows` and `windows64` presets set it. The launcher's `-XOPENGLRENDERER` switch (`GRenderSwitches` in
+`Source/Game/Src/Launch.cpp`) selects it, and it heads the preference order used when no switch and no eligible
+persisted device are present. `UNSDLViewport::OpenWindow` gives it a GL context because its name contains
+`OPENGL`; on the web that is a WebGL 2 context, and because the name contains `XOPENGL` it never falls back to
+WebGL 1.
+
+The device creates no context: on the v400-family engines `CreateOpenGLContext` adopts the one NSDLViewport made
+current (`SDL_GL_GetCurrentContext`, or `emscripten_webgl_get_current_context` on the threaded web build), `Unlock`
+does not swap (the viewport presents), and `Exit` drops its references without deleting the context, which the
+viewport destroys in `CloseWindow`.
+
+## The fork's gates (`Inc/XOpenGLDrv.h`)
 
 | Macro | True on | Carries |
 |---|---|---|
-| `XOGL_UE1_V4XX` | `ENGINE_VERSION` 400 **and** 433 | every former `#if ENGINE_VERSION==400` site that 433 needs too (24 sites: `BOOL/TRUE/FALSE/PF_None/NAME_DevGraphics` shims, `clockFast`, `FShaderWriterX` TArray shims, `MaxTextureSize` member, TEXF aliases / `FIsCompressedFormat` / `FTextureFormatString` / `ERenderZTest`, WebGL2 profile, SDL/WebGL context adoption, no own swap, `SizeX/Y` present, gamma guards, DXT1 soft decode, s3tc ext name, `DumpShader`, ANSI log, `ADD_OPTION`) — a mechanical `==400` → `XOGL_UE1_V4XX` substitution |
-| `XOGL_HP2` | 433 only | the 433 render-device face and HP2's blend semantics (below); `#include "Render.h"` (433 has no `RenderPrivate.h`); the 4-arg `DECLARE_CLASS(…, CLASS_Config, XOpenGLDrv)` |
+| `XOGL_UE1_V4XX` | `ENGINE_VERSION` 400 and 433 | the vanilla-engine adaptations below: Core/TCHAR/TArray shims, context adoption, the WebGL profile and its fixes, gamma defaults |
+| `XOGL_HP2` | 433 | the 433 render-device face and HP2's blend semantics; `#include "Render.h"`; the 4-arg `DECLARE_CLASS(…, CLASS_Config, XOpenGLDrv)` |
 
-**v400 regression:** every fork TU preprocessed against engine-ut99's headers (`-E -P`, `__FILE__`/`__LINE__`
-neutralised) is byte-identical between `ut99-v400-compat` and `hp2-v433-compat`, so the UT99 build is
-textually unchanged.
+Three sites stay `ENGINE_VERSION==400` only: the `RenderPrivate.h` include, the skipped second `UnRender.h` include,
+and `PF_AlphaBlend`/`PF_Straight_AlphaBlend`/`PF_Premultiplied_AlphaBlend` defined to 0 (on v400 the 469 value of
+`PF_AlphaBlend` collides with `PF_CloudWavy`). HP2's private render header is `Source/Render/Inc/Render.h`, whose
+`UnRender.h` is include-guarded.
 
-### 0.2 The 433 face (`XOGL_HP2`; behavioural spec = retail `Source/D3DDrv/Src/Direct3D7.cpp`)
+## The 433 face (`XOGL_HP2`)
 
-- **`DrawComplexSurface(Frame, Surface, Facet, DWORD PolyFlags, BYTE cAlpha)`** (`Src/DrawComplex.cpp`): uses
-  the `PolyFlags` argument, never `Surface.PolyFlags` (Render's Lumos path passes a modified copy). A surface
-  with `PF_HighShadowDetail` **and** a blend bit (`PF_Modulated|PF_Translucent`) is Lumos: straight alpha
-  (`GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA`) with opacity `(255-cAlpha)/255` on the diffuse alpha factor
-  (`cAlpha` is transparency: 255 = gone), blend bits and the Lumos markers (`PF_Gouraud`/`PF_DirtyShadows`)
-  stripped, depth writes = the `PF_Occlude` Render decided; a masked Lumos surface keeps its masked texture
-  upload but blends instead of alpha-testing. D3D7's `PolyFlags & PF_LumosAffected` "any bit" test (which
-  would also catch every plain `PF_Modulated` poly) is deliberately not reproduced.
-- **`INT MaxVertices()` = 256** (== D3D7/SoftDrv/NullDrv; the mesh batcher sizes its buffers once).
+The behavioural reference is the retail `Source/D3DDrv/Src/Direct3D7.cpp`.
+
+- **`DrawComplexSurface(Frame, Surface, Facet, DWORD PolyFlags, BYTE cAlpha)`** (`Src/DrawComplex.cpp`) uses the
+  flags argument, never `Surface.PolyFlags` (Render's Lumos path passes a modified copy). A surface with
+  `PF_HighShadowDetail` and a blend bit (`PF_Modulated|PF_Translucent`) is Lumos: straight alpha
+  (`GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA`) with opacity `(255-cAlpha)/255` (`cAlpha` is transparency: 255 = gone),
+  the blend bits, `PF_Masked` and the Lumos markers (`PF_Gouraud`, `PF_DirtyShadows`) stripped, depth writes as the
+  `PF_Occlude` Render decided. A masked Lumos surface keeps its masked texture upload but blends instead of
+  alpha-testing. D3D7's "any bit of `PF_LumosAffected`" test, which would also catch every plain `PF_Modulated`
+  poly, is not reproduced.
+- **`MaxVertices()`** returns 256, the value of every HP2 device (Render sizes its mesh and particle buffers once,
+  from the first device that renders a mesh).
 - **`DrawTriangles(Frame, Info, Pts, NumPts, _WORD* Indices, NumIndices, PolyFlags, Span)`**
-  (`Src/DrawGouraud.cpp`): indexed triangle list (meshes incl. CPU-skinned skeletal, particles) / `Indices==NULL
-  && NumIndices==NumPts` → one convex fan (decals, blob shadows) / otherwise a plain list. Normals are zeroed
-  unless HW lighting or bump maps read them (particles never write `Normal`). Per-vertex alpha = `Light.W`.
-- **`DrawGouraudPolygon` is NOT declared** by the driver on 433: the base `URenderDevice::DrawGouraudPolygon`
-  forwards to `DrawTriangles` as a fan. Its v400 body lives on as the private fan path `DrawGouraudFan`.
-- `GetOsSurface` is not overridden (the base default returns NULL; only WinDrv calls it).
-- **`PF_AlphaBlend`/`PF_Straight_AlphaBlend` = synthetic `PF_XOGL_AlphaBlend = 0x20000000`** (the one
-  `EPolyFlags` bit 433 leaves free; `PF_Premultiplied_AlphaBlend` stays 0). With it real, the fork's existing
-  alpha-blend paths (SetBlend, `DF_AlphaBlended`, Gouraud vertex-alpha) work unchanged; `DrawSimple` lines/points
-  now use a real alpha blend of `Color.W=1` (visually identical).
-- **`HP2AdjustPolyFlags`** (`Src/SetTexture.cpp`), called on entry by `DrawTriangles` and `DrawTile`: alpha-palette
-  tiles (`Palette[128].A != 255`, not translucent) → `PF_Highlighted` (premultiplied, as D3D7 `DrawTile`);
-  `PF_Highlighted|PF_Translucent` → straight alpha (fading actors, `Opacity < 1`; `PF_Masked` wins, as SoftDrv);
-  `PF_Modulated` drops `PF_RenderFog` (D3D7 `AdjustPolyFlags`).
-- **`Draw3DLine`** skips the `Frame->Coords` transform for `LINE_PreTransformed` (no HP2 caller today).
+  (`Src/DrawGouraud.cpp`): an indexed triangle list (meshes, CPU-skinned skeletal ones included, and particles);
+  `Indices == NULL && NumIndices == NumPts`, one convex fan (decals, blob shadows); otherwise a plain list. Normals
+  are zeroed unless hardware lighting or bump maps read them (particles never write `Normal`). Per-vertex alpha is
+  `Light.W`.
+- **No `DrawGouraudPolygon`**: 433's base `URenderDevice::DrawGouraudPolygon` forwards to `DrawTriangles` as a fan.
+  The v400 body is the private fan path `DrawGouraudFan`.
+- **`PF_AlphaBlend` and `PF_Straight_AlphaBlend` are the synthetic `PF_XOGL_AlphaBlend = 0x20000000`** (the one
+  `EPolyFlags` bit 433 leaves free; `PF_Premultiplied_AlphaBlend` is 0). With it, the fork's alpha-blend paths
+  (`SetBlend`, `DF_AlphaBlended`, the Gouraud vertex alpha) work unchanged.
+- **`HP2AdjustPolyFlags`** (`Src/SetTexture.cpp`), called on entry by `DrawTriangles` and `DrawTile`: strips the
+  synthetic bit; alpha-palette tiles (`Palette[128].A != 255`, not translucent) become `PF_Highlighted`
+  (premultiplied, as D3D7's `DrawTile`); `PF_Highlighted|PF_Translucent` becomes straight alpha (fading actors,
+  `Opacity < 1`), or masked when `PF_Masked` is set, as SoftDrv does; `PF_Modulated` drops `PF_RenderFog`.
+- **`Draw3DLine`** (`Src/DrawSimple.cpp`) skips the camera transform for `LINE_PreTransformed`.
+- `GetOsSurface` is not overridden (the base returns NULL; only WinDrv calls it).
 
-### 0.3 Deferred / to verify at first light
+`ActorXBlending` stays `True` (the web ini sets it, and it is the default): with it off the Gouraud shader scales the
+vertex colour by 1.5, `Light.W` included, which makes fading actors too opaque.
 
-- Two-sided depth bias (HP2's `bTwoSidedBias`, `Render/Src/UnMeshRnLOD.h`): not implemented — decide after
-  looking at Harry's robe/hair close-ups (renderer-forks §3.5, C7).
-- `UTexture::Alpha > 0` fade (a 227 convention in the fork): **no shipped HP2 texture sets `Alpha`** (3,988
-  textures in `Assets/{Textures,Maps,System}` scanned with `tools/dev/analysis/upkg.py`), so it never triggers.
-- Alpha palettes: 130 of 3,385 shipped palettes have `Palette[128].A != 255` (mostly `HP_FX.utx`, A = 0 →
-  premultiplied tiles with A = 0 draw additively, exactly as on D3D7).
-- `ActorXBlending` must stay True (the web ini sets it): with it False the Gouraud shader scales the vertex
-  colour **including `Light.W`** by 1.5, which would make fading actors too opaque.
+## Adaptations for the vanilla engines (`XOGL_UE1_V4XX`)
 
-§1–§5 below are the engine-ut99 (UT99 v400) record this glue inherits verbatim. Their engine-tree edits
-(`WASM_USE_XOPENGL`, `Source/UnrealTournament/…`, NOpenGLESDrv) describe the template's tree, not HP2's (HP2
-selects the device in `Source/Game/Src/Launch.cpp` and builds XOpenGL with `BUILD_XOPENGLDRV`; the header
-comments in this folder's `CMakeLists.txt` are likewise the template's — on 433 the fork's `Render.h` comes
-from `Render/Inc` through the `Render` link, and `../Render/Src` is only kept for fidelity); every
-`#if ENGINE_VERSION==400` they cite is now `#if XOGL_UE1_V4XX` in the fork, and the 3-arg `DECLARE_CLASS`
-note applies to v400 only.
+| Where | What | Why |
+|---|---|---|
+| `Inc/XOpenGLDrv.h` | `BOOL`/`TRUE`/`FALSE`, `PF_None`, `NAME_DevGraphics` | absent from vanilla Core/Engine |
+| `Inc/XOpenGL.h` | `clockFast`/`unclockFast`; `FShaderWriterX` uses `TArray::Empty`/`Add` | no OldUnreal stat macros or `Reserve`/`AddNoCheck` |
+| `Inc/XOpenGL.h` | `INT MaxTextureSize` member | normally from the 469 base class |
+| `Inc/XOpenGL.h` | 469 texture-format names aliased to the vanilla values (`TEXF_BGRA8_LM` = `TEXF_RGBA7`, `TEXF_R5G6B5` = `TEXF_RGB16`, `TEXF_BC1` = `TEXF_DXT1`, `TEXF_BGRA8` = `TEXF_RGBA8`; the rest are dead sentinels), `FIsCompressedFormat`, `FTextureFormatString`, `ERenderZTest` | the vanilla `ETextureFormat` (identical on 400 and 433) |
+| `Src/XOpenGL.cpp` `Init` | `OpenGLVersion = GL_ES_WEBGL` under Emscripten | a browser gives only a WebGL 2 context; the render paths key off the profile, not the platform |
+| `Src/XOpenGL.cpp` | `CreateOpenGLContext` adopts the current context; `SelectGLVersion` takes 3.3 without probing (`IsSupportedGLVersion` opens SDL windows of its own); `Unlock` does not swap; `Exit` deletes no context | NSDLViewport owns window, context and present |
+| `Src/XOpenGL.cpp` | the post-process present draws at `Viewport->SizeX/SizeY` | no `PhysicalSizeX/Y` |
+| `Src/XOpenGL.cpp` `SetGamma` | a `Brightness <= 0` becomes 0.5; a `GammaMultiplier <= 0` becomes 1.75 | the web client's `Brightness` is 0, and the config default of `GammaMultiplier` does not reach the instance, so `Gamma` would be 0 and the present `pow(color, 1/Gamma)` black |
+| `Src/XOpenGL.cpp` `GetViewportGamma` | `Gamma <= 0` returns 1 | last guard against the same black present |
+| `Src/DrawComplex.cpp`, `Src/DrawGouraud.cpp` | bump-map `Lock` at `Viewport->CurrentTime`; `NoNearZ = FALSE` | no `FTime()` default; no `GUglyHackFlags` |
+| `Src/SetTexture.cpp` | `GWarn->Logf` for the editor's unpack diagnostic | no `appMsgf` |
+| `Src/ShaderProgram.cpp` | `DumpShader` without `TArray<FString>::AddItem`; ANSI `ADD_OPTION` and compile-error log | vanilla `AddItem` assigns onto unconstructed memory; `TCHAR` is `char` |
+| `Src/ShaderProgram.cpp` | the `DistanceFogParams` uniform block is declared only under `OPT_DistanceFog` | it is bound only where distance fog exists (227); an active unbound block makes WebGL 2 reject every draw |
+| `Src/CheckExtensions.cpp` | S3TC accepted under `WEBGL_compressed_texture_s3tc` and `GL_WEBGL_compressed_texture_s3tc` | WebGL names the extension without `GL_EXT_`; the format tokens are the same |
+| `Src/SetTexture.cpp` | `TEXF_BC1` reaches the compressed upload with its size computed as 8 bytes per 4x4 block | `FTextureBytes` exists only on OldUnreal engines |
+| `Src/SetTexture.cpp` | on the `ES_WEBGL` profile, DXT1 whose base size is not a multiple of 4 is decoded to RGBA8 (`XOpenGLDecodeDXT1Image` over gl4es' public-domain block decoder, `Src/decompress.cpp`, `Inc/decompress.h`) and uploaded uncompressed | WebGL 2 rejects such sizes in `glCompressedTexImage2D`; block-aligned DXT1 still uploads compressed |
 
----
+Format strings use `%s` throughout, ungated: every engine the fork builds for is ANSI (`TCHAR` is `char`), where
+`%ls` drops the argument, and the generated GLSL `#define`s, uniform and block names, extension checks and logs all
+go through them. The HW-light gather uses the 430-family field layout (`FPlane.X/Y/Z`, `Region.ZoneNumber`), which
+433 falls in.
 
-# The UT99 v400 port (inherited from engine-ut99)
+## GL profiles
 
-This port follows a **driver-only** rule: all XOpenGLDrv adaptations for vanilla **UT99 v400** (UE1)
-live inside `Source/XOpenGLDrv/` and are gated `#if ENGINE_VERSION==400` (v400's `Core/Inc/UnObjVer.h`
-already defines `ENGINE_VERSION 400`; the upstream fork's version matrix keys off `ENGINE_VERSION`, so a
-future **Unreal v200** port adds parallel `#if ENGINE_VERSION==200` branches next to the 400 ones).
+`OpenGLVersion` (`[XOpenGLDrv.XOpenGLRenderDevice]`) is `Core` (0), `ES` (1) or `ES_WEBGL` (2). `ES` is the upstream
+desktop GLES 3.1 path (`#version 310 es`, io-blocks). `ES_WEBGL` is the WebGL 2 subset: `#version 300 es`,
+flattened varyings (`DrawTile_GLSL.cpp`, `DrawGouraud_GLSL.cpp`), S3TC under the WebGL name. `IsES()` is true for
+both ES profiles and `IsWebGL()` for `ES_WEBGL` only; `SetOptionsForRendererConfig` sets `OPT_GLES` for both and
+`OPT_GLES_WEBGL` for the WebGL one, and the shader generators branch on those. The web forces `ES_WEBGL`; natively the
+ini decides (default `Core`), so `OpenGLVersion=ES_WEBGL` runs the WebGL shader path on a desktop context.
 
-## 1. The ONLY engine-tree edit (required build glue — already applied)
+## Antialiasing
 
-`Source/CMakeLists.txt` — register the package (mirrors the adjacent `NOpenGLESDrv` block):
-
-```cmake
-if(NOT PLATFORM_DREAMCAST AND NOT EMSCRIPTEN)
-  add_subdirectory(XOpenGLDrv)
-  list(APPEND INSTALL_TARGETS XOpenGLDrv)
-endif()
-```
-
-This is unavoidable to add any package to the build. It is pure glue (no engine logic). Nothing else
-under `Source/Core|Engine|Render|IpDrv|Fire|NSDLDrv|...` is modified — verified via `git status`
-(`M Source/CMakeLists.txt`, `?? Source/XOpenGLDrv/`).
-
-## 2. M3 engine-tree edits — APPLIED, all gated on `WASM_USE_XOPENGL` (non-breaking)
-
-The WebGL2/XOpenGL web build is opt-in via `-DWASM_USE_XOPENGL=ON` (top-level CMake option, default OFF).
-When OFF, every one of these is a no-op and the existing NOpenGLESDrv web build is byte-for-byte unchanged.
-The option sets an `add_compile_definitions(WASM_USE_XOPENGL)` so the driver-tree files below can gate on it.
-
-- **`Source/CMakeLists.txt`** — the `WASM_USE_XOPENGL` option + `add_compile_definitions` (in the EMSCRIPTEN
-  branch) + renderer selection (build XOpenGLDrv as the sole WASM renderer instead of NOpenGLESDrv).
-- **`Source/UnrealTournament/CMakeLists.txt`** — when `WASM_USE_XOPENGL`, the emscripten link flags become
-  `-sMAX_WEBGL_VERSION=2 -sMIN_WEBGL_VERSION=2 -sFULL_ES3=1 -sGL_ENABLE_GET_PROC_ADDRESS=1` (WebGL2/GLES3 +
-  glad function-pointer loading); otherwise the original `-sFULL_ES2=1` (WebGL1) is used.
-- **`Source/NSDLDrv/Src/NSDLViewport.cpp`** (~line 350) — under `__EMSCRIPTEN__ && WASM_USE_XOPENGL`, request
-  an **ES 3.0** WebGL2 context (major=3, minor=0) instead of ES 2.0. (This is the change formerly deferred
-  in §2a of this doc — now applied and build-gated so NOpenGLESDrv keeps its ES2 context.)
-- **`Source/UnrealTournament/Src/Launch.cpp`** (~line 167) — under `WASM_USE_XOPENGL`, the emscripten boot
-  forces `GameRenderDevice=XOpenGLDrv.XOpenGLRenderDevice` (else `NOpenGLESDrv.NOpenGLESRenderDevice`). The
-  web boot hardcodes the render device in code (the shipped Default.ini is Dreamcast-configured), so this is
-  where the web renderer is chosen.
-
-Rationale for touching these engine-tree drivers/launcher: the web renderer is selected by the launcher +
-windowing driver at boot, so a driver-only package cannot self-select. All edits are `WASM_USE_XOPENGL`-gated
-and reviewable as one opt-in unit. (The monorepo's `targets/ut99/target.json` videoDriver was also switched to
-XOpenGLDrv for the web build assembly — that lives in `ufront`, not this repo.)
-
-## 3. How XOpenGLDrv integrates without touching the engine
-
-- **Context reuse (native + web).** On v400, XOpenGLDrv does **not** create its own GL context. NSDLViewport
-  already creates an SDL GL context and makes it current before calling `Init` (same as NOpenGLESDrv), so
-  `CreateOpenGLContext` adopts it via `SDL_GL_GetCurrentContext()`; `Unlock` does not swap (NSDLViewport
-  swaps); `Exit` does not delete it. All gated `#if ENGINE_VERSION==400` in `Src/XOpenGL.cpp`. This avoids
-  any NSDLDrv change on native and keeps the diff inside the driver.
-- **Package registration** = identical to NOpenGLESDrv: 3-arg `DECLARE_CLASS`, `IMPLEMENT_PACKAGE(XOpenGLDrv)`
-  + `IMPLEMENT_CLASS`, `UPACKAGE_NAME=XOpenGLDrv` from CMake. No OldUnreal 4-arg DECLARE_CLASS / no
-  `autoInitializeRegistrants*` (those don't exist in v400).
-
-## 4. Driver-local v400 adaptations (all in `Source/XOpenGLDrv/`, gated `ENGINE_VERSION==400`)
-
-- `Inc/XOpenGLDrv.h`: include `RenderPrivate.h` for v400 (skip the double-include of guard-less
-  `UnRender.h`); compat shims `BOOL`/`TRUE`/`FALSE`/`PF_None`/`NAME_DevGraphics` (absent in v400 Core).
-- `Inc/XOpenGL.h`: `clockFast`/`unclockFast` for v400; `PF_AlphaBlend`=0 (UT469 flag; its 469 value 0x20000
-  collides with v400 `PF_CloudWavy`); `PF_Straight/Premultiplied_AlphaBlend`=0; `ERenderZTest` enum;
-  `INT MaxTextureSize` member (normally from the 469 base class); `FIsCompressedFormat`/`FTextureFormatString`
-  stubs; and **TEXF_ aliases** mapping the fork's 469 format names to v400's numeric `ETextureFormat`
-  (`TEXF_BGRA8_LM→TEXF_RGBA7`, `TEXF_R5G6B5→TEXF_RGB16`, `TEXF_BC1→TEXF_DXT1`, `TEXF_BGRA8→TEXF_RGBA8`;
-  `TEXF_RGBA8_`/`TEXF_RGB16_`/`TEXF_RGB10A2_LM` = dead sentinels).
-- `Src/XOpenGL.cpp`: context reuse (see §3); `Viewport->SizeX/Y` instead of the 469-only
-  `PhysicalSizeX/Y`; HW-light gather routed through the 430-family field layout (v400 `FPlane.X/Y/Z`,
-  `Region.ZoneNumber` — not the 227/469 fields).
-- `Src/DrawComplex.cpp` / `Src/DrawGouraud.cpp`: `Viewport->CurrentTime` for the bump-map `Lock` (no
-  `FTime()`); `NoNearZ=FALSE` (no `GUglyHackFlags`/`HACKFLAGS_NoNearZ` in v400).
-- `Src/SetTexture.cpp`: `appMsgf`→`GWarn->Logf` (no `appMsgf` in v400).
-- `Src/ShaderProgram.cpp`: v400-safe `DumpShader` (v400 `TArray<FString>::AddItem` assigns onto
-  unconstructed memory → realloc crash); narrow `ADD_OPTION` / ErrorLog format.
-
-### GL profile selection: Core / ES / ES_WEBGL (driver-only, max-fidelity split)
-The `OpenGLVersion` ini enum (`CPF_Config`, `[XOpenGLDrv.XOpenGLRenderDevice]`) gains a third value:
-`Core` (0), `ES` (1), **`ES_WEBGL` (2)**. `ES` is the upstream desktop-GLES 3.1 path (io-blocks,
-`#version 310 es`, `GL_OES_shader_io_blocks`) — kept byte-identical to the fork. `ES_WEBGL` is the WebGL2 ==
-GLES 3.0 subset (flattened plain varyings, `#version 300 es`, S3TC via the WebGL extension name). Design:
-- **One platform decision.** The only `#ifdef __EMSCRIPTEN__` that drives render behaviour is the single
-  profile-selection line in `Init` (`OpenGLVersion = GL_ES_WEBGL`, because a browser can only give a WebGL2
-  context). Everything else keys off the runtime profile via two helpers on the device:
-  `IsES()` (true for `GL_ES` || `GL_ES_WEBGL`) and `IsWebGL()` (`GL_ES_WEBGL` only). Desktop honours the ini,
-  so **`OpenGLVersion=ES_WEBGL` validates the WebGL path natively**.
-- `SetOptionsForRendererConfig` sets `OPT_GLES` for both ES profiles and additionally `OPT_GLES_WEBGL` when
-  `IsWebGL()`. The shader generators branch: `#if OPT_GLES_WEBGL` → flat varyings + `#version 300 es`;
-  `#else` (ES 3.1 / Core) → io-blocks. `#version` selection in `EmitGlobals` is driven purely by
-  `OPT_GLES_WEBGL` (no `ENGINE_VERSION` gate). Flattened paths live in `DrawTile_GLSL.cpp` (ES program,
-  dual-path) and `DrawGouraud_GLSL.cpp` (5 `OPT_GLES_WEBGL` gates); the pre-existing `OPT_GLES` output-layout
-  gate (no dual-source blend on ES) stays as-is since it applies to both ES profiles.
-- `== GL_ES` comparisons were swept to `IsES()` (~5 sites); `== GL_Core` sites are unchanged (`ES_WEBGL`
-  isn't Core, so they stay correct).
-- A future v200 port reuses this verbatim: web selects `ES_WEBGL`, and `#if ENGINE_VERSION==200` branches
-  sit beside the `==400` correctness fixes below.
-
-### WebGL2/ES render-correctness fixes (v400 bring-up, all gated in-driver)
-- `Src/ShaderProgram.cpp`: the `DistanceFogParams` uniform block was declared in **every** shader's GLSL
-  unconditionally, but `glUniformBlockBinding`/the UBO for it are only set on `ENGINE_VERSION==227`. On
-  v400 that left an active-but-**unbound** uniform block, which WebGL2/ANGLE flags on every `glDrawArrays`
-  (`"used but unbound uniform buffer"`). Fixed by wrapping the block declaration in `#if OPT_DistanceFog`
-  (its only consumer + the version where it is bound), so it isn't declared on v400.
-- `Src/XOpenGL.cpp` (`SetGamma` / `GetViewportGamma`): `GammaMultiplier`/`GammaMultiplierUED` are
-  `CPF_Config` floats whose StaticConstructor default (1.75) is **not applied on v400** — they load as 0 —
-  and the web client's `Brightness` is also 0, so `Gamma = (Brightness+0.1)*GammaMult` computes to 0. The
-  PostProcess present shader's `GammaCorrect()` then does `pow(color, 1.0/Gamma) = pow(color, 1/0) = 0`,
-  i.e. a **fully black present** even though the scene renders correctly into the RenderFBO. Fix (both
-  `#if ENGINE_VERSION==400`): `SetGamma` restores `GammaMultiplier<=0 → 1.75`; `GetViewportGamma` floors a
-  returned Gamma `<1 → 1.0` (identity present; a real brightness slider can still raise it). This was
-  latent on native too — we had only ever readback-verified the RenderFBO, never the post-gamma backbuffer.
-
-### DXT1/S3TC compressed textures on WebGL2 (RESOLVED)
-Compressed textures first rendered as a placeholder rainbow-checkerboard, then (once enabled) fatally
-`appErrorf`'d with `"Unpacking unknown format TEXF_3"`. Two driver-only fixes:
-- `Src/CheckExtensions.cpp`: the S3TC check only accepted the desktop name `GL_EXT_texture_compression_s3tc`.
-  ANGLE/WebGL exposes S3TC as `WEBGL_compressed_texture_s3tc` (verified via a browser `getSupportedExtensions()`
-  dump — the DXT1 token 0x83F1 is present and identical). Added the WebGL name(s) to the check under
-  `#if ENGINE_VERSION==400`, so `SupportsS3TC` stays true and DXT1 uploads via `glCompressedTexImage2D`.
-- `Src/SetTexture.cpp`: in the upload switch, `case TEXF_BC1` (== v400 `TEXF_DXT1`) had its
-  `CompImageSize`/`break` trapped inside the `#if 227||UNREAL_TOURNAMENT_OLDUNREAL` block, so on v400 it fell
-  through to the `default: appErrorf(...)`. Moved DXT1 out of that gate; and since the OLDUNREAL helper
-  `FTextureBytes` doesn't exist on v400, compute the DXT1 size directly there
-  (`Max(1,(U+3)/4)*Max(1,(V+3)/4)*8` — 8 bytes per 4x4 block).
-Result: DXT1 textures render correctly on WebGL2 (metal-panel walls instead of checkerboard).
-
-### Non-4-aligned DXT1 (software decode via vendored GL4ES decoder)
-A few DXT1 textures have base dimensions that are not multiples of 4 (e.g. `GenFX.Gradient.Fibre2`, a
-128x2 gradient). WebGL2/ANGLE rejects those via `glCompressedTexImage2D` ("invalid compressed image size").
-For that case only, `Src/SetTexture.cpp` decodes the DXT1 mip to RGBA8 in software and uploads it
-uncompressed (`DecodeDXT1` path; block-aligned DXT1 still uploads compressed to hardware). The block
-decoder is **vendored straight from GL4ES** — `Src/decompress.cpp` + `Inc/decompress.h` (public-domain
-Benjamin Dobell / Anteru S3TC decompressor; the DXT *compression*/stb_dxt tail was dropped, v400 only
-decodes). `XOpenGLDecodeDXT1Image` wraps `DecompressBlockDXT1` with a block-padded buffer + compaction
-(the block decoder writes full 4x4 blocks with no edge clip). Only active on the ES_WEBGL profile.
-
-### Present gamma (v400 web)
-`Src/XOpenGL.cpp` `SetGamma`: the web client's `Brightness` defaults to 0; substitute the retail default
-(0.5) so the PostProcess `GammaCorrect` present isn't crushed to near-black. Combined with the
-`GammaMultiplier<=0 -> 1.75` restore, Gamma computes to ~1.05 (retail-default look). `GetViewportGamma`
-keeps a `Gamma<=0 -> 1.0` last-resort guard.
-
-### Blanket `%ls` → `%s` (whole vendored copy, NOT per-version gated)
-The upstream fork is **UNICODE** (`TCHAR = wchar_t`, uses `%ls`). Vanilla UE1 — **both v400 and v200** — is
-**ANSI** (`TCHAR = char`), where `%s` is the correct TCHAR specifier and `%ls` silently drops the arg. This
-corrupts *generated GLSL* (`#define` names emitted via `FString::Printf("...%ls...", name)`), uniform/block
-names, extension-check strings, and empties all logs. Because every target in this repo's lineage is ANSI,
-`%ls`→`%s` was applied as a **blanket transformation** to `Source/XOpenGLDrv/{Src,Inc}` rather than gated
-per-version. (It is only "wrong" for the OldUnreal upstream, which this private copy never merges back to.)
-
-## 5. Known non-issue: native on-screen present is black
-
-On this dev box the native SDL-x11 (Xwayland) window shows **black for both XOpenGLDrv and the reference
-NOpenGLESDrv** — a shared present/compositor quirk, not a renderer bug. Per the repo's design, native
-on-screen was never the authoritative render gate (the web E2E is). XOpenGLDrv's native render is verified
-by reading back the RenderFBO (`glReadPixels`), which shows the UT intro rendered correctly.
+`UseAA` (default on) and `NumAASamples` (default 4, at least 2 with `UseAA`, at most `GL_MAX_SAMPLES`). With `UseAA`
+the frame is drawn into a multisampled `RenderFBO` (`UpdateRenderFBO`: RGBA8 and DEPTH24_STENCIL8 renderbuffers),
+resolved each frame into `RenderResolvedFBO` with `glBlitFramebuffer`, and post-processed to the screen; screenshot
+reads go to the resolved frame. The same path runs natively and on WebGL 2. Natively, `NoAATiles` turns
+`GL_MULTISAMPLE` off while tiles draw; WebGL has no such switch.

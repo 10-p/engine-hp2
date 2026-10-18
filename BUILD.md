@@ -1,158 +1,181 @@
-# Building HarryPotter2 (native + WebAssembly)
+# Building engine-hp2 (native, Windows, WebAssembly)
 
-Harry Potter and the Chamber of Secrets (PC, UE1 build 433), built on the engine-ut99 template. This file
-covers how to build and run the port; the reasons behind each convention are in the template's BUILD.md
-(`/home/ion/engines/engine-ut99/BUILD.md`, read-only) and in `docs/porting/`. Everything is built and run
-inside the workspace `$W` (`~/WorkHP2` here; layout in `docs/porting/BOOTSTRAP-NEW-MACHINE.md`).
+Everything is built and run inside the workspace `/home/ion/WorkUnreal` (`$W` below): this repository is
+`$W/engine-hp2` (`main`), its retail checkout `$W/engine-hp2-retail` (`retail`), the frontend
+`$W/unreal-frontend-arch-private`. `source $W/env.sh` first: it puts the workspace's emsdk on the path and sets
+`EMSDK`, which the web presets' toolchain file reads.
 
-## Build matrix (CMake presets — `Source/CMakePresets.json`, run from `Source/`)
+## Presets (`Source/CMakePresets.json`, run from `Source/`)
 
-| Preset | Output | Use |
-|--------|--------|-----|
-| `native` | `../build-native/Game/Game`, `../build-native/UCC/ucc-bin` | 32-bit Linux oracle, one static binary; every renderer |
-| `wasm` | `../build-wasm/SDLLaunch/SDLLaunch.{js,wasm,data}` + `meta.json` | web dev build (-O2 + DWARF) |
-| `wasm-debug` | `../build-wasm-debug/…` | -O0, last resort |
-| `wasm-perf` | `../build-wasm-perf/SDLLaunch/…` | what the ufrontend clone consumes (`main` → target `hp2-proto`; `retail`, built in the `$W/HarryPotter2-retail` worktree → `hp2-retail-exp`) |
-| `windows` | `../build-windows/Game/Game.exe` | MinGW-w64 (PLAN Phase F) |
+| Preset | Output | What it is |
+|--------|--------|------------|
+| `native` | `build-native/Game/Game`, `build-native/UCC/ucc-bin`, `libopenal.so.1` | 32-bit Linux (`-m32`), one static binary, every renderer |
+| `native64` | `build-native64/…` (the same files) | the same for x86_64 (`UE_ALLOW_64BIT`) |
+| `wasm` | `build-wasm/SDLLaunch/SDLLaunch.{js,wasm,data}`, `meta.json` | web, `-O2` with DWARF and assertions |
+| `wasm-debug` | `build-wasm-debug/SDLLaunch/…` | web at `-O0` |
+| `wasm-perf` | `build-wasm-perf/SDLLaunch/…`, `SDLLaunch.js.symbols` | web shipping build (linked `-O3 -g0`, no assertions); what the frontend publishes |
+| `windows` | `build-windows/Game/Game.exe`, `OpenAL32.dll` | Windows x86 (MinGW-w64 cross), one self-contained exe |
+| `windows64` | `build-windows64/Game/Game.exe`, `OpenAL32.dll` | the same for x86_64 |
 
 ```bash
 cd Source
 cmake --preset native && cmake --build --preset native -j"$(nproc)"
-source ~/emsdk/emsdk_env.sh            # sets $EMSDK for the Emscripten toolchain file
 cmake --preset wasm-perf && cmake --build --preset wasm-perf -j"$(nproc)"
 ```
 
-The renderer forks are fetched by branch, like the other engines': XOpenGLDrv `hp2-v433-compat`, utglr-copy `hp2`,
-gl4es `fix/cubemap-bind-active-unit` (`Source/CMakeLists.txt`). A dependency that moves and breaks the build is the
-signal to update the engine or the branch. To build an UNPUSHED renderer change, point
-`-DFETCHCONTENT_SOURCE_DIR_XOPENGLDRV=` / `-DFETCHCONTENT_SOURCE_DIR_UTGLR=` / `-DGL4ES_SOURCE_DIR=` at a local clone;
-`meta.json` then records it as `local:<path>`. (Until 2026-10-10 the presets forced the HP2 workspace's sibling
-clones.)
+Host packages: the i386 SDL2 and GL development files for `native` (`libsdl2-dev:i386`, `libgl-dev:i386`,
+`g++-multilib`), the amd64 ones for `native64`, `mingw-w64` for the Windows presets. The Windows presets fetch SDL2's
+and OpenAL Soft's MinGW builds for their architecture (`Source/cmake/SDL2Mingw.cmake`, `OpenALMingw.cmake`); the web
+build and native Linux (`UE_BUNDLED_OPENAL`) build the openal-soft fork (`10-p/openal-soft-web`,
+`Source/cmake/OpenALSoft.cmake`); NOpenALDrv fetches libogg and libvorbis. No preset needs the game content: the web
+link preloads only the tracked web inis (`Config/System/web/`).
 
-A software-only native tree (no GL devices) is handy for bring-up and for parallel work:
-`cmake --preset native -B ../build-native-b -DBUILD_XOPENGLDRV=OFF -DBUILD_UTGLR=OFF`.
+The renderer forks are fetched by branch (`Source/CMakeLists.txt`): XOpenGLDrv `10-p/XOpenGLDrv@hp2-v433-compat`,
+UTGLR `10-p/utglr-copy@hp2`, gl4es `10-p/gl4es@fix/cubemap-bind-active-unit`. To build an unpushed change of one,
+point `-DFETCHCONTENT_SOURCE_DIR_XOPENGLDRV=`, `-DFETCHCONTENT_SOURCE_DIR_UTGLR=` or `-DGL4ES_SOURCE_DIR=` at a local
+clone; `meta.json` then records that dependency as `local:<path>`.
+
+The options this repository defines (`Source/CMakeLists.txt`; the presets set them):
+
+| Option | Default | |
+|--------|---------|-|
+| `UE_ALLOW_64BIT` | OFF | build x86_64 as a 64-bit engine; OFF demotes an x86_64 compiler to `-m32` |
+| `UE_WEB_PERF`, `UE_WEB_DEBUG` | OFF | the web build mode (see the table above) |
+| `UE_BUNDLED_OPENAL` | ON | native Linux: build openal-soft and ship `libopenal.so.1` beside the binary |
+| `BUILD_XOPENGLDRV`, `BUILD_UTGLR`, `BUILD_SOFTDRV`, `BUILD_NULLDRV` | per preset | the render devices |
+| `BUILD_NOPENALDRV`, `BUILD_NULLSOUNDDRV` | per preset | the audio subsystems |
+| `BUILD_EDITOR`, `BUILD_STATIC`, `USE_GL4ES` | per preset | the Editor package, one static binary, UTGLR on gl4es |
+| `SOFTDRV_MAX_SCREEN` | 4096 (8192 on the web) | SoftDrv's largest viewport dimension |
+
+A software-only native tree (no GL devices) for parallel work:
+`cmake --preset native -B ../build-native-soft -DBUILD_XOPENGLDRV=OFF -DBUILD_UTGLR=OFF`.
 
 ## Running the native build
 
 ```bash
-tools/dev/mkrun-hp2.sh build-native $W/run-native    # run tree (Assets/ is only read)
-cd $W/run-native && ./run.sh            # SoftDrv, title level
-./run.sh gl Ch1Rictusempra                                   # XOpenGL straight into a level
-xvfb-run -a -s "-screen 0 1280x720x24" System/Game -SOFTWARERENDERER -NOMSGBOX -log   # headless
+UE_ASSETS_DIR=$W/assets/hp2-proto-assets tools/dev/mkrun-hp2.sh build-native $W/run/hp2-native
+cd $W/run/hp2-native && ./run.sh            # SoftDrv, the title level
+./run.sh gl Ch1Rictusempra                  # XOpenGLDrv, straight into a level (null, utglr, soft)
+SDL_VIDEODRIVER=dummy System/Game -NULLRENDERER -NOMSGBOX -log    # headless
 ```
 
-`Game.ini`, `User.ini` and `Game.log` land in `System/`; saves in `Save/` (`-SAVESLOT=<n>` → `Save/Slot<n>/`).
-New game / continue take the retail shapes `PrivetDr.unr -SAVESLOT=<n>` and `-LOAD=0 -SAVESLOT=<n>`.
-`ucc-bin` uses its own `HP.ini`, as retail ucc did. Useful headless checks:
-`./ucc-bin Core.SimpleCommandlet`, `./ucc-bin batchexport HGame.u class uc <dir>` (loads the whole HGame closure;
-the `[layout]` guard prints any C++/script size mismatch).
+`mkrun-hp2.sh` links the read-only content and copies `System/` (writable), the shipped inis and the binaries.
+`Game.ini`, `User.ini` and `Game.log` land in `System/`; saves in `Save/` (`-SAVESLOT=<n>` → `Save/Slot<n>/`). A new
+game is `PrivetDr.unr -SAVESLOT=<n>`, continuing is `-LOAD=0 -SAVESLOT=<n>`. `-DEBUGMODE` turns HP2's debug console
+and messages on. `ucc-bin` uses its own `HP.ini`: `./ucc-bin Core.SimpleCommandlet`,
+`./ucc-bin batchexport HGame.u class uc <dir>`. SIGTERM, SIGHUP and Ctrl-C ask the main loop to exit cleanly (a
+second one is ignored); before the main loop the process ends at once.
 
 ## Checks before a commit that touches engine code
 
-- `tools/dev/varargs-census.sh <Pkg>…` — compiles a package with `-Wnon-pod-varargs` enabled (the build
-  silences it, and clang turns an `FString` passed through `...` into a runtime trap). Expect 0 hits.
-- `python3 tools/dev/analysis/msvcscan.py <files>` — MSVC6 for-scope reads that compile but read an outer,
+- The native class layout: `UStruct::Link` stops with a fatal error when a native class's C++ size differs from its
+  script size (the `[layoutdiag]` lines before it list the script layout). `Source/Engine/Src/EngineLayoutAsserts.cpp`
+  asserts every member offset of `EngineClasses.h` against the shipped `Engine.u` at compile time, for the 32-bit
+  layout; regenerate it with `tools/dev/layout/emit_asserts.py` after any `EngineClasses.h` change
+  (`tools/dev/layout/README.md`). `tools/dev/layout/layout-sweep.gdb` compares every script property with its C++
+  member in a running engine, on 32-bit and 64-bit builds: expect `shifted=0`.
+- `tools/dev/varargs-census.sh <Pkg>…` compiles a package with clang's `-Wnon-pod-varargs` (the build silences it,
+  and clang turns an `FString` passed through `...` into a run-time trap). Expect no hit.
+- `python3 tools/dev/analysis/msvcscan.py <files>` finds MSVC 6 for-scope reads that compile but read an outer,
   uninitialised variable.
-- `Source/Engine/Src/EngineLayoutAsserts.cpp` (1,063 offset/size asserts from the shipped `Engine.u`) must hold
-  natively and with `-fpack-struct=4`; regenerate with `tools/dev/layout/emit_asserts.py` after any
-  `EngineClasses.h` change. Never regenerate `EngineClasses.h` itself (the two layout pads are hand edits).
+
+## 64-bit
+
+`native64` and `windows64` run the shipped 32-bit `.u` packages unchanged. The width the code reads is
+`PLATFORM_64BITS`, from the compiler (`Core/Inc/Core.h`). What makes it work:
+
+- A script object reference is a 4-byte index into the object table on every width (`UObject::GetScriptObject` /
+  `GetScriptRef`; `UStruct::SerializeExpr` converts on load and save), and an `FName` is a 4-byte name-table index,
+  so the bytecode and its jump offsets keep their 32-bit shape. Multi-byte bytecode operands are read by copy
+  (`ReadScriptOperand`).
+- Every header that declares a scripted native class or a script-mirrored struct is `#pragma pack(push,4)`, the
+  generated `*Classes.h` and the exporter that writes them included; object properties align to 4; script `int`s that
+  stand in for C++ pointers or vtables get their C++ size (`NativePlaceholderSize` in `Core/Src/UnClass.cpp`).
+- `PTRINT`/`UPTRINT` wherever a pointer passes through an integer; native registration data waits in pointer-sized
+  fields; a None context's zero-fill covers its whole destination and a switch compares whole pointers; the script
+  compiler records value sizes in the 32-bit format's sizes (`ScriptFormatStructSize`).
+- MinGW keeps `-fpack-struct=4` on i686 only; `windows64` is LLP64 (`long` stays 4 bytes).
+
+`EngineLayoutAsserts.cpp` holds the 32-bit offsets and is skipped on 64-bit; there the fatal size guard and the layout
+sweep check the layout. The UTGLR fork rounds its pointers through the engine's `UPTRINT`.
 
 ## The web build
 
-1. `cmake --build --preset wasm-perf` → `build-wasm-perf/SDLLaunch/`. The web boot config is
-   `Config/System/web/{Default,DefUser}.ini`, preloaded to `/System/` (see `Config/System/web/README.md`).
-2. Headless smoke without assets: `node tools/dev/analysis/smoke-coi-full.mjs build-wasm/SDLLaunch 40` →
-   `LoadMap: Entry` then `FailedBrowse` (expected with no packages).
-3. In the frontend clone (`$W/ufrontend`, branch `hp2-retail`, which carries both targets; asset paths come from its
-   gitignored `.ufront/publish.local.json`). This checkout (`main`) is target `hp2-proto`; the `retail` worktree is
-   `hp2-retail-exp` (pass its `--engine-artifact $W/HarryPotter2-retail/build-wasm-perf/SDLLaunch`):
+1. `cmake --build --preset wasm-perf` → `build-wasm-perf/SDLLaunch/`. The boot config is
+   `Config/System/web/{Default,DefUser}.ini`, preloaded to `/System/` (`Config/System/web/README.md`). The ABI shims
+   are `vendor/glue/{ue_abi.h,net-shim.js,wasmfs-shim.js}` (ABI version 2, written into `meta.json`, with
+   `targetId` `hp2-proto` from `HP2_TARGET_ID` in `Source/CMakeLists.txt`).
+2. In the frontend (`$W/unreal-frontend-arch-private`; asset paths come from its gitignored
+   `.ufront/publish.local.json`):
    ```bash
-   yarn build --target hp2-proto --engine-artifact $W/HarryPotter2/build-wasm-perf/SDLLaunch   # assembles serve-web/
+   yarn build --target hp2-proto --engine-artifact $W/engine-hp2/build-wasm-perf/SDLLaunch   # assembles serve-web/
    yarn serve                       # http://localhost:8080/ with COOP/COEP
-   yarn e2e --target hp2-proto      # headless Chromium: boot, SoftDrv, direct map load, config, saves, AutoFOV
+   yarn e2e --target hp2-proto      # headless Chromium against serve-web/
    ```
-   ⚠ `yarn e2e` reuses ANY server on :8080; when another checkout owns it, run with `UFRONT_E2E_BASE_URL` and a
-   Playwright config whose webServer serves this `serve-web/` elsewhere (bootstrap doc §11).
-   After changing the web ini, clear the target's `<id>-user-data` store (or the site data): a persisted `Game.ini`
+   The retail engine is `--target hp2-retail-exp --engine-artifact $W/engine-hp2-retail/build-wasm-perf/SDLLaunch`.
+   `yarn e2e` reuses any server already on :8080; when another checkout owns that port, serve this tree elsewhere
+   (`UFRONT_E2E_BASE_URL`, `UFRONT_E2E_SERVE_ROOT`).
+3. After changing the web inis, clear the target's `<id>-user-data` store (or the site data): a persisted `Game.ini`
    shadows the preloaded `Default.ini`.
-   Configure the web build trees OUTSIDE `yarn` (or pass `-DNODE_EXECUTABLE=$(command -v node)`): configured inside
+4. Configure the web trees outside `yarn` (or pass `-DNODE_EXECUTABLE=$(command -v node)`): configured inside
    `yarn publish-all`, CMake caches yarn's temporary node shim and the next build fails (`/tmp/xfs-*/node: not found`).
 
-## Shared with the other engines of the frontend (2026-10-11, from engine-uc2)
+## Commands and log lines shared with the other engines
 
-The same commands, settings and log lines in every engine (ufront's UC2 merge; engine-uc2's
-`docs/CHEAT-COMMANDS.md` is the reference for the cheats; ported here from engine-ut99, whose code this is):
-
-- **`WHEREAMI`** prints `<x> <y> <z> <yaw> <pitch>` (the pawn's location, one decimal; the view's yaw 0..65535 and
-  pitch -32768..32767) on the console, on screen and in the log; **`TELEPORT <x> <y> <z> [<yaw> [<pitch>]]`** puts
-  Harry there. Cheats: allowed in a standalone game (HP2 is single-player), refused (logged) on a network client;
-  every use logs a `Cheat: ` line. HP2's own `ShowPos` (HPConsole, debug mode) only draws the position on screen.
-  `Source/Engine/Src/UnCheats.cpp`, first in `UGameEngine::Exec` (the web's `ue_exec_command` reaches the engine only).
-- **`[Engine.GameEngine] FpsLogSeconds=<s>`** (0 = off) / console **`FPSLOG <s>`**: an `FPS:` log line every `<s>`
-  seconds (frames, fps, frame ms avg/min/max/p99, the 1% low, the viewport size). `Source/Engine/Src/UnFpsLog.cpp`
-  (HP2's `appSeconds()` is an `FTime`: only differences of two are taken).
-- **`Init: Language: <ext>`** in the log at start-up: the language this run took (`[Engine.Engine] Language`, read
-  after the `-ini:` overrides; the frontend's Language setting; `usa` on retail).
-- **The command line holds 4,096 characters** (launcher, UCC, Core's `GCmdLine`): a token that does not fit is
-  dropped whole, with a warning once the log is up. It was bounded at 1,023 and cut mid-token silently.
-- **`ucc make` saves are deterministic** (`Core/Src/UnObj.cpp`, engine-uc2's S2): stable sorts in `SavePackage`, the
-  `.int` files in Windows' (NTFS) order in `CacheDrivers`. (`FindFiles` already matched like Windows here.)
-- **Game pads** (`Source/NSDLDrv`, one pad: the first connected): `[NSDLDrv.NSDLClient] UseJoystick` (on by default) is a
-  real switch (ufront 2.91, the owner: "on by default, but it can still be disabled"): the game-controller subsystem
-  is always up and the viewport reads the key every tick, so the game's own option (`set ini:Engine.Engine.
-  ViewportManager UseJoystick …`) closes the pad (every key released) or opens the first one present at once,
-  logged `NSDLClient: game pads on|off (UseJoystick)`; ⚠ the `UNSDLClient()` instance constructor used to set
-  `UseJoystick`, `ScaleXYZ/RUV` and the dead zones AFTER the ini had filled the object, so `UseJoystick=False` still
-  connected the pad and the Scale keys never applied (measured 2026-10-14); the compiled defaults live in
-  `StaticConstructor` only now, and the web ini's Scale keys say the 100/100 HP2 has always run with; a pad connected after start opens on `SDL_CONTROLLERDEVICEADDED`
-  and closes on `REMOVED`, releasing every pad key (there was no hot-plug, so on the web a pad practically never
-  worked); on the web the press that made the browser list the pad, never reported by SDL, is read from
-  `navigator.getGamepads()` once at the connect and given to the game (engine-uc2's H-3). Log lines: `NSDLClient:
-  game pad connected: <name>` / `disconnected` / `buttons held at the connect given to the game: 0x<mask>`.
-  That press is a tap (released at the next tick: SDL never saw it go down, so it never reports its release). The
-  sticks and triggers are read from the pad's STATE every tick, not from axis events: SDL's Emscripten driver reports
-  no axis values when a pad is opened, so SDL took a stick's first push for its resting point and posted no event for
-  it (`SDL_PrivateJoystickAxis`); the state is right (engine-uc2 reads pads the same way). Found by the cross-engine
-  E2E (`wasm-shared.spec.js` connect-and-move). (This engine's input time is an `FTime`, so the `FLOAT` time step that
-  froze the sticks of engine-ut99 and engine-unreal1 never applied here.)
-- **Antialiasing on the web** (ufront 2.92; the launcher's Advanced "Antialiasing" sets XOpenGL's and UTGLR's
-  `UseAA`): every GL device draws on **WebGL 2** (`NSDLViewport.cpp`; gl4es's calls run on it unchanged). XOpenGLDrv
-  multisamples in framebuffers of its own. OpenGLDrv/UTGLR draws into framebuffer 0, which under
-  `-sOFFSCREEN_FRAMEBUFFER` is Emscripten's emulated, single-sample framebuffer: `Source/Game/msaa-backbuffer.js`
-  (`ufront_backbuffer_samples(n)`, a `--js-library`, the same as engine-ut99's) swaps it for a multisampled one (RGBA8 +
-  DEPTH24_STENCIL8), resolved at the present and before any read of framebuffer 0 (`SHOT`, save thumbnails); UTGLR
-  (`10-p/utglr-copy`, branch `hp2`) asks for `NumAASamples` at SetRes when `UseAA` is on, or gives it back. Log
-  lines: `AA: 4x multisampled back buffer` / `AA: off`. `-WEBGL=1` gives UTGLR WebGL 1 (no antialiasing), and a
-  browser without WebGL 2 falls back to it. Benchmarked (the frontend's opt-in `renderer-benchmark`, steps/2.92):
-  WebGL 2 costs nothing (UTGLR: 4% more frames, 4% less CPU a frame).
+- **`WHEREAMI`** prints `<x> <y> <z> <yaw> <pitch>` (console, screen and a `Cheat:` log line); **`TELEPORT <x> <y> <z>
+  [<yaw> [<pitch>]]`** moves Harry there. Allowed in a standalone game, refused on a network client unless
+  `[Engine.GameEngine] AllowNetCheats`. `Source/Engine/Src/UnCheats.cpp`, handled first in `UGameEngine::Exec`.
+- **`[Engine.GameEngine] FpsLogSeconds=<s>`** (0 = off) / console **`FPSLOG <s>`**: an `FPS:` line every `<s>` seconds
+  (frames, fps, frame ms avg/min/max/p99, the 1% low, the viewport size). `Source/Engine/Src/UnFpsLog.cpp`.
+- **`Init: Language: <ext>`** at start-up: the language this run took (`[Engine.Engine] Language`, read after the
+  `-ini:` overrides).
+- **The command line holds 4,096 characters** (launcher, UCC, Core's `GCmdLine`); a token that does not fit is dropped
+  whole, with a warning once the log is up.
+- **`ucc make` saves are deterministic**: stable sorts in `SavePackage`, the `.int` files in Windows' order in
+  `CacheDrivers`.
+- **Game pads** (`Source/NSDLDrv`; one pad, the first connected): `[NSDLDrv.NSDLClient] UseJoystick` (on by default) is
+  read every tick, so `set ini:Engine.Engine.ViewportManager UseJoystick False` closes the pad (every key released) and
+  `True` opens the first one present; a pad connected later opens on `SDL_CONTROLLERDEVICEADDED`. Sticks and triggers
+  are read from the pad's state each tick; on the web the press that made the browser list the pad is read from
+  `navigator.getGamepads()` and given to the game as a tap. The compiled defaults (Scale, dead zones) are in
+  `UNSDLClient::StaticConstructor`. Log lines: `NSDLClient: game pad connected: <name>`, `disconnected`, `buttons held
+  at the connect given to the game: 0x<mask>`, `game pads on|off (UseJoystick)`.
+- **Antialiasing on the web** (`UseAA`, `NumAASamples` of XOpenGL and UTGLR; the launcher's Advanced switch): every GL
+  device draws on WebGL 2. XOpenGLDrv multisamples in framebuffers of its own; UTGLR draws into framebuffer 0, which
+  `Source/Game/msaa-backbuffer.js` (`ufront_backbuffer_samples(n)`) replaces with a multisampled RGBA8 +
+  DEPTH24_STENCIL8 one, resolved at the present and before any read of framebuffer 0 (`SHOT`, save thumbnails). Log
+  lines: `AA: 4x multisampled back buffer` / `AA: off`. `-WEBGL=1`, or a browser without WebGL 2, gives UTGLR WebGL 1
+  without antialiasing.
 
 ## Audio (NOpenALDrv)
 
-`Source/NOpenALDrv` is HP2's retail ALAudio ported to openal-soft (OpenAL 1.1; EFX, no EAX), native and web:
-compressed sounds are EA-XA ADPCM decoded by `EAXADecoder.{h,cpp}`, music is Ogg Vorbis opened by path
-(`../Music/<Song>.ogg`; libogg 1.3.5 + libvorbis 1.3.7 via FetchContent, built without `-fpack-struct` — Init
-checks `sizeof(OggVorbis_File)` agrees), dialog carries lip-sync data. Config: `[NOpenALDrv.NOpenALAudioSubsystem]`
-with ALAudio's float volumes (`SoundVolume`, `MusicVolume`) plus `OutputRate`/`UseHRTF`/`UseReverb`. Natively
-`libopenal.so.1` sits beside `Game` (Windows: `OpenAL32.dll`). The decoder's oracle test (decoded amplitude vs
-the lip-sync tables shipped in `AllDialog.uax`):
-`cmake --build <native tree> --target eaxa_oracle && <tree>/NOpenALDrv/eaxa_oracle Assets/Sounds` (see the
-header of `Source/NOpenALDrv/Test/EAXAOracle.cpp`). Headless runs: `SDL_AUDIODRIVER=dummy` or openal-soft's
-`ALSOFT_DRIVERS=null`.
+`Source/NOpenALDrv` is HP2's retail ALAudio ported to openal-soft (OpenAL 1.1, EFX, no EAX), natively and on the web.
+Compressed sounds are EA-XA ADPCM, decoded by `EAXADecoder.{h,cpp}`; music is Ogg Vorbis opened by path
+(`../Music/<Song>.ogg`; libogg 1.3.5 and libvorbis 1.3.7, built without `-fpack-struct`, and Init checks that
+`sizeof(OggVorbis_File)` agrees); dialog carries lip-sync data. Config: `[NOpenALDrv.NOpenALAudioSubsystem]` with
+ALAudio's float volumes (`SoundVolume`, `MusicVolume`) plus `OutputRate`, `UseHRTF`, `UseReverb`. The decoder's
+oracle compares the decoded amplitude with the lip-sync tables shipped in `AllDialog.uax`:
+`cmake --build <native tree> --target eaxa_oracle && <tree>/NOpenALDrv/eaxa_oracle <assets>/Sounds` (the header of
+`Source/NOpenALDrv/Test/EAXAOracle.cpp`). Headless: `SDL_AUDIODRIVER=dummy` or openal-soft's `ALSOFT_DRIVERS=null`.
 
-## Windows (MinGW-w64, PLAN Phase F)
+## Windows (MinGW-w64)
 
 ```bash
-cd Source && cmake --preset windows && cmake --build --preset windows -j"$(nproc)"   # build-windows/Game/Game.exe
-tools/dev/mkrun-hp2.sh build-windows $W/run-windows --windows
+cd Source && cmake --preset windows && cmake --build --preset windows -j"$(nproc)"     # or windows64
+UE_ASSETS_DIR=$W/assets/hp2-proto-assets tools/dev/mkrun-hp2.sh build-windows $W/run/hp2-windows --windows
 export WINEPREFIX=$W/.wine-hp2          # keep the prefix inside the workspace
-cd $W/run-windows/System && wine Game.exe -SOFTWARERENDERER -NOMSGBOX
+cd $W/run/hp2-windows/System && wine Game.exe -SOFTWARERENDERER -NOMSGBOX
 ```
 
-One self-contained `Game.exe` (`-static-libgcc -static-libstdc++`); its imports must stay within the stock system
-DLLs (`i686-w64-mingw32-objdump -p Game.exe | grep "DLL Name"`: ADVAPI32, GDI32, IMM32, KERNEL32, msvcrt, ole32,
-OLEAUT32, SETUPAPI, SHELL32, USER32, VERSION, WINMM, WS2_32 — plus `OpenAL32.dll`, copied beside the exe, once
-NOpenALDrv is on). The run tree never copies the retail `*.dll`/`*.exe` (a retail `OpenAL32.dll` or `Game.exe`
-would shadow ours). MinGW lays bitfields out the MSVC way, so the GCC layout pads in `EngineClasses.h` and
-`UnFractal.h` are `#ifndef __MINGW32__`. **Wine's file lookup is case-insensitive: a Windows run proves nothing
-about the path/case handling** — test that natively or on the web. `ucc-bin.exe` is not built on MinGW. Stop a
-hung prefix with `/usr/lib/x86_64-linux-gnu/wine/wineserver -k`.
+One self-contained `Game.exe` (`-static-libgcc -static-libstdc++`, winpthread linked in). Its imports must stay within
+the system DLLs (`<triple>-objdump -p Game.exe | grep "DLL Name"`: ADVAPI32, GDI32, IMM32, KERNEL32, msvcrt, ole32,
+OLEAUT32, SETUPAPI, SHELL32, USER32, VERSION, WINMM, WS2_32) plus `OpenAL32.dll`, copied beside the exe. The run tree
+never copies the retail `*.dll`/`*.exe` (a retail `OpenAL32.dll` or `Game.exe` would shadow ours). MinGW lays
+bitfields out the MSVC way, so the GCC layout pads in `EngineClasses.h` and `UnFractal.h` are `#ifndef __MINGW32__`.
+Wine's file lookup is case-insensitive, so a Windows run says nothing about the path and case handling; test that
+natively or on the web. `ucc-bin` is not built on MinGW. Stop a hung prefix with `wineserver -k`.
+
+## CI
+
+`.github/workflows/build.yml` builds `native` and `native64` (Linux), `windows` and `windows64` (MinGW-w64) and `wasm`
+on every push and pull request and uploads the binaries; a push to `main` replaces the rolling `latest` release.

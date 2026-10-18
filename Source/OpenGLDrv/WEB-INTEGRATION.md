@@ -1,89 +1,79 @@
-# Integrating UTGLR (`OpenGLDrv`) into the UT99 web build — instructions for the ufront/web agent
+# OpenGLDrv (UTGLR) on the web
 
-> **HP2 note.** This is the template's (UT99) integration record, kept for the *why*. For Harry Potter 2 the
-> driver is the fork's `hp2` branch built against the UE1 433 render face (see `PORTING.md` § HP2 / build 433);
-> the web wiring is the same (`USE_GL4ES` forced on under Emscripten, `OpenGLDrv.OpenGLRenderDevice` chosen by
-> `-UTGLRRENDERER` or the ini), with no engine, ABI or glue change. The HP2 target is `hp2`, not `ut99`.
+UTGLR runs in the browser through gl4es (legacy desktop GL to GLES 2), on the WebGL context NSDLDrv creates. The
+driver, its fork and its native build are in [`PORTING.md`](PORTING.md).
 
-**Audience:** the agent integrating engine artifacts into the `ufront` monorepo (host page, build
-assembly, `targets/ut99`). This document is written by the engine-side (UTGLR port) author; it does **not**
-modify the monorepo — it tells you exactly what to change there.
+## Build
 
-## TL;DR
-
-UTGLR is now a **drop-in alternative web renderer** for UT99: package **`OpenGLDrv`**, class
-**`OpenGLRenderDevice`**, gl4es-backed (legacy desktop-GL → GLES2 → WebGL). Integration is **build-flag +
-one `target.json` entry + doc text** — **no engine-source changes, no ABI change, no glue change.**
-
-## No engine / ABI / glue changes are required (confirmed)
-
-The entire engine-side change set is:
-- new package `Source/OpenGLDrv/` (UTGLR ported to UE1 v400), and
-- additive, gated edits to `Source/CMakeLists.txt` only (a `USE_GL4ES` option, the gl4es `FetchContent`
-  block, and — inside the existing `EMSCRIPTEN` branch — enabling `BUILD_UTGLR` iff `USE_GL4ES`).
-
-**Untouched:** `Core/Engine/Render/NSDLDrv/IpDrv/Fire/SoundDrv/UnrealTournament/Launch`, the frozen ABI
-(`vendor/glue/ue_abi.h`, v2), the vendored `net-shim.js`, and all injected glue (FetchFS/IDB/WebRTC).
-gl4es is compiled **statically into the wasm** — it is not glue, needs no runtime injection, and does not
-change the artifact contract or `meta.json` format. NOpenGLESDrv still builds and remains the default.
-
-## Prerequisite: land the driver in the engine tree you build from
-
-The OpenGLDrv package + `Source/CMakeLists.txt` edits currently live in **`engine-ut99-utglr`** (branch
-`step/2.7d-webrtc-net`). Make sure they're present in whichever `engine-ut99` tree your artifact build uses
-before Step 1.
-
-## Step 1 — Build the engine wasm artifact with UTGLR + gl4es
+The wasm presets need no extra flag: under Emscripten `Source/CMakeLists.txt` forces `USE_GL4ES` and `BUILD_UTGLR`
+on, beside XOpenGLDrv, SoftDrv and NullDrv. gl4es is linked statically into the wasm; it is not glue and changes
+neither the ABI (`vendor/glue/ue_abi.h`) nor the artifact's shape.
 
 ```bash
-cd <engine-ut99>/Source
-source ~/emsdk/emsdk_env.sh
-cmake --preset wasm-perf -DUSE_GL4ES=ON [-DGL4ES_SOURCE_DIR=/path/to/gl4es] \
-  && cmake --build --preset wasm-perf -j"$(nproc)"
-# -> build-wasm-perf/SDLLaunch/SDLLaunch.{js,wasm,data} + meta.json  (gl4es baked in; ~4.4 MB wasm)
+source /home/ion/WorkUnreal/env.sh          # EMSDK for the presets' toolchain file
+cd Source
+cmake --preset wasm-perf && cmake --build --preset wasm-perf -j"$(nproc)"
+# -> build-wasm-perf/SDLLaunch/SDLLaunch.{js,wasm,data} + meta.json
 ```
-- Consume it **exactly as today**: `yarn build --target ut99 --engine-artifact <…/build-wasm-perf/SDLLaunch>`.
-  The artifact filenames, `meta.json` schema (abi 1, `wasm-integrated`), and the build validator are
-  unchanged.
-- **gl4es source is configurable:** default is vanilla `ptitSeb/gl4es` via git (`GL4ES_GIT_REPOSITORY` /
-  `GL4ES_GIT_TAG`); pass `-DGL4ES_SOURCE_DIR=<path>` to use a local checkout instead.
-- **Opt-in:** without `-DUSE_GL4ES=ON`, the web build stays NOpenGLESDrv (bit-identical to today). So this
-  change is entirely additive.
 
-## Step 2 — Select `OpenGLDrv` as the web renderer
+`wasm` (dev, `-O2 -g`, assertions) and `wasm-debug` (`-O0`) build the same driver set. `meta.json` lists the
+fetched `utglr` and `gl4es` repositories and branches.
 
-In `targets/ut99/target.json`, set the `videoDrivers` entry (currently the parallel **XOpenGLDrv** effort's
-device — decide which renderer the ut99 web target ships, or offer both):
-```json
-"videoDrivers": [
-  { "device": "OpenGLDrv.OpenGLRenderDevice", "args": "" }
-]
-```
-Why the name matters: NSDLDrv opens a GL window only if the device name contains `"OPENGL"` (it does), and
-under Emscripten forces an ES2/WebGL context — which gl4es targets. No NSDLDrv change needed.
+The link flags in `Source/Game/CMakeLists.txt` that UTGLR depends on:
 
-## Step 3 — Update renderer-mention docs (cosmetic)
+| Flag | Why |
+|---|---|
+| `-sMIN_WEBGL_VERSION=1 -sMAX_WEBGL_VERSION=2` | UTGLR runs on WebGL 2 and falls back to WebGL 1 |
+| `-sFULL_ES2=1` | gl4es emits client-side vertex arrays, which WebGL rejects; Emscripten emulates them with temporary buffers |
+| `-sGL_ENABLE_GET_PROC_ADDRESS=1` | gl4es resolves its backend entry points at run time |
+| `-sOFFSCREEN_FRAMEBUFFER` | the context presents through `emscripten_webgl_commit_frame`, and "framebuffer 0" is Emscripten's emulated one |
+| `--js-library msaa-backbuffer.js` | the multisampled framebuffer 0 behind `UseAA` |
 
-`targets/ut99/README.md`, `targets/ut99/overlay/README.md`, `targets/ut99/branding/help.md` say
-"NOpenGLESDrv" — change to "OpenGLDrv (UTGLR, via gl4es)".
+`Source/Game/offscreen-depth24.sh` rewrites the emitted loader so the emulated framebuffer 0 has a 24-bit
+depth/stencil buffer (Emscripten allocates a 16-bit one), and fails the build when the rewrite does not apply.
 
-## Verify in the browser E2E (the authoritative render gate — engine-side only proved native)
+## The WebGL context
 
-- **First light:** boot the intro (`CityIntro`) and a DM map; expect richer output than NOpenGLESDrv
-  (proper detail textures, fog, multitexture).
-- **S3TC / DXT1:** UT99's S3TC texture pack (in the retail assets) uploads compressed **iff** the WebGL
-  context exposes `WEBGL_compressed_texture_s3tc` (most desktop browsers do). If absent, the engine
-  decompresses DXT1→RGBA — a safe fallback. Watch for GL errors on **non-4-aligned DXT1 mips** (e.g. a
-  128×2); gl4es' own DXT decode should handle them.
-- **Keep off on web:** `UseFragmentProgram=0`, `UsePalette=0` (ARB assembly programs & paletted textures
-  aren't supported on GLES2/gl4es; UTGLR's fixed-function + RGBA fallbacks are complete).
+`UNSDLViewport::OpenWindow` creates the context itself on the engine's worker with
+`emscripten_webgl_create_context` (SDL's EGL path is proxied to a main thread that cannot reach the transferred
+canvas), with `antialias=0`, `explicitSwapControl=1` and `renderViaOffscreenBackBuffer=1`, and makes it current
+before the device's `Init`.
 
-## For Unreal 1 (v200) — not yet
+- Every GL device asks for WebGL 2.
+- `-WEBGL=1` on the command line gives UTGLR WebGL 1; a browser without WebGL 2 does the same. XOpenGLDrv never
+  falls back (it needs WebGL 2).
+- gl4es is pointed at `emscripten_webgl_get_proc_address`, which resolves against the worker's current context (SDL
+  owns no context there).
 
-UTGLR is ported to **UT99 (v400) only**. A v200 port is future work; the same `UTGLR_ENGINE_UT99DC`-style
-gating pattern applies. See `Source/OpenGLDrv/PORTING.md` → "Notes for the future Unreal-v200 port".
+## Selecting UTGLR
 
-## Full engine-side detail
+`-UTGLRRENDERER`, from the launcher's switch table (`GRenderSwitches` in `Source/Game/Src/Launch.cpp`); the choice
+persists to the next boot. Without a switch the launcher takes the persisted device or the preference order
+(XOpenGLDrv first). The frontend's targets offer it in their renderer list
+(`/home/ion/WorkUnreal/unreal-frontend-arch-private/targets/hp2-proto/target.json`, `videoDrivers`, and the same in
+`targets/hp2-retail-exp`).
 
-`Source/OpenGLDrv/PORTING.md` — the complete port (adaptation catalogue, gl4es wiring, the S3TC fix, the
-native headless test harness, known issues).
+## Antialiasing
+
+`UseAA=True` and `NumAASamples=4` in the web `[OpenGLDrv.OpenGLRenderDevice]` section. `SetRes` calls
+`ufront_backbuffer_samples(UseAA ? NumAASamples : 0)`; `msaa-backbuffer.js` then replaces Emscripten's emulated
+framebuffer 0 with a multisampled one (samples clamped to `MAX_SAMPLES`), resolves it into Emscripten's own
+framebuffer at the present, and resolves first for a read of framebuffer 0 (`readPixels`, `copyTexImage2D`,
+`copyTexSubImage2D`: screenshots and save thumbnails). On WebGL 1 it returns 0 and UTGLR draws without
+antialiasing. UTGLR's own AA state stays off on the web: it would switch masked textures to alpha-to-coverage and
+toggle `GL_MULTISAMPLE`, which gl4es only records.
+
+## Textures and config
+
+gl4es reports S3TC, so the engine hands DXT1 textures to UTGLR, and gl4es decodes them to uncompressed textures at
+upload. The web ini keeps `UseFragmentProgram=False` and `UsePalette=False` (gl4es has neither ARB programs nor
+paletted textures; UTGLR's fixed-function and RGBA paths cover both, and HP2 forces `UseFragmentProgram` off in
+code).
+
+## Testing in the browser
+
+The frontend (`/home/ion/WorkUnreal/unreal-frontend-arch-private`) assembles the host page, glue and assets around
+the artifact: `yarn build --target hp2-proto --engine-artifact /home/ion/WorkUnreal/engine-hp2/build-wasm-perf/SDLLaunch`
+(the asset tree comes from `--assets` or `.ufront/publish.local.json`), then `yarn serve`. Its boot spec
+`packages/e2e/hp2-proto-wasm-boot.spec.js` has a `renderer-utglr` test that selects UTGLR and checks it, not
+XOpenGL, came up.

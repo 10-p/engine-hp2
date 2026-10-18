@@ -1,29 +1,47 @@
-# Config/System/web — the web boot config (build-consumed)
+# Config/System/web — the web boot config
 
-`Default.ini` + `DefUser.ini` here are the **web** configuration: the Emscripten link of `Source/Game`
-`--preload-file`s them to `/System/` (and lists them in `LINK_DEPENDS`, so editing one relinks), and HP2's
-`appInit( TEXT("Game") )` derives `/System/Game.ini` and `/System/User.ini` from them on the first boot. The
-frontend then persists the derived pair in IndexedDB (`<target-id>-user-data`: `hp2-proto-user-data` / `hp2-retail-exp-user-data`) — so after changing this folder during
-bring-up, clear that store (or the site data), or the change never reaches an existing profile.
+`Default.ini` and `DefUser.ini` here are the web configuration. The Emscripten link of `Source/Game`
+`--preload-file`s them to `/System/` and lists them in `LINK_DEPENDS`, so editing one relinks. They come from here,
+not from the asset tree: a game install's inis carry none of the web settings (the GL render devices, the
+`[WebRTCDrv.WebRTCNetDriver]` section). HP2's `appInit( TEXT("Game") )` derives `/System/Game.ini` from
+`Default.ini` only when `Game.ini` does not exist, and `/System/User.ini` from `DefUser.ini` when `User.ini` does
+not exist or `Game.ini` has just been derived; a newer `Default.ini` does not re-derive them, because the file manager's
+`GetGlobalTime` is always 0. The frontend keeps the derived pair in IndexedDB (`<target-id>-user-data`:
+`hp2-proto-user-data`, `hp2-retail-exp-user-data`), so after changing this folder clear that store (or the site
+data), or an existing profile keeps its old copy.
 
-`../Default.ini` / `../DefUser.ini` are HP2's **retail** inis, used by the native run tree
-(`tools/dev/mkrun-hp2.sh`); the launcher normalises their Win32 driver names at boot.
+`../Default.ini` and `../DefUser.ini` are HP2's retail inis, which the native run tree uses
+(`tools/dev/mkrun-hp2.sh` copies them); the launcher replaces the Win32 driver names they carry
+(`WinDrv.WindowsClient`, `ALAudio.ALAudioSubsystem`, `D3DDrv.D3DRenderDevice`) with drivers this build contains.
+`DefUser.ini` here is the same retail file (player class `HGame.harry`, the spell, broom and duel bindings).
 
-Rules for `Default.ini` (each one is load-bearing — docs/porting/analysis/web-layer-template.md section 9.2):
-- **Exactly six `Paths=` lines, retail order, `../Save/*.usa` last.** `appInit` rewrites the *last* `Paths=`
-  of `Game.ini` with the save-slot path on every boot, and indexes `Paths[5]` when `appUserDir()` is set.
-  Never append a seventh line (music is opened by path, not through `Paths=`).
+## Rules for `Default.ini`
+
+- **Exactly six `Paths=` lines, in retail order, `../Save/*.usa` last.** At the end of `appInit` the engine writes
+  the save-slot path (`../Save`, or `../Save/Slot<n>` with `-SAVESLOT=<n>`) followed by `*.usa` into
+  `[Core.System] Paths`, and a write to a key that occurs several times replaces its last occurrence. A seventh
+  line would be the one replaced; the music folder is opened by path (`../Music/<Song>.ogg`), not through
+  `Paths=`. `appInit` also sets `GSys->Paths[5]` to a per-user save folder when `appUserDir()` is non-empty; on
+  every target built here (`Source/Core/Src/UnUnix.cpp`) it returns an empty string, so saves stay under `../Save`.
 - On-disk file case (`LocalMap=startup.unr`); no `CdPath`.
-- `AudioDevice=NOpenALDrv.NOpenALAudioSubsystem` (keep it equal to the launcher's override) and its
-  `[NOpenALDrv.NOpenALAudioSubsystem]` section with ALAudio's key names and FLOAT volumes (the HGame options
-  page scales them by 100); `ServerActors` absent (IpServer/UWeb do not exist in HP2); `DownloadManagers` is
-  `Engine.ChannelDownload` only.
-- `[NSDLDrv.NSDLClient]` carries HP2's two extra `UClient` keys (`NoFractalAnim`, `ParticleDensity`) and matches
-  `UNSDLClient::StaticConstructor`'s compiled defaults.
-- UT99/Windows sections (`WinDrv`, `D3DDrv`, `Galaxy`, `IpServer`, `UWeb`, `UBrowser`, the GPU-quirk list) are
-  omitted.
+- `GameRenderDevice=XOpenGLDrv.XOpenGLRenderDevice`. On every boot the launcher writes its choice of device to
+  `GameRenderDevice`, `WindowedRenderDevice` and `RenderDevice` before the engine reads them, so the SoftDrv values
+  of the other two keys never take effect.
+- `AudioDevice=NOpenALDrv.NOpenALAudioSubsystem`, equal to the value the web launcher forces, with its
+  `[NOpenALDrv.NOpenALAudioSubsystem]` section: ALAudio's key names and float volumes 0..1 (HGame's options page
+  scales them by 100) plus `OutputRate`, `UseHRTF` and `UseReverb`. `[ALAudio.ALAudioSubsystem]` stays because
+  `appInit` sizes the file-streaming channels from its `Channels`.
+- `NetworkDevice=WebRTCDrv.WebRTCNetDriver` and its section; no `ServerActors` (HP2 has no IpServer or UWeb);
+  `DownloadManagers=Engine.ChannelDownload` only.
+- `[NSDLDrv.NSDLClient]` carries HP2's two extra `UClient` keys (`NoFractalAnim`, `ParticleDensity`) and the values
+  of `UNSDLClient::StaticConstructor`'s compiled defaults, except `ScaleXYZ`/`ScaleRUV` (100 and 100 here, 200 and
+  500 compiled).
+- No Windows sections (`WinDrv`, `D3DDrv`, `Galaxy`, `IpServer`, `UWeb`, `UBrowser`, the GPU-quirk list).
+- The renderer sections (`[XOpenGLDrv.XOpenGLRenderDevice]`, `[OpenGLDrv.OpenGLRenderDevice]`,
+  `[SoftDrv.SoftwareRenderDevice]`, `[NullDrv.NullRenderDevice]`) are described with their drivers:
+  `Source/XOpenGLDrv/WEB_INTEGRATION.md`, `Source/OpenGLDrv/WEB-INTEGRATION.md`.
 
-`DefUser.ini` is HP2's retail file (player class `HGame.harry`, the spell/broom/duel bindings).
+There are no native Asian or Thai fonts: `UViewport::CreateNativeFont` returns NULL and NSDLDrv, the viewport driver
+of every build here, does not override it.
 
-Limitations: no native Asian/Thai fonts on the web (`UViewport::CreateNativeFont` has no SDL implementation).
-**Edit this folder when the web config changes — never the asset tree.**
+Change the web config here, never in the asset tree.

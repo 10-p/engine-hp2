@@ -1,122 +1,109 @@
-# HarryPotter2 (engine-hp2) — agent guide
+# engine-hp2 — agent guide
 
-**What this is:** the **private** engine repo for **Harry Potter and the Chamber of Secrets (PC, 2002)**,
-**Unreal Engine 1 build 433** (`Source/Core/Inc/UnObjVer.h`: `ENGINE_VERSION 433`, `PACKAGE_FILE_VERSION`
-runtime-set), web port. It holds engine source only and produces a **WASM artifact** (+ native binaries).
-It is **not** the product on its own — ufrontend (`10-p/unreal-frontend-arch-private`, branch `main` since 2026-10-10,
-targets `hp2-proto` + `hp2-retail-exp`, published with the other four games but unlisted) consumes this engine's WASM artifact, owns the host page / UI / build assembly, and owns the
-browser glue behind the thin **ABI shim** vendored at `vendor/glue/` (`ABI_VERSION 1`).
+The private engine repository of **Harry Potter and the Chamber of Secrets (PC, 2002)**, **Unreal Engine 1 build 433**
+(`Source/Core/Inc/UnObjVer.h`: `ENGINE_VERSION 433`, `PACKAGE_FILE_VERSION` set at run time), ported to Linux, Windows
+(MinGW-w64) and the web. It holds engine source only and produces the WebAssembly artifact (and native binaries). The
+frontend (`/home/ion/WorkUnreal/unreal-frontend-arch-private`, targets `hp2-proto` and `hp2-retail-exp`, published
+with the other games but unlisted) consumes the artifact and owns the host page, the UI, the build assembly and the
+browser glue behind the thin ABI shims vendored in `vendor/glue/` (`UE_ABI_VERSION 2`).
 
-Templated on **`engine-ut99`** (`$W/engine-ut99`) (UT99 v400 → web, base import maximqaxd/ut99dc): the same
-build system (CMake + gcc/emcc/MinGW), folder organisation, build targets, renderers (XOpenGLDrv for
-WebGL2, OpenGLDrv/UTGLR + gl4es for WebGL1, the in-tree SoftDrv), helper drivers (NSDLDrv, NOpenALDrv,
-NullDrv, SoundDrv null), web-friendly inis and the WebRTC net driver. Read that repo's `CLAUDE.md` and
-`BUILD.md` for the reasoning behind every convention; this file records only where HP2 differs.
+The build skeleton, folder layout, presets, renderers (XOpenGLDrv for WebGL 2, OpenGLDrv/UTGLR on gl4es, the in-tree
+SoftDrv), helper drivers (NSDLDrv, NOpenALDrv, NullDrv, SoundDrv, WebRTCDrv) and web inis follow `engine-ut99`
+(`/home/ion/WorkUnreal/engine-ut99`); this file records where HP2 differs. Build and run: `BUILD.md`.
 
-## Start here
-`$W` = the workspace that holds every repo side by side: **`/home/ion/WorkUnreal`** since 2026-10-10, where this repo is
-cloned twice beside the other engines — `engine-hp2` (`main`) and `engine-hp2-retail` (`retail`), the same arrangement
-as `engine-ut99` / `engine-ut99-436-compat`. LOG/PLAN entries and older reports use `~/WorkHP2` and
-`/home/ion/hp2-ufrontend` (the HP2 port's own workspaces before that).
+## The workspace and the two branches
 
-**★ `retail` is for retail-SPECIFIC changes ONLY** (the UT99 v436 rule, applied here on 2026-10-10). A general engine
-change goes to `main`, and `retail` is then rebased on top (`git fetch origin && git rebase --onto origin/main
-<old-base>`); never commit a general change directly to `retail`, or the next fix to one silently misses the other.
-ufrontend's `publish-all` enforces it: `hp2-retail-exp` declares `publish.engine.baseBranch: "main"` and a
-`retail` checkout that does not contain `origin/main` is refused.
-
-0. On a NEW machine: the workspace's `bin/setup.sh` (WorkUnreal) — `docs/porting/BOOTSTRAP-NEW-MACHINE.md` is the
-   HP2 port's own earlier layout, kept for its history. Branches: `main`/`prototype` = the pre-release snapshot assets; `retail` = the retail disc.
-1. **`docs/porting/PLAN.md`** — the work queue: phases A–G, the decisions already made, acceptance
-   lines, the progress checklist. Read it before touching anything.
-2. `docs/porting/analysis/00-critique.md`, then the analysis report for the phase you are in.
-3. The template's `CLAUDE.md` + `BUILD.md` (`$W/engine-ut99`) for the *why* of every convention.
-4. Build, run and test: **`BUILD.md`** (native + web + E2E). Three-way-merge helper: `tools/dev/merge3.sh <outdir>`;
-   `docs/porting/LOG.md` is the dated progress log (newest last).
-
-## Map of the world
 | Thing | Path | Role |
 |-------|------|------|
-| This engine repo | `$W/engine-hp2` (branch `main`) | HP2 build-433 source → WASM/native artifacts; the PROTOTYPE engine (`hp2-proto`) |
-| Its retail checkout | `$W/engine-hp2-retail` (branch `retail`, a second clone of this repo) | the RETAIL engine (`hp2-retail-exp`), built side by side; retail-specific commits only, rebased on `main` |
-| The frontend | `$W/unreal-frontend-arch-private` (branch `main`) | consumes the artifacts; `targets/hp2-proto/` + `targets/hp2-retail-exp/` descriptors, published with the other games but unlisted; storage prefixes = the ids (DBs `hp2-proto-user-data`, `hp2-retail-exp-user-data`) |
-| Renderer forks | `10-p/XOpenGLDrv` @ `hp2-v433-compat`, `10-p/utglr-copy` @ `hp2`, `10-p/gl4es` @ `fix/cubemap-bind-active-unit` | fetched by CMake by branch (`BUILD.md`); to edit one, clone it into `$W` and point `FETCHCONTENT_SOURCE_DIR_XOPENGLDRV` / `_UTGLR` / `GL4ES_SOURCE_DIR` at the clone |
-| Game assets (never in git) | `$W/assets/hp2-proto-assets` · `$W/assets/hp2-retail-exp-assets` | the workspace's read-only asset image plus a writable overlay per tree (`sudo $W/assets/mount-assets.sh` after a reboot); game assets only, no saves (`Save/` is empty). `Assets/` here (gitignored) is the source drop's original tree |
-| The template engine | `$W/engine-ut99` | the pattern every port decision mirrors |
+| This repository | `/home/ion/WorkUnreal/engine-hp2` (branch `main`) | the prototype engine, target `hp2-proto` |
+| Its retail checkout | `/home/ion/WorkUnreal/engine-hp2-retail` (branch `retail`) | the retail engine, target `hp2-retail-exp` |
+| The frontend | `/home/ion/WorkUnreal/unreal-frontend-arch-private` (branch `main`) | `targets/hp2-proto/`, `targets/hp2-retail-exp/` |
+| Renderer forks | `10-p/XOpenGLDrv@hp2-v433-compat`, `10-p/utglr-copy@hp2`, `10-p/gl4es@fix/cubemap-bind-active-unit` | fetched by CMake by branch; point `FETCHCONTENT_SOURCE_DIR_XOPENGLDRV` / `FETCHCONTENT_SOURCE_DIR_UTGLR` / `GL4ES_SOURCE_DIR` at a local clone to build an unpushed change |
+| Game content | `/home/ion/WorkUnreal/assets/hp2-proto-assets`, `…/hp2-retail-exp-assets` | never in git; read-only images with a writable overlay (`assets/mount-assets.sh` after a reboot) |
+| The baseline | `/home/ion/WorkUnreal/epic-sources/hp2-ue1-433-proto` (and `ut99-v400`, the three-way merge base) | the drop this engine is a modification of; see `epic-sources/README.md` |
 
-Everything this port builds or writes lives under `$W`; anything outside it is read-only. The HP2 port's own earlier
-workspace (`~/WorkHP2`, on this machine read-only) and the original box's `/home/ion/engines/*`, `/home/ion/ufrontend`
-and `/home/ion/epic-sources/ut99-v400` (the v400 base HP2's 433 tree diverged from; the 3-way-merge base) are history:
-LOG/PLAN entries name them.
+**`retail` holds retail-specific changes only.** A general engine change goes to `main`, and `retail` is rebased on
+top (`git fetch origin && git rebase --onto origin/main <old-base>`); never commit a general change to `retail`. The
+frontend's `publish-all` refuses a `retail` checkout that does not contain `origin/main` (`publish.engine.baseBranch`).
+Values that differ per branch: `HP2_TARGET_ID` (`Source/CMakeLists.txt`: `hp2-proto` here, `hp2-retail-exp` on retail;
+meta.json's `targetId` and the WebRTC peer prefix) and the content the inis and `EngineLayoutAsserts.cpp` describe.
 
-## Layout (the clean-up, first commit)
+Features are listed in the frontend's `/home/ion/WorkUnreal/unreal-frontend-arch-private/docs/14-change-inventory.md`;
+a new feature adds its line there. The baseline for "what we changed" is the Epic/KnowWonder drop in
+`~/WorkUnreal/epic-sources/` (see its README). The records of the port (`docs/porting/**`) are history, not
+instructions.
+
+## Layout
+
 ```
-Source/        every source folder of the original drop (C++ packages + UnrealScript Classes/) + our
-               CMake build; Windows-only originals (WinDrv, Window, D3DDrv, UnrealEd, Launch, FrontEnd,
-               DebuggerLaunch, PackageTool, CutCompiler, Setup, Gesture*, EdSrc, Tools) are kept for
-               reference and not built
-Config/System/ Default.ini + DefUser.ini (shipped) · web/ = the web boot set (preloaded into MEMFS)
-Thirdparty/    the closed / vendored libraries the original build linked (OpenAL 1.0 SDK, Vorbis SDK
-               libs, EAAudioCodec `coda`, DirectX 3/5/7 headers, s3tc, ENCVAG, MpegLib)
-Assets/        game content, gitignored (Assets/README.md)
-vendor/glue/   ue_abi.h + webrtc-shim.js + wasmfs-shim.js, vendored from @ufront/glue at ABI_VERSION 1
-docs/          SOURCE-LAYOUT.md (raw-drop → repo mapping), porting notes as they land
+Source/        every source folder of the drop (C++ packages and UnrealScript Classes/) plus the CMake build;
+               the Windows-only originals (WinDrv, Window, D3DDrv, UnrealEd, Launch, FrontEnd, DebuggerLaunch,
+               PackageTool, CutCompiler, Setup, Gesture*, EdSrc, Tools, ALAudio) are kept for reference, not built
+Config/System/ the shipped Default.ini and DefUser.ini; web/ is the web boot set (preloaded to /System)
+Thirdparty/    the closed and vendored libraries the original build linked (no target links them)
+vendor/glue/   ue_abi.h, net-shim.js, wasmfs-shim.js from @ufront/glue (ABI version 2)
+tools/         developer tools (each script's header says how to run it; tools/dev/layout/README.md)
+docs/          SOURCE-LAYOUT.md (drop → repository mapping) and the porting records
 ```
 
-## Load-bearing HP2 facts (how it differs from the UT99 template)
-- **Build 433, 436-era interfaces.** `DECLARE_CLASS` takes the package name; natives register through
-  `UnCoreNative.h`/`UnEngineNative.h` lookup tables (`GNativeLookupFuncs`), not v400's `GNatives[]` only.
-- **`URenderDevice` (Engine/Inc/UnRenDev.h) is NOT v400's:** `DrawComplexSurface(…, DWORD PolyFlags, BYTE
-  cAlpha)`, pure `MaxVertices()` + `DrawTriangles(Frame, Info, Pts, NumPts, Indices, NumIndices, PolyFlags,
-  Span)`, non-pure `DrawGouraudPolygon`, `GetOsSurface`. Every render driver (XOpenGL, UTGLR, NullDrv,
-  the in-tree SoftDrv) must implement that face — gated in the forks on `ENGINE_VERSION==433`.
-- **`UAudioSubsystem` (Engine/Inc/UnAudio.h) is HP2's own:** `PlaySound(…, INT Flags, FLOAT FadeDuration,
-  FLOAT Priority)`, `PlayMusic(FString Song, FLOAT FadeIn)` opens **Ogg Vorbis** files from `Music/` by
-  path (there is no `.umx`, and music never goes through `Paths=`), `FLipSyncData`, `ModifySound`,
-  flag-driven stop/fade. The shipped driver is `ALAudio.ALAudioSubsystem` (OpenAL 1.0, EAX compiled out,
-  vorbisfile, the closed `coda` library). **Compressed sounds are EA-XA ADPCM** (`sx -eaxa_blk` at
-  import, 15-byte frames / 28 samples — 2,994 of 3,289 sounds); plain sounds are RIFF WAVE PCM 22050 Hz
-  mono 16-bit; dialog is `AllDialog.uax` (97 MB) loaded on demand. Not MPEG Layer II — `MpegLib` has no
-  runtime caller.
-- **No `IpDrv`, `UWeb`, `IpServer`, `UBrowser` in the drop** — the retail game shipped no multiplayer.
-  `Default.ini` still names `IpDrv.TcpNetDriver`; the port brings IpDrv (from the template, adapted to
-  433) and the engine-local `WebRTCDrv` for P2P.
-- **Closed binaries:** `EAAudioCodec` (`coda`, only `.lib`), `MpegLib.lib`, `s3tc.lib`, `ENCVAG.LIB`
-  (PS2). Worked around, never decompiled, linked on no target: s3tc's encode path is editor-only and the
-  9 DXT1 textures all carry P8 twins (no runtime decode), ENCVAG is `HAVE_VAG 0`, `coda` is initialised
-  from `UnVcWin32.cpp` only and its one job (EA-XA decode) gets an open in-tree decoder in Phase E
-  (`tools/dev/analysis/xadec.py` is the reference).
-- **Static linking is the template's registry, not HP2's `__STATIC_LINK`.** HP2 carries a Loki/PS2-era
-  `__STATIC_LINK` scheme (`GNativeLookupFuncs`, `UnCoreNative.cpp`, `AUTO_INITIALIZE_REGISTRANTS`) whose
-  native table is missing 29 natives; it stays undefined and its macro branches are deleted.
-- **Layout under GCC/clang:** two script classes shift invisibly to the size guard — `ABrush→AMover` and
-  `ANavigationPoint→APlayerStart` (trailing bitfield runs). Both get a 3-byte pad in the generated
-  `EngineClasses.h` under `#ifndef __MINGW32__` (MinGW lays bitfields out the MSVC way and the pad would
-  overshoot there). Never regenerate that header without re-applying the pads.
-- **Paths in content are Windows paths.** `HGame.u` opens `Cutscenes\<file>.int` (the dir is
-  `System/CUTSCENES`), music is `..\music\<Song>.ogg`, the save dir literal is `"..\\Save"`. The Unix file
-  manager folds `\`→`/` and resolves case per component; the web glue does NOT fold case for direct opens
-  under `-sWASMFS`, so this is engine work, not frontend work.
-- **`AudioMutex` has no users** — left unbuilt.
-- **Line endings:** the drop was CRLF; the repo is LF (second commit). Diff against
-  `/home/ion/epic-sources/ut99-v400` with `--strip-trailing-cr`.
+## How HP2 differs from the template
 
-## Do NOT
-- Do NOT cherry-pick the Dreamcast/PSX2 device layers (KOSDrv/PVRDrv/AICADrv, `__PSX2_EE__`, the VU0
-  vector asm in `UnMath.h`, `FFileManagerPSX2*`). Pull only what the web port genuinely needs.
-- Do NOT bake heavy glue (FetchFS/IDB/WebRTC logic) into the WASM — only the thin shims in `vendor/glue`.
-- Do NOT change the ABI (`vendor/glue/ue_abi.h`, `ABI_VERSION 1`).
-- Do NOT commit game assets or build trees — gitignored.
-- Do NOT build the other engines from here, or this one from the other repos: this game is standalone.
-- Do NOT write, build or run anything outside the workspace `$W` (run trees, wine prefix, publish output and
-  screenshots included) — the owner's rule.
-- Do NOT use `git commit -a` / `git add -A` while an agent works in this tree: commit by explicit path.
-- Do NOT confuse the platform keys: `#if _MSC_VER` = the MSVC compiler, `#ifdef PLATFORM_WIN32` = Windows the OS,
-  `#if __GNUG__` = the GNU family (MinGW included). Never add `#ifdef WIN32`/`_WIN32`/`_WINDOWS` in engine code.
-- Do NOT put POSIX-only calls (`fork`, `waitpid`, `sigaction`, `mkdir` modes, …) outside `Core/Src/UnUnix.cpp`
-  (behind `#ifndef PLATFORM_WIN32`, Win32 spelling in the `#else` or `UnMinGW.cpp`). New file I/O is binary
+- **Build 433, 436-era interfaces.** `DECLARE_CLASS` takes the package name. `URenderDevice` (`Engine/Inc/UnRenDev.h`)
+  has a 5-argument `DrawComplexSurface(…, DWORD PolyFlags, BYTE cAlpha)`, pure `MaxVertices()` and `DrawTriangles(…)`;
+  every render driver (the forks, NullDrv, SoftDrv) implements that face. `appSeconds()` returns an `FTime`
+  (32.32 fixed point): take differences, and pass `.GetFloat()` to a `%f`.
+- **`UAudioSubsystem` (`Engine/Inc/UnAudio.h`) is HP2's own:** flagged, faded and prioritised `PlaySound`,
+  `PlayMusic(FString Song, FLOAT FadeIn)` opening Ogg Vorbis files from `Music/` by path (no `.umx`), lip-sync data.
+  Compressed sounds are EA-XA ADPCM (15-byte frames, 28 samples); plain sounds are 22050 Hz mono PCM; dialog is
+  `AllDialog.uax`, loaded on demand.
+- **No IpDrv, UWeb, IpServer or UBrowser in the drop**; HP2 is single-player. IpDrv comes from the template, built
+  without the master/update-server commandlets; WebRTCDrv is the web's net driver, and the frontend keeps P2P off.
+- **Closed binaries** (`Thirdparty/`: `coda`, `MpegLib`, `s3tc`, `ENCVAG`) are linked on no target: the EA-XA decoder
+  is in-tree, the S3TC encoder is editor-only and every DXT1 texture has P8 mips.
+- **Static linking uses the template's `UNREAL_STATIC` registry**; HP2's own `__STATIC_LINK` scheme stays undefined.
+- **Layout under GCC/clang:** `ABrush→AMover` and `ANavigationPoint→APlayerStart` need a 3-byte pad in `EngineClasses.h`
+  (`#ifndef __MINGW32__`: MinGW lays bitfields out the MSVC way), `UIceTexture` a `MoveIcePad`, the Fire textures
+  `GCC_ALIGN(4)`. A native class whose C++ size differs from its script size is a fatal error at load.
+- **64-bit:** script object references and `FName`s are 4-byte indices, script-mirrored headers are
+  `#pragma pack(push,4)`, script `int`s that stand in for C++ pointers get their C++ size in `UStruct::Link`
+  (`NativePlaceholderSize`). `BUILD.md` lists the mechanisms.
+- **Content paths are Windows paths** (`Cutscenes\<file>.int`, `..\music\<Song>.ogg`, `"..\\Save"`): the Unix file
+  manager folds `\` to `/` and resolves case per component; the web glue does not fold case under WasmFS, so this is
+  engine work.
+- **Line endings:** the drop was CRLF, the repository is LF; diff against the drop with `--strip-trailing-cr`.
+
+## Rules
+
+- Comments explain the code as it is, in one or two lines; keep the rare load-bearing note. No stage markers, work
+  ids, fix stories, report sources, owner quotes, dates, commit hashes, cross-references to other files' comments or
+  other repositories, glyphs or all-caps emphasis. A platform statement lives inside the `#ifdef` it belongs to. A
+  comment that contradicts its code is a bug. Epic's, KnowWonder's and the upstream forks' comments are left alone.
+  Log text is not a comment: keep its wording (the frontend's E2E matches some lines).
+- Docs describe the current state in present tense: no phases, history, dates as narrative, owner attributions or
+  measurements as proof. Rewrite a doc from the code; records (`docs/porting/**`) stay as they are. Every path, flag,
+  preset and script a doc names must exist.
+- Names follow behaviour. Shared CMake options take the `UE_` prefix; engine-specific ones keep theirs. Do not rename
+  ini sections or keys players may have saved, the `WebRTCDrv` package, `UWebRTCNetDriver`, the `NetworkDevice=`
+  value, exported ABI symbols, or log lines the frontend matches.
+- Commit subjects name the feature (`fix(core): …`, `feat: …`, `build: …`), never a stage number or a date.
+- Do not change the ABI (`vendor/glue/`) by hand: it is vendored from `@ufront/glue`, and the engines and the glue
+  move together.
+- Do not bake heavy glue (FetchFS, IDB, WebRTC logic) into the wasm: only the thin shims in `vendor/glue/`.
+- Do not commit game content or build trees (gitignored).
+- Do not build the other engines from here, or this one from the other repositories.
+- Do not write, build or run anything outside `/home/ion/WorkUnreal` (run trees, wine prefix, publish output and
+  screenshots included).
+- Do not use `git commit -a` / `git add -A` while another agent works in this tree: commit by explicit path.
+- Platform keys: `#if _MSC_VER` is the MSVC compiler, `#ifdef PLATFORM_WIN32` Windows the OS, `#if __GNUG__` the GNU
+  family (MinGW included), `PLATFORM_64BITS` the pointer width. Never add `#ifdef WIN32`/`_WIN32`/`_WINDOWS` to
+  engine code.
+- POSIX-only calls (`fork`, `waitpid`, `sigaction`, `mkdir` modes, …) live in `Core/Src/UnUnix.cpp` behind
+  `#ifndef PLATFORM_WIN32`, with the Win32 spelling in the `#else` or in `UnMinGW.cpp`. New file I/O is binary
   (`"rb"`/`"wb"`); path literals use `PATH_SEPARATOR` or `/`.
-- Do NOT hand-edit `EngineClasses.h` beyond the two layout pads (`bColoredPad`, `bTwoWayPad`); regenerate
-  `EngineLayoutAsserts.cpp` with `tools/dev/layout/emit_asserts.py` after any change.
-- Do NOT subtract pointers that may point into different buffers (GCC compiles it as an exact division — the
-  `MeshRn` segfault); use a byte difference and check it.
+- `EngineClasses.h` is generated; its hand edits are the layout pads (`bColoredPad`, `bTwoWayPad`), the
+  `PTRINT` members (`AStatLog.Context`, `AStatLogFile.LogAr`; `AInternetLink.PrivateResolveInfo` in `IpDrvClasses.h`)
+  and the unconditional `#pragma pack`. Regenerate
+  `EngineLayoutAsserts.cpp` with `tools/dev/layout/emit_asserts.py` after any change to it, and run
+  `tools/dev/layout/layout-sweep.gdb` on a 32-bit and a 64-bit build.
+- Do not subtract pointers that may point into different buffers (GCC compiles it as an exact division); use a byte
+  difference and check it.

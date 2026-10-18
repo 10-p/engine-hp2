@@ -1,214 +1,137 @@
-# Porting UTGLR to engine-ut99 (UE1 v400) — status & handoff
+# OpenGLDrv — UTGLR on HP2 (UE1 build 433)
 
-> **HP2 (UE1 build 433) copy.** This file is the template's (engine-ut99) record, kept verbatim for the *why*
-> of the platform work. What differs for Harry Potter 2 — the macro split and the 433 render face (H1–H7) on
-> fork branch `hp2` — is in [§ HP2 / build 433](#hp2--build-433-fork-branch-hp2) at the end. Read that first.
+`OpenGLDrv.OpenGLRenderDevice` is [UTGLR](https://www.cwdohnal.com/utglr/), Chris Dohnal's legacy-OpenGL UE1 render
+device, in the fork that adapts it to this engine's platform layer (NSDLDrv, SDL2, gl4es, the web) and to HP2's
+build-433 render-device face. The web side (gl4es, the WebGL context, antialiasing in the browser) is in
+[`WEB-INTEGRATION.md`](WEB-INTEGRATION.md).
 
-**What this is.** `Source/OpenGLDrv/` is [UTGLR](https://www.cwdohnal.com/utglr/) — Chris Dohnal's mature
-legacy-OpenGL UE1 render device (`OpenGLDrv.OpenGLRenderDevice`, written for **UT v436**) — ported to this
-engine (**ut99dc / UE1 v400**) and wired to run on **WebGL** via the **gl4es** (desktop-GL→GLES2)
-translator, mirroring `engine-ut2004/GL4ESDrv`.
+## What this folder holds
 
-**Base source:** the 2010-era UTGLR drop at `/home/ion/utglr/` (`OpenGL.cpp/.h`, `OpenGL1Funcs.h`,
-`OpenGLExtFuncs.h`, `OpenGLDrv.cpp/.h`, `c_gclip.*`, `c_rbtree.h`). Win32-only files (`wglext.h`, `.sln`,
-`.vcproj`, `glext.h`, `UnFile.h`) were not copied.
+Only the build glue: [`CMakeLists.txt`](CMakeLists.txt) and these two notes. The driver source is fetched.
 
-## Status (this pass)
+| | |
+|---|---|
+| Repository | `UTGLR_GIT_REPOSITORY`, default `https://github.com/10-p/utglr-copy.git` |
+| Branch | `UTGLR_GIT_TAG`, default `hp2` |
+| Local clone | `-DFETCHCONTENT_SOURCE_DIR_UTGLR=<path>` builds an unpushed change |
+| Compiled | `OpenGL.cpp`, `OpenGLDrv.cpp`, `c_gclip.cpp` (the fork is flat: every file at its root) |
+| Definitions | `UPACKAGE_NAME=OpenGLDrv`, `UTGLR_UT_BUILD`, `UTGLR_ENGINE_UT99DC`, `UTGLR_ENGINE_HP2`, `__UNIX__`; `UTGLR_USE_GL4ES` with gl4es |
+| Links | `Render`, `Engine`, `Core` and SDL2; gl4es when `USE_GL4ES` is on; no GL library (SDL loads the system one with the context) |
 
-| Milestone | State | Evidence |
-|-----------|-------|----------|
-| **M1** compile natively | ✅ | `OpenGLDrv.so` builds clean (0 errors); package/class symbols exported |
-| **M2** render via system desktop GL | ✅ | DM-Codex, ~26k frames headless on the RTX 3090, no GL errors |
-| **M3** render through gl4es→GLES2 | ✅ | `GL_VERSION: 2.1 gl4es wrapper 1.1.7`, hundreds of frames, no missing procs |
-| **M4** wasm/WebGL build | ✅ | `wasm` + `wasm-perf` link UTGLR+gl4es → `SDLLaunch.{js,wasm,data}` + `meta.json` (0 errors); in-browser render/E2E is the `ufront` monorepo's gate |
+The fetch block is in [`Source/CMakeLists.txt`](../CMakeLists.txt); `Source/Game/CMakeLists.txt` records the
+repository and branch in the web artifact's `meta.json`.
 
-## The prime directive was honored: **zero engine-source edits**
+## Build
 
-Nothing under `Core/ Engine/ Render/ NSDLDrv/ IpDrv/ Fire/ SoundDrv/ UnrealTournament/` was modified. The
-complete change set outside the new package is **additive, gated edits to `Source/CMakeLists.txt`** (the
-`USE_GL4ES` option, the gl4es `FetchContent` block, and — inside the existing `EMSCRIPTEN` branch —
-enabling `BUILD_UTGLR` iff `USE_GL4ES`). Everything else is the new `Source/OpenGLDrv/` package.
+| Option | Default | Effect |
+|---|---|---|
+| `BUILD_UTGLR` | `OFF` | builds the package; set by the `native`, `native64`, `windows` and `windows64` presets, forced on under Emscripten |
+| `USE_GL4ES` | `OFF` native, forced `ON` under Emscripten | links gl4es (desktop GL to GLES 2) instead of resolving GL from the context; turns `BUILD_UTGLR` on; the `windows` presets set it `OFF` |
+| `GL4ES_SOURCE_DIR` | empty | a local gl4es checkout instead of the fetch of `GL4ES_GIT_REPOSITORY` (`https://github.com/10-p/gl4es.git`) at `GL4ES_GIT_TAG` (`fix/cubemap-bind-active-unit`) |
 
-Two design choices made this possible:
-
-1. **Reused the reserved build slot.** `Source/CMakeLists.txt` already had
-   `if(BUILD_UTGLR) → add_subdirectory(OpenGLDrv)` + the `--whole-archive`/INSTALL_TARGETS plumbing.
-   Creating `Source/OpenGLDrv/` + `-DBUILD_UTGLR=ON` needs no other shared-file edit for native.
-
-2. **Named the package to satisfy NSDLDrv's context logic — LOAD-BEARING.**
-   `Source/NSDLDrv/Src/NSDLViewport.cpp:297` opens a GL window **iff the render-device name contains the
-   substring `"OPENGL"`**, and on native leaves the profile at desktop **COMPATIBILITY** unless the name
-   also contains `"GLES"` (the `#ifdef __EMSCRIPTEN__` branch forces ES2 for WebGL). The name
-   **`OpenGLDrv.OpenGLRenderDevice`** (UTGLR's own upstream name) therefore gets a desktop-GL context
-   natively and a WebGL/ES2 context under Emscripten **with no NSDLDrv edit**. ⚠️ If you rename the
-   package/class, keep `"OpenGL"` in it and keep `"GLES"` out — otherwise NSDLDrv won't give it a GL window.
-
-## Adaptation catalogue (all gated by `UTGLR_ENGINE_UT99DC`, defined in the package CMake)
-
-`UTGLR_ENGINE_UT99DC` guards every deviation from upstream UTGLR (grep it). `UTGLR_UT_BUILD` and `__UNIX__`
-are also defined for this target.
-
-| Site | Upstream (v436/Win32) | This port (v400/Linux) | Why |
-|------|-----------------------|------------------------|-----|
-| `OpenGL.h:~359` | 4-arg `DECLARE_CLASS(...,OpenGLDrv)` | 3-arg `DECLARE_CLASS(...,CLASS_Config)` | v400's macro is 3-arg; package comes from `IMPLEMENT_PACKAGE`/`THIS_PACKAGE` |
-| `OpenGL.h:~637`, `OpenGL.cpp:~3665` | `FTime m_prevFrameTimestamp` / local | `FLOAT` | this engine has no `FTime`; frame limiter stores `appSeconds()` |
-| `OpenGL.h:36` | `#include <tchar.h>` | gated out on `__UNIX__` | Linux/gcc has no `<tchar.h>` |
-| `OpenGL.cpp:~5850/5859` | `dbgStr[0] = _T('\0')` | `= 0` | avoid `_T`; ANSI TCHAR here |
-| `OpenGL.cpp:52` | (engine headers first) | `#include <new>/<map>/<vector>` **before** `OpenGLDrv.h` | front-load STL before Core: (a) `<new>` first → Core's inline `operator delete` matches `<new>`'s noexcept (C++11+); (b) on **Emscripten libc++**, `<map>` pulls `<time.h>` **before** Core/UnFile.h's `#define clock(Timer)` mangles `clock_t clock(void)` |
-| `OpenGLDrv.h:~30` | SDL 1.2 (`<SDL/SDL.h>`) | `"SDL2/SDL.h"` + inline compat shims | `SDL_GL_SwapBuffers`/`SDL_SetGammaRamp`/`SDL_ListModes`/`SDL_FULLSCREEN` were removed in SDL2; NSDLDrv owns presentation/window |
-| `OpenGL.cpp:~2911` (`Init`) | `SDL_GL_LoadLibrary("libGL.so.1")` (fatal on fail) | skipped | NSDLDrv already created+made-current the context and loaded GL before Init; loading again → fatal "already loaded". Matches NOpenGLESDrv. |
-
-No `-fpack-struct=4` / calling-convention work is needed per-package — `STDCALL`/`FASTCALL`/`DLL_EXPORT` are
-empty on gcc (`Core/Inc/UnGnuG.h`), the MSVC `__asm`/`__declspec(naked)`/SSE paths are `_WIN32`-gated off
-(C fallbacks active), `UTGLR_RUNE_BUILD` methods are compiled out, and `__INTEL_BYTE_ORDER__` is defined by
-the engine.
-
-## gl4es integration (WebGL path), gated by `USE_GL4ES` / `UTGLR_USE_GL4ES`
-
-- **`Source/CMakeLists.txt`** (additive, gated): `option(USE_GL4ES … OFF)` + a `FetchContent` block that,
-  when `USE_GL4ES OR EMSCRIPTEN`, builds gl4es with `NOX11 NOEGL STATICLIB DEFAULT_ES=2
-  NO_INIT_CONSTRUCTOR`, redirects its archive output per build dir, and exposes `gl4es::GL`. `-m32` is
-  inherited from the native preset's `CMAKE_C_FLAGS`. **The gl4es source is configurable** — set
-  `-DGL4ES_SOURCE_DIR=<path>` to use a local checkout (vanilla or fork); leave it empty (default) to
-  fetch vanilla upstream `GL4ES_GIT_REPOSITORY` (`https://github.com/ptitSeb/gl4es.git`) at
-  `GL4ES_GIT_TAG` (default `master` — pin for reproducibility). Nothing is hardcoded to a personal fork.
-- **`Source/OpenGLDrv/CMakeLists.txt`**: when `USE_GL4ES`, include `${gl4es_SOURCE_DIR}/include` (BEFORE
-  system, so `<GL/gl.h>` is gl4es'), link `gl4es::GL` **instead of** system GL, define `UTGLR_USE_GL4ES`.
-- **`OpenGL.cpp`**: under `UTGLR_USE_GL4ES`, `Init` does `setenv(LIBGL_ES=2/…)`,
-  `set_getprocaddress(SDL_GL_GetProcAddress)`, `initialize_gl4es()`; and `GetGL1Proc`/`GetGLExtProc` resolve
-  via **`gl4es_GetProcAddress`** (so calls hit gl4es' translation, not system GL). Mirrors
-  `engine-ut2004/GL4ESDrv/Src/GL4ESRenderDevice.cpp`.
-
-**Native gl4es nuance:** on native, NSDLDrv hands OpenGLDrv a desktop-**compat** context (name lacks
-`"GLES"`), so gl4es runs its GLES2 path atop NVIDIA's compat driver. This validates the CMake/link/init +
-translation mechanics (the WebGL de-risking goal). Strict-GLES2/WebGL conformance is validated later by the
-monorepo's in-browser E2E, where the context really is WebGL/ES2.
-
-## Config policy
-
-Committed engine config is **unchanged** (default renderer stays `NOpenGLESDrv`; `Config/System/*.ini`
-untouched). Select UTGLR by setting `GameRenderDevice`/`WindowedRenderDevice`/`RenderDevice =
-OpenGLDrv.OpenGLRenderDevice` in the **run tree / monorepo assembly**, not here. The retail
-`[OpenGLDrv.OpenGLRenderDevice]` ini section already present in `Default.ini` applies as-is.
-
-## S3TC / DXT1 compressed textures
-
-This engine (v400) has exactly one compressed format: **`TEXF_DXT1` (S3TC)** — no DXT3/DXT5 (those are
-227/469 only). The engine reads `URenderDevice::SupportsTC` to decide delivery: if the device advertises
-**`SupportsTC=0`, the engine silently decompresses DXT1 → RGBA7 before the driver ever sees it** (so the
-driver can't upload compressed even if it wanted to).
-
-Verified against the retail S3TC texture pack in `$UT99_ASSETS_DIR` (~850 MB install): **CityIntro loads
-38 DXT1 textures** (`city.utx` — Alley/Alley2/Grate3/…); the rest are P8/RGBA7. DM/CTF maps use *no* DXT1
-(all P8/RGBA7), so they're a poor S3TC test — use **CityIntro** (the default intro).
-
-**Fix applied (gated `UTGLR_ENGINE_UT99DC`, `SetRes`).** UTGLR defaults `UseS3TC=1` for the UT build, but
-its per-param bit-offset config trick doesn't carry that default to the render-device instance in this
-engine (it resolved to 0), so `SupportsTC` was 0 and the engine decompressed every DXT1 texture. `SetRes`
-now reads `UseS3TC` **directly from the ini with default-ON** (`GConfig->GetBool`), still honoring an
-explicit `UseS3TC=False` opt-out. Result: DXT1 delivered raw and uploaded as
-`GL_COMPRESSED_RGBA_S3TC_DXT1_EXT`.
-
-Per-backend (all verified except the last):
-- **Native desktop GL** — S3TC used: 38 compressed uploads on CityIntro, 0 GL errors. ✅
-- **Native gl4es** — gl4es passes through the underlying NVIDIA s3tc; DXT1 uploaded compressed, 0 errors. ✅
-- **Browser WebGL** — depends on the browser exposing `WEBGL_compressed_texture_s3tc`. Present → gl4es
-  advertises it, DXT1 uploads compressed; absent → `SupportsTC` gated to 0 (line ~2254) and the engine
-  decompresses to RGBA (correct, safe fallback). Validated in the `ufront` E2E. (XOpenGL-effort edge case:
-  WebGL2 rejects `glCompressedTexImage2D` for non-4-aligned DXT1 mips, e.g. 128×2; gl4es' own DXT decode
-  covers those.)
-
-## Build & run
+gl4es is fetched only when `BUILD_UTGLR` and (`USE_GL4ES` or Emscripten), and is configured `NOX11 NOEGL STATICLIB
+DEFAULT_ES=2 NO_INIT_CONSTRUCTOR`: a static library, a GLES 2 target, no window-system code (NSDLDrv owns the
+context), explicit initialisation.
 
 ```bash
 cd Source
-# M2 — native desktop-GL oracle:
-cmake --preset native -DBUILD_UTGLR=ON               && cmake --build --preset native -j"$(nproc)"
-# M3 — native through gl4es (desktop GL -> GLES2):
-cmake --preset native -DBUILD_UTGLR=ON -DUSE_GL4ES=ON && cmake --build --preset native -j"$(nproc)"
-#   (add -DGL4ES_SOURCE_DIR=/path/to/gl4es to use a local checkout instead of fetching vanilla)
-# M4 — wasm/WebGL (product = wasm-perf, what ufront consumes; dev = wasm). USE_GL4ES auto-enables OpenGLDrv:
-source ~/emsdk/emsdk_env.sh
-cmake --preset wasm-perf -DUSE_GL4ES=ON [-DGL4ES_SOURCE_DIR=/path/to/gl4es] && cmake --build --preset wasm-perf -j"$(nproc)"
-#   -> build-wasm-perf/SDLLaunch/SDLLaunch.{js,wasm,data} + meta.json
+cmake --preset native && cmake --build --preset native -j"$(nproc)"     # UTGLR on the desktop context
+cmake --preset native -DUSE_GL4ES=ON && cmake --build --preset native -j"$(nproc)"   # UTGLR through gl4es
 ```
-**gl4es is optional** (`USE_GL4ES` defaults OFF). The desktop-GL backend (M2) builds UTGLR standalone
-against system OpenGL and is useful on native UT400 / Unreal-v200 for features WebGL/GLES2 lack — notably
-**S3TC compressed textures**, anisotropy, LOD bias. gl4es is only pulled in for the WebGL target (or the
-optional native gl4es validation).
 
-Run headless (see the [ut99-native-headless-render-harness] memory): from a **private** run tree (never
-`/tmp/ut99-play` — a parallel `engine-ut99-xopengl` effort clobbers it), with the built `.so`s + client +
-an ini selecting `OpenGLDrv.OpenGLRenderDevice`:
-`SDL_VIDEODRIVER=offscreen ./UnrealTournament DM-Codex -nosound`. The driver logs a throttled heartbeat
-`OpenGLDrv(UTGLR): Unlock N (Blit=1)` every 60 frames (mirrors NOpenGLESDrv; a debug aid — safe to remove).
+The two backends:
 
-## Known issues / not-done
+- **Desktop GL** (`USE_GL4ES=OFF`): `GetGL1Proc` and `GetGLExtProc` resolve every entry point with
+  `SDL_GL_GetProcAddress` against the context NSDLDrv made current, so the package links no GL library.
+- **gl4es** (`USE_GL4ES=ON`): `<GL/gl.h>` comes from gl4es (its include directory is searched first), `Init` sets
+  `LIBGL_ES=2`, `LIBGL_NOBANNER=1` and `LIBGL_USEVBO=0` (UTGLR feeds client-side vertex arrays), hands gl4es a
+  resolver (`emscripten_webgl_get_proc_address` on the threaded web build, `SDL_GL_GetProcAddress` elsewhere) and
+  calls `initialize_gl4es()`; entry points then resolve through `gl4es_GetProcAddress`, so every call goes through
+  gl4es' translation. Natively this runs gl4es' GLES 2 path on the desktop compatibility context.
 
-- **Shutdown segfault (pre-existing, not this port).** On quit/SIGINT under the headless offscreen harness,
-  the client segfaults in `RenDev->Exit()→UnsetRes()→Flush()→glDeleteTextures()` because the offscreen/EGL
-  teardown unmaps libGL before the render device's Exit. **NOpenGLESDrv segfaults identically** (exit 139),
-  so it's an engine/harness teardown-order issue, not a driver bug. Does not affect rendering. A real fix
-  is an engine/harness teardown-order change (out of scope for driver-only); the web path (Asyncify, no
-  SIGINT) likely won't hit it.
-- **Benign warning:** Core's inline `operator delete` (`UnFile.h`) triggers a "different exception
-  specifier" *warning* against `<new>`; harmless, contained to `OpenGL.cpp`.
-- **ARB assembly shaders / paletted textures**: `UseFragmentProgram` and `UsePalette` should stay off for
-  the WebGL/gl4es path (unsupported by GLES2/gl4es); UTGLR's fixed-function + RGBA fallbacks are complete.
-  **S3TC now works** natively and through gl4es — see the S3TC section above.
-- **M4 (wasm/WebGL): done at the build level.** Inside the `EMSCRIPTEN` branch, `BUILD_UTGLR` is now
-  enabled iff `USE_GL4ES`, so `cmake --preset wasm[-perf] -DUSE_GL4ES=ON` links UTGLR+gl4es into
-  `SDLLaunch.{js,wasm,data}` + `meta.json` (verified 0 errors; product wasm ≈4.4 MB, dev ≈17 MB with
-  gl4es). The one Emscripten-specific source fix was the `<map>`→`<time.h>` front-load above (libc++
-  only). The actual **in-browser WebGL render/E2E is owned by the `ufront` monorepo** (host page, FetchFS/
-  glue injection, renderer selection). On web, select the renderer via `GameRenderDevice=
-  OpenGLDrv.OpenGLRenderDevice` in the assembled config.
+## Selection and the GL context
 
-## Notes for the future Unreal-v200 port
+The launcher (`Source/Game/Src/Launch.cpp`, `SelectRenderDevice`) picks the device before `Engine->Init()`:
 
-- The **NSDLDrv naming reliance** above is the biggest portability hinge — v200 may lack NSDLDrv or detect
-  GL windows differently.
-- Re-check the two type assumptions that differed from v436: **`DECLARE_CLASS` arity** and **absence of
-  `FTime`**. If v200 differs again, extend the same `UTGLR_ENGINE_UT99DC`-style gate (or add a `_V200` one).
-- Everything is gated so upstream UTGLR and a v200 flavor can coexist; no engine edits to rebase.
+1. `-UTGLRRENDERER` selects `OpenGLDrv.OpenGLRenderDevice` when it is compiled in, and the choice is written back
+   (with the `ufrontUserRenderDevice` marker) once the engine has initialised, so it sticks on the next boot;
+2. otherwise a persisted `GameRenderDevice` that is compiled in and is a hardware default or the user's pick;
+3. otherwise the preference order, XOpenGLDrv first, then UTGLR.
 
-## HP2 / build 433 (fork branch `hp2`)
+The chosen class is written to `GameRenderDevice`, `WindowedRenderDevice` and `RenderDevice` of `[Engine.Engine]`.
 
-Source: `/home/ion/hp2-ufrontend/utglr-copy`, branch `hp2` (FetchContent via `FETCHCONTENT_SOURCE_DIR_UTGLR`;
-the default fetch ref is `hp2`, `Source/CMakeLists.txt`). This package's CMake defines **both**
-`UTGLR_ENGINE_UT99DC` and `UTGLR_ENGINE_HP2`. Spec: `docs/porting/analysis/renderer-forks.md` §2–§3, §5.2
-(retail `Source/D3DDrv/Src/Direct3D7.cpp` is the behavioural reference), §6.
+`UNSDLViewport::OpenWindow` gives a window a GL context only when the render device's name contains `OPENGL`
+(case-insensitive). Native gets a desktop compatibility-profile context; the web gets a WebGL context (see
+[`WEB-INTEGRATION.md`](WEB-INTEGRATION.md)). The context is NSDLDrv's: `Init` loads no GL library (no
+`SDL_GL_LoadLibrary`), and the viewport presents the frame. A rename of the package or class must keep `OpenGL` in
+the name.
 
-**Macro scheme** (`OpenGL.h`, after the build-config check):
+## Antialiasing
+
+`UseAA` and `NumAASamples` (default 4) in `[OpenGLDrv.OpenGLRenderDevice]`. On the web, `SetRes` calls
+`ufront_backbuffer_samples(UseAA ? NumAASamples : 0)` and the engine's `Source/Game/msaa-backbuffer.js` multisamples
+framebuffer 0, which is where UTGLR draws (WebGL 2 only). Natively UTGLR draws without antialiasing: its SDL path
+requests no multisampled pixel format and NSDLDrv creates a single-sample context.
+
+## S3TC / DXT1
+
+The only compressed format of this engine is `TEXF_DXT1`. The engine hands DXT1 to a device only when
+`SupportsTC` is set, and decompresses it to RGBA itself otherwise. `SetRes` reads `UseS3TC` from the ini with a
+default of on (UTGLR's per-parameter config default does not reach the device instance in this engine) and sets
+`SupportsTC` from it; it drops to 0 when the context lacks `GL_EXT_texture_compression_s3tc` or
+`GL_ARB_texture_compression`.
+
+- Desktop GL: DXT1 uploads as `GL_COMPRESSED_RGBA_S3TC_DXT1_EXT` when the driver has the extension.
+- gl4es: gl4es always reports both extensions and decodes DXT1 in software at `glCompressedTexImage2D`, uploading
+  an uncompressed texture (non-4-aligned sizes included).
+
+## The fork's engine gates
+
+`OpenGL.h` derives the engine flavour after its build-config check:
 
 | Macro | Meaning | Defined for |
-|-------|---------|-------------|
-| `UTGLR_ENGINE_UT99DC` | ufront **platform** layer (SDL2 shims, NSDLDrv-owned context, gl4es, web tweaks) | UT99 v400 and HP2 |
-| `UTGLR_ENGINE_V400` | derived: ut99dc engine **types** (3-arg `DECLARE_CLASS`, no `FTime`) | UT99 v400 only (`UT99DC && !HP2`) |
-| `UTGLR_ENGINE_HP2` | the 433 render face + HP2 blend semantics | HP2 only |
-| `UTGLR_HAS_ALPHABLEND` | derived feature: upstream's Rune/227 `PF_AlphaBlend` plumbing | Rune, 227, HP2 |
-| `PF_AlphaBlend` | synthetic `0x20000000` — the one `EPolyFlags` bit 433 leaves free; stripped from every incoming flag set | HP2 |
+|---|---|---|
+| `UTGLR_ENGINE_UT99DC` | the platform layer: SDL2 shims, NSDLDrv-owned context, gl4es, web | UT99 v400 and HP2 |
+| `UTGLR_ENGINE_V400` | derived (`UT99DC && !HP2`): v400's types, 3-arg `DECLARE_CLASS`, no `FTime` | UT99 v400 |
+| `UTGLR_ENGINE_HP2` | the 433 render face and HP2's blend semantics | HP2 |
+| `UTGLR_HAS_ALPHABLEND` | derived: upstream's Rune/227 `PF_AlphaBlend` plumbing | Rune, 227, HP2 |
+| `PF_AlphaBlend` | synthetic `0x20000000`, the one `EPolyFlags` bit 433 leaves free; stripped from incoming flags | HP2 |
 
-HP2 takes upstream v436's branches at the three type sites (U1 4-arg `DECLARE_CLASS`, U2/U3 `FTime`
-frame limiter — `appSeconds()` returns `FTime`, `FTime - FTime` is `float`).
+HP2 takes upstream v436's branches at the type sites: the 4-arg `DECLARE_CLASS(…, CLASS_Config, OpenGLDrv)` and an
+`FTime m_prevFrameTimestamp` for the frame limiter (`appSeconds()` returns `FTime`).
 
-**The 433 face and its semantics** (all under `UTGLR_ENGINE_HP2`):
+Platform layer (`UTGLR_ENGINE_UT99DC`):
 
-| # | What | Why |
-|---|------|-----|
-| H1 | `DrawComplexSurface(Frame, Surface, Facet, DWORD PolyFlags, BYTE cAlpha)`: draws with the flags **argument**. Lumos = `PF_HighShadowDetail` AND (`PF_Modulated`\|`PF_Translucent`): markers stripped, opacity `1 - cAlpha/255` as straight alpha (`glColor4f` alpha on unit 0; later modulate units pass alpha through with `COMBINE_ALPHA = REPLACE(PREVIOUS)`); fully faded non-occluding surfaces skipped; no detail pass and a faded fog pass over a see-through surface | `cAlpha` is transparency (255 = gone), only meaningful on Lumos surfaces (`Render/Src/UnRender.cpp` Lumos block); plain `PF_Modulated` (blob shadows) keeps the classic modulate blend |
-| H2 | `MaxVertices()` = **256**; `DrawTriangles(…, _WORD* Indices, INT NumIndices, …)`: indexed list / `Indices==NULL && NumIndices==NumPts` fan / plain list, each triangle through the buffered gouraud path | Render sizes its mesh/particle batch buffers from `MaxVertices()` once; all meshes (skeletal included), particles and decals use `DrawTriangles` |
-| — | the driver does **not** declare `DrawGouraudPolygon` (433's is a non-pure base forwarder to `DrawTriangles`); UTGLR's buffered body is the non-virtual `HP2DrawGouraudPolygon` | `nm` shows `MaxVertices`, `DrawTriangles`, 5-arg `DrawComplexSurface`, no `UOpenGLRenderDevice::DrawGouraudPolygon` |
-| H3 | `HP2AdjustPolyFlags`: `PF_Highlighted\|PF_Translucent` → `PF_AlphaBlend` (masked wins) | fading actors (`Opacity < 1`) must blend straight, not additive |
-| H4 | `PF_AlphaBlend` → `GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA`, no `PF_Occlude` added, no additive fog pass; vertex alpha = `Light.W` (`FPlaneTo_RGBA`) | 433 puts per-vertex opacity in `Light.W` |
-| H5 | alpha-palette tiles: `PF_Highlighted` without `PF_Occlude` | D3D7 433; transparent texels of world sprites must not write depth |
-| H6 | two-sided depth bias (`PF_TwoSided` polygon offset) | **deferred**: decide at first light (renderer-forks Q3) |
-| H7 | `Draw3DLine` honours `LINE_PreTransformed` | mirrors the 433 base `Draw3DLine` |
+| Site | Upstream (v436, Win32) | The fork | Why |
+|---|---|---|---|
+| top of `OpenGL.cpp` | engine headers first | `<new>`, `<map>`, `<vector>` before `OpenGLDrv.h` | Core's inline `operator delete` must follow `<new>`'s declaration; on Emscripten's libc++ `<map>` pulls `<time.h>`, which must precede `UnFile.h`'s `#define clock(Timer)` |
+| `OpenGL.h` | `#include <tchar.h>` | only without `__UNIX__` | gcc has no `<tchar.h>`; the debug strings use `= 0` instead of `_T('\0')` |
+| `OpenGLDrv.h` | SDL 1.2 on Unix, WGL on Windows | `SDL2/SDL.h` on every platform, `UTGLR_USE_SDL` instead of `UTGLR_USE_WGL`; `SDL_GL_SwapBuffers` and `SDL_SetGammaRamp` are no-ops, `SDL_ListModes` reports any mode | NSDLDrv owns the window, the context, the swap and the resolution |
+| `Init` | `SDL_GL_LoadLibrary("libGL.so.1")`, fatal on failure | no library load; gl4es initialisation with gl4es | the context is current before `Init`, and SDL reports a second load as an error |
+| `SetRes` | `UseS3TC` from the config default | read from the ini, default on; `ufront_backbuffer_samples` on the web | see above |
+| `Unlock` | — | a log line `OpenGLDrv(UTGLR): Unlock <n> (Blit=<b>)` every 60th frame | shows the render loop is running in a headless run |
 
-Also on HP2: `UseFragmentProgram` is forced off (the ARB complex-surface programs use the primary alpha as the
-lightmap-scale selector and cannot carry Lumos opacity; off by default and unavailable on gl4es anyway).
-`GetOsSurface` is not overridden (WinDrv-only). The UT99 v400 build of the same branch preprocesses
-byte-identically to `e60807b` (checked against the template's headers and exact flags, native and wasm).
-Web ini: keep `UseFragmentProgram=False`, `OneXBlending=False`.
-The comment above `target_compile_definitions` in this package's `CMakeLists.txt` still reads "ut99dc / UE1 v400";
-it is left as is on purpose (editing a `CMakeLists.txt` re-runs CMake in every configured build tree). The table above is current.
+The 433 face (`UTGLR_ENGINE_HP2`; the retail `Source/D3DDrv/Src/Direct3D7.cpp` is the behavioural reference):
+
+| What | Why |
+|---|---|
+| `DrawComplexSurface(Frame, Surface, Facet, DWORD PolyFlags, BYTE cAlpha)` draws with the flags argument. A Lumos surface is `PF_HighShadowDetail` and (`PF_Modulated` or `PF_Translucent`): its markers are stripped, its opacity `1 - cAlpha/255` rides `glColor4f`'s alpha on unit 0, and the later modulate units pass that alpha through (`GL_COMBINE_ALPHA` = `GL_REPLACE` of `GL_PREVIOUS`). A fully faded surface without `PF_Occlude` is skipped; a see-through one gets no detail pass and a fog pass faded with it | `cAlpha` is transparency (255 = gone) and means something only on Lumos surfaces (`Source/Render/Src/UnRender.cpp`); a plain `PF_Modulated` poly (a blob shadow) keeps the modulate blend |
+| `MaxVertices()` returns 256; `DrawTriangles(…, _WORD* Indices, INT NumIndices, …)` takes an indexed list, a fan (`Indices == NULL && NumIndices == NumPts`) or a plain list, each triangle through the buffered gouraud path | Render sizes its mesh and particle buffers from `MaxVertices()` once; every mesh (skeletal included), particle and decal comes through `DrawTriangles` |
+| no `DrawGouraudPolygon` override; UTGLR's buffered body is the non-virtual `HP2DrawGouraudPolygon` | 433's base `DrawGouraudPolygon` is a forwarder to `DrawTriangles` |
+| `HP2AdjustPolyFlags`: `PF_Highlighted\|PF_Translucent` becomes `PF_AlphaBlend`; with `PF_Masked` the pair is dropped and the poly draws masked | fading actors (`Opacity < 1`) blend straight, not additively |
+| `PF_AlphaBlend` blends `GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA`, gains no `PF_Occlude` and no additive fog pass; its vertex alpha is `Light.W` (`FPlaneTo_RGBA`) | 433 puts per-vertex opacity in `Light.W` |
+| an alpha-palette tile (`Palette[128].A != 255`, not translucent) draws `PF_Highlighted` without `PF_Occlude` | as D3D7 433: transparent texels of world sprites write no depth |
+| `Draw3DLine` skips the camera transform for `LINE_PreTransformed` | as 433's base `Draw3DLine` |
+| `UseFragmentProgram` is forced off (`ConfigValidate_RequiredExtensions`) | the ARB complex-surface programs use the primary alpha as the lightmap-scale selector and cannot carry Lumos opacity; gl4es has no ARB programs either |
+| `GetOsSurface` is not overridden | only WinDrv calls it |
+
+The fork adds no depth bias for `PF_TwoSided` polys.
+
+The fork's `__asm`, SEH (`__try`) and SSE blocks compile only under MSVC (`_WIN32 && _MSC_VER`), so every build
+here, MinGW included, takes UTGLR's C fallbacks; the Rune build's methods are compiled out.
+
+## Config
+
+The web `[OpenGLDrv.OpenGLRenderDevice]` section (`Config/System/web/Default.ini`) sets `UseAA=True`,
+`NumAASamples=4`, `UseS3TC=True`, `UseFragmentProgram=False`, `UsePalette=False` and `OneXBlending=False`. The native
+run tree uses the retail `Config/System/Default.ini`, whose `[OpenGLDrv.OpenGLRenderDevice]` section applies as is.

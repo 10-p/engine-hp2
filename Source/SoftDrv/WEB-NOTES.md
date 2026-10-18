@@ -1,82 +1,85 @@
-# SoftDrv on the web — what the native build does not tell you
+# SoftDrv on the web — what a native run does not show
 
-Read this before changing anything under `Source/SoftDrv/`. A change can be correct, and validated
-natively, and still be broken on the web, because the two builds do not share the code paths that
-matter most to this renderer. That is not hypothetical: it is how the 2.13.2 framebuffer overrun
-survived from 2026-07-30 to 2026-08-05, and how it came to be blamed on an innocent branch.
+`SoftDrv.SoftwareRenderDevice` is the v400 software renderer with HP2's build-433 render face
+(`DrawTriangles`, `MaxVertices`, the 5-argument `DrawComplexSurface`). `BUILD_SOFTDRV` is on by default on every
+preset. The launcher selects it with `-SOFTWARERENDERER` (the pick then persists) or when no hardware device is
+compiled in; it is not in the hardware preference order, and an ini that merely names it does not make it the
+default.
 
-## 1. Native and web take different rasteriser code
+Read this before changing anything under `Source/SoftDrv/`: a change validated natively can still be broken on the
+web, because the two builds draw into different memory at different sizes.
 
-This is the v400 UT99 SoftDrv (engine-ut99's copy, with HP2's build-433 render face re-applied:
-`DrawTriangles`/`MaxVertices`/5-arg `DrawComplexSurface`), whose inner loops exist twice: hand-written x86 `__asm`, and portable
-C under `#if !ASM`. **The web build is `ASM=0`** (`Source/SoftDrv/CMakeLists.txt`) and on x86 native
-`GIsMMX` is force-disabled when `!ASM`, but a native build can still select MMX/Pentium variants at
-runtime via `ColorMode`.
+## 1. The rasteriser code is the same on every build
 
-So "I validated it natively" does not establish that the portable path is right, and vice versa.
-Anything touching `DrawSurf` / `DrawPoly` / `DrawTile` inner loops needs both.
+Its inner loops exist twice, hand-written x86 `__asm` and portable C under `#if !ASM`. Every build here compiles
+the portable C: `Source/SoftDrv/CMakeLists.txt` defines `ASM=0` (so does `Source/Core/Inc/UnGnuG.h` for every
+GCC/Clang target), and `SoftDrvPrivate.h` forces `GIsMMX` to false wherever `__INTEL__` is set (every little-endian
+target), so `Lock` picks the `Pentium32`/`Pentium16`/`Pentium15` colour modes, never the MMX ones. What differs
+between native and web is the framebuffer, its size, the pointer width (`native64` is 64-bit, wasm is 32-bit) and
+the optimisation level.
 
 ## 2. Native and web draw into different memory
 
-| | native | web (worker) |
+| | native | web (the engine's worker) |
 |---|---|---|
-| target | SDL streaming texture | `UNSDLViewport::SoftFB`, a plain heap buffer |
-| obtained in `Lock` via | `SDL_LockTexture` | direct pointer |
-| presented in `Unlock` by | SDL | `putImageData` to a transferred `OffscreenCanvas` |
-| resized by | SDL, on texture re-create | **us, explicitly** |
+| target | an SDL streaming texture | `UNSDLViewport::SoftFB`, a plain heap buffer |
+| obtained in `UNSDLViewport::Lock` via | `SDL_LockTexture` | the pointer itself |
+| presented in `UNSDLViewport::Unlock` by | `SDL_RenderCopy` + `SDL_RenderPresent` | `putImageData` on a 2D context of the transferred canvas, with an ARGB-to-RGBA swizzle |
+| resized by | SDL, when `SetClientSize` re-creates the texture | `Lock`, explicitly |
 
-The web has its own buffer because SDL's Emscripten renderer is GLES-backed: `SDL_CreateRenderer`
-goes through `eglCreateContext`, which Emscripten proxies to the browser main thread — where the
-canvas has been transferred to the worker and `getContext()` throws. The proxied call never returns
-and the engine thread blocks forever. See the 2.13.2 comment in `NSDLViewport.cpp`.
+The web has its own buffer because SDL's Emscripten renderer is GLES-backed: `SDL_CreateRenderer` goes through
+`eglCreateContext`, which Emscripten proxies to the browser main thread, where the canvas has been transferred to
+the worker and cannot give a context; the proxied call never returns and the engine thread blocks. A 2D context is
+available on the worker because SoftDrv never creates a WebGL one (a canvas has only one context).
 
-**The consequence:** on the web, viewport size and buffer size are two facts that can disagree.
-Natively they cannot — SDL owns both. Every bug of this shape is therefore web-only *and invisible to
-a native run*, no matter how careful.
+The consequence: on the web, viewport size and buffer size are two facts that can disagree. Natively they cannot,
+because SDL owns both. A bug of that shape is web-only and invisible to a native run.
 
-## 3. The web viewport size is the browser window, and it changes
+## 3. The web viewport size is the canvas, and it changes
 
-`ResizeViewport` adopts the real drawable size over the ini one, because SDL2's Emscripten backend
-maps the window to the CSS-sized (`100vw`/`100vh`) canvas. Two things follow that repeatedly catch
-people out:
+`UNSDLViewport::OpenWindow` adopts the canvas' device-pixel size (CSS size times `devicePixelRatio`, unaligned) over
+the ini size, and `TickInput` re-applies it on every `SDL_WINDOWEVENT_SIZE_CHANGED`/`SDL_WINDOWEVENT_RESIZED`
+through `SetClientSize`; the window-creation block of `OpenWindow` (`if( !hWnd )`) does not run again. So:
 
-- **the ini resolution is not the rendered resolution.** A test that passes at the ini size proves
-  nothing about the size the user actually gets;
-- **it changes after startup**, via `WINDOWEVENT_RESIZED` in `TickInput`. The window-creation block
-  is inside `if( !hWnd )` and does **not** re-run.
+- the ini resolution is not the rendered resolution, and a test that passes at the ini size proves nothing about
+  the size a player gets;
+- the size changes after startup.
 
-`SoftFB` is therefore sized in `Lock` — the single point where the buffer is about to be written and
-`SizeX`/`SizeY` are final. Please keep it there. Sizing it at either the allocation site or the
-adopt-drawable-size block leaves one of the two paths stale, which is exactly the bug that shipped.
+`SoftFB` is therefore sized in `UNSDLViewport::Lock`, the one point where the buffer is about to be written and
+`SizeX`/`SizeY` are final; it is reallocated whenever the needed size differs, so it shrinks as well as grows, and a
+device that never locks (NullDrv, the GL devices) allocates nothing. Keep it there: a buffer sized at window
+creation or where the drawable size is adopted goes stale on one of the two paths.
 
-## 4. Memory is not free — the static tables cost the same at every resolution
+## 4. The screen-indexed tables are static
 
-The `SizeX`/`SizeY`-indexed scratch tables (`Setup`, `MMXSetup`, `Photon`, `UCoordTable`, two
-`SpanIndex`) are **static arrays bounded by `MaximumX/YScreenSize`**. They cost their full size in
-`.bss` whether the viewport is 4K or 240×240 — 368 KB at the 4096 default, measured. Adding another
-screen-indexed static is not free, and it is not proportional to what is being drawn.
+The `SizeX`/`SizeY`-indexed scratch tables (`Setup`, `MMXSetup`, `Photon`, `FogPhoton`, `UCoordTable`, the two
+`SpanIndex`) are static arrays bounded by `MaximumXScreenSize`/`MaximumYScreenSize`, both `SOFTDRV_MAX_SCREEN`. They
+cost their full size in `.bss` at every resolution, so another screen-indexed static is not free and its cost does
+not follow what is being drawn.
 
-Use `-DSOFTDRV_MAX_SCREEN=n` to lower the ceiling on constrained targets (256 → 23 KB). Viewports
-above the ceiling degrade fail-soft: `SetRes` clamps X, `DrawPoly` skips the frame above the Y
-ceiling, `DrawTile` clamps its span-fill.
+`SOFTDRV_MAX_SCREEN` is a CMake cache variable, 4096 by default; the wasm presets set 8192 because the canvas is the
+display's device-pixel size. A viewport above the bound degrades rather than corrupting memory: `SetRes` clamps to
+it, `DrawTriangles` draws nothing when `SizeY` exceeds it, and `DrawTile` clamps its span fill.
 
-## 5. A clean `-O2` run does not clear a memory bug
+## 5. A clean dev build does not clear a memory bug
 
-The 2.13.2 overrun did **not** reproduce under `-O2 -g`; only `-O3` (`wasm-perf`, what ships) faulted,
-and it faulted three different ways — `memory access out of bounds`, `table index is out of bounds`,
-`null function` — depending on what the write happened to land on. A heap layout that absorbs an
-overrun is not a heap layout that lacks one. If a rasteriser bug appears and disappears across
-optimisation levels, assume corruption and go looking for the write, not the read.
+`wasm` compiles at `-O2 -g` with assertions; `wasm-perf`, the build that ships, links at `-O3 -g0` without them.
+A heap overrun that one heap layout absorbs faults under another, and it shows as `memory access out of bounds`,
+`table index is out of bounds` or `null function` depending on what the write lands on. If a rasteriser fault
+appears and disappears across build modes, assume corruption and look for the write, not the read; run the change on
+`wasm-perf` before calling it done.
 
-## 6. How to actually test a SoftDrv change on the web
+## 6. Testing a SoftDrv change on the web
 
-`packages/e2e/tools/softdrv-matrix.cjs` in the monorepo drives the launcher's renderer dropdown,
-boots a map and waits **past level load** — a rasteriser can come up and die on the first real draw:
+The frontend's `packages/e2e/tools/softdrv-matrix.cjs` (in `/home/ion/WorkUnreal/unreal-frontend-arch-private`)
+picks the software renderer in the launcher, boots a map at each requested size and waits past level load, because a
+rasteriser can come up and die on the first real draw:
 
 ```bash
-SOFT_URL=https://localhost:8092 SOFT_CASES="1920x1080:Adv1Willow,640x480:Adv1Willow" \
-  node tools/softdrv-matrix.cjs
+cd /home/ion/WorkUnreal/unreal-frontend-arch-private/packages/e2e
+SOFT_URL=https://localhost:8092 SOFT_CASES="1920x1080:Adv1Willow,640x480:Adv1Willow" node tools/softdrv-matrix.cjs
 ```
 
-Vary the **resolution**, not just the map. A single default-size smoke test is what let this through:
-1024×768 passed while every size the owner actually plays at crashed.
+Vary the resolution, not only the map: one default-size smoke test covers one buffer size. The boot spec
+`packages/e2e/hp2-proto-wasm-boot.spec.js` has a `renderer-software` test that checks `-SOFTWARERENDERER` runs on the
+CPU, not on WebGL.
