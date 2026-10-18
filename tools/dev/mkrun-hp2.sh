@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # mkrun-hp2.sh -- assemble a private HP2 run tree for a native (or --windows) build, with run-hp2.sh as run.sh.
 #
-#   tools/dev/mkrun-hp2.sh <build-dir> <run-dir> [--windows]      (game content: $HP2_ASSETS_DIR, default Assets/)
+#   tools/dev/mkrun-hp2.sh <build-dir> <run-dir> [--windows]      (game content: $UE_ASSETS_DIR, default Assets/)
 #
 # The game content (never in git) is only read: big read-only trees are symlinked, System/ is a real copy
 # because the engine writes Game.ini/User.ini/Game.log into it. The retail Win32 binaries (*.dll *.exe *.bat)
@@ -15,8 +15,8 @@ BUILD="${1:?usage: mkrun-hp2.sh <build-dir> <run-dir> [--windows]}"
 RUN="${2:?}"
 WINDOWS=0; [ "${3:-}" = "--windows" ] && WINDOWS=1
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"
-A="${HP2_ASSETS_DIR:-$REPO/Assets}"
-[ -d "$A/System" ] || { echo "no retail tree at $A (set HP2_ASSETS_DIR)"; exit 1; }
+A="${UE_ASSETS_DIR:-$REPO/Assets}"
+[ -d "$A/System" ] || { echo "no retail tree at $A (set UE_ASSETS_DIR)"; exit 1; }
 
 rm -rf "$RUN"
 mkdir -p "$RUN"

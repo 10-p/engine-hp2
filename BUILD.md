@@ -30,7 +30,7 @@ signal to update the engine or the branch. To build an UNPUSHED renderer change,
 clones.)
 
 A software-only native tree (no GL devices) is handy for bring-up and for parallel work:
-`cmake --preset native -B ../build-native-b -DBUILD_XOPENGLDRV=OFF -DBUILD_NOPENGLDRV=OFF`.
+`cmake --preset native -B ../build-native-b -DBUILD_XOPENGLDRV=OFF -DBUILD_UTGLR=OFF`.
 
 ## Running the native build
 

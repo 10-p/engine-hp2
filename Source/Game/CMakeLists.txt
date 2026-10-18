@@ -37,10 +37,10 @@ endif()
 
 target_compile_definitions(${PROJECT_NAME} PRIVATE UNREAL_EXPORTS UPACKAGE_NAME=${PROJECT_NAME})
 
-# HP2_HAS_NOPENALDRV: NOpenALDrv is compiled in, so the launcher's web driver set names it as the AudioDevice
+# UE_HAS_NOPENALDRV: NOpenALDrv is compiled in, so the launcher's web driver set names it as the AudioDevice
 # (without it, SoundDrv's silent subsystem).
 if(BUILD_NOPENALDRV)
-  target_compile_definitions(${PROJECT_NAME} PRIVATE HP2_HAS_NOPENALDRV=1)
+  target_compile_definitions(${PROJECT_NAME} PRIVATE UE_HAS_NOPENALDRV=1)
 endif()
 
 # OpenAL Soft is the one library the Windows build loads rather than links (cmake/OpenALMingw.cmake): copy it
@@ -68,8 +68,6 @@ endif()
 # Web: a bare loader (SDLLaunch.{js,wasm,data}), no --shell-file. The host page supplies the heavy glue
 # (FetchFS/IDB/WebRTC) at run time; only the thin shims in vendor/glue are linked in.
 if(EMSCRIPTEN)
-  set(HP2_ASSETS_DIR "${CMAKE_SOURCE_DIR}/../Assets" CACHE PATH
-      "Retail HP2 assets (Assets/) (System/Default.ini preloaded into MEMFS; the rest streams via FetchFS)")
   target_link_options(${PROJECT_NAME} PRIVATE
     -sASYNCIFY
     -sASYNCIFY_STACK_SIZE=262144
@@ -136,7 +134,7 @@ if(EMSCRIPTEN)
     # framebuffer 0.
     "SHELL:--js-library ${CMAKE_CURRENT_SOURCE_DIR}/msaa-backbuffer.js"
   )
-  if(HP2_WEB_PERF)
+  if(UE_WEB_PERF)
     # --emit-symbol-map writes a side file (SDLLaunch.js.symbols) and leaves the wasm unchanged; with it a
     # shipped build's crash offset resolves to a function name offline. DWARF cannot ship (it limits binaryen's
     # optimizations). The map names every private engine symbol, so it must never reach the published tree.
@@ -209,7 +207,7 @@ if(EMSCRIPTEN)
   if(BUILD_XOPENGLDRV)
     ufront_artifact_dep(META_DEPS xopengl XOpenGLDrv "${XOPENGL_GIT_REPOSITORY}" "${XOPENGL_GIT_TAG}")
   endif()
-  if(BUILD_NOPENGLDRV)
+  if(BUILD_UTGLR)
     ufront_artifact_dep(META_DEPS utglr utglr "${UTGLR_GIT_REPOSITORY}" "${UTGLR_GIT_TAG}")
     ufront_artifact_dep(META_DEPS gl4es GL4ES "${GL4ES_GIT_REPOSITORY}" "${GL4ES_GIT_TAG}" "${GL4ES_SOURCE_DIR}")
   endif()

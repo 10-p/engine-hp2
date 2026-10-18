@@ -327,7 +327,7 @@ static UEngine* InitEngine()
 	// Audio: NOpenALDrv, HP2's ALAudio ported to openal-soft (its web backend here): EA-XA sounds decoded in the
 	// driver, Ogg Vorbis music opened by path, streams pumped from Update(); the ini's [NOpenALDrv...] section
 	// carries ALAudio's float volumes.
-#if HP2_HAS_NOPENALDRV
+#if UE_HAS_NOPENALDRV
 	GConfig->SetString( TEXT("Engine.Engine"), TEXT("AudioDevice"),          TEXT("NOpenALDrv.NOpenALAudioSubsystem") );
 #else
 	// A build without NOpenALDrv is silent. InitAudio loads the AudioDevice class LOAD_NoFail, so it must name a

@@ -84,7 +84,7 @@ if(EMSCRIPTEN)
   # driver openal-soft's <AL/alext.h>/<AL/efx.h>.
   set(OPENAL_LIBRARY OpenAL)
 elseif(TARGET OpenAL)
-  # Native Linux with HP2_BUNDLED_OPENAL: the parent built the same fork SHARED (cmake/OpenALSoft.cmake
+  # Native Linux with UE_BUNDLED_OPENAL: the parent built the same fork SHARED (cmake/OpenALSoft.cmake
   # NATIVE); the launcher copies libopenal.so.1 beside the binary and links with $ORIGIN, so this DT_NEEDED
   # resolves there.
   set(OPENAL_LIBRARY OpenAL)
@@ -93,7 +93,7 @@ elseif(MINGW AND CMAKE_CROSSCOMPILING)
   # prebuilt Windows binaries (a DLL and its import library).
   include(OpenALMingw)
 else()
-  # Native (Linux) without HP2_BUNDLED_OPENAL: the system OpenAL (openal-soft).
+  # Native (Linux) without UE_BUNDLED_OPENAL: the system OpenAL (openal-soft).
   find_package(OpenAL)
   if(NOT OPENAL_LIBRARY)
     set(OPENAL_LIBRARY "-lopenal")

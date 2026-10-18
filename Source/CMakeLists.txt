@@ -19,19 +19,19 @@ endif()
 # Options
 # ---------------------------------------------------------------------------------------------------------
 
-# Web build mode (EMSCRIPTEN only) — see the three-mode block further down. HP2_WEB_PERF is read by
-# Game/CMakeLists.txt for the link flags; HP2_WEB_DEBUG selects -O0 over the -O2 dev default.
-option(HP2_WEB_PERF "Emscripten: shipping build — link at -O3 -g0, assertions off" OFF)
-option(HP2_WEB_DEBUG "Emscripten: -O0 instead of the -O2 dev default (nothing inlined, every local live)" OFF)
+# Web build mode (EMSCRIPTEN only) — see the three-mode block further down. UE_WEB_PERF is read by
+# Game/CMakeLists.txt for the link flags; UE_WEB_DEBUG selects -O0 over the -O2 dev default.
+option(UE_WEB_PERF "Emscripten: shipping build — link at -O3 -g0, assertions off" OFF)
+option(UE_WEB_DEBUG "Emscripten: -O0 instead of the -O2 dev default (nothing inlined, every local live)" OFF)
 option(USE_SDL "Use NSDLDrv (SDL2 window/input) — the only viewport driver this port builds" ON)
 option(BUILD_GAME "Build the launcher (executable `Game`; web artifact SDLLaunch.js)" ON)
 # The Editor package is built for the game too: UE1 maps and meshes can reference Editor classes, and their
 # load fails without its native half. It is the no-GUI NullEdHook variant, linking only Engine+Core.
 option(BUILD_EDITOR "Build the Editor package (a RUNTIME dependency — see above)" ON)
-option(BUILD_NOPENGLDRV "Build OpenGLDrv (UTGLR, Dohnal's legacy-GL device)" OFF)
+option(BUILD_UTGLR "Build OpenGLDrv (UTGLR, Dohnal's legacy-GL device)" OFF)
 option(BUILD_NULLSOUNDDRV "Build SoundDrv (the null/silent audio subsystem)" ON)
 option(BUILD_NOPENALDRV "Build NOpenALDrv (OpenAL SFX + Ogg Vorbis music; web + native)" OFF)
-option(HP2_BUNDLED_OPENAL "Native Linux: build openal-soft (the ufront fork) and ship libopenal.so.1 beside the binary, instead of linking whatever libopenal the system has" ON)
+option(UE_BUNDLED_OPENAL "Native Linux: build openal-soft (the ufront fork) and ship libopenal.so.1 beside the binary, instead of linking whatever libopenal the system has" ON)
 option(BUILD_STATIC "Link everything into a single binary" OFF)
 
 # Hardware render devices: orthogonal per-renderer toggles. XOpenGLDrv (OldUnreal, WebGL 2/GLES3) is the web
@@ -44,11 +44,11 @@ else()
   set(_HP2_DEF_GL4ES OFF)
 endif()
 option(BUILD_XOPENGLDRV "Build XOpenGLDrv (OldUnreal GL -> WebGL2/GLES3)" ${_HP2_DEF_XOPENGL})
-option(BUILD_SOFTDRV "Build SoftDrv (HP2's own CPU software renderer; -SOFTWARERENDERER)" ON)
+option(BUILD_SOFTDRV "Build SoftDrv (the v400 software renderer with HP2's render face; -SOFTWARERENDERER)" ON)
 option(BUILD_NULLDRV "Build NullDrv (GPU-free no-op render device; -NULLRENDERER)" ON)
 option(USE_GL4ES "Build OpenGLDrv (UTGLR) against gl4es (desktop GL -> GLES2) for the WebGL path" ${_HP2_DEF_GL4ES})
 if(USE_GL4ES)
-  set(BUILD_NOPENGLDRV ON)
+  set(BUILD_UTGLR ON)
 endif()
 
 # ---------------------------------------------------------------------------------------------------------
@@ -60,7 +60,7 @@ if(EMSCRIPTEN)
   set(BUILD_EDITOR ON)
   set(BUILD_XOPENGLDRV ON)        # forced with set(): option() only supplies a default, and an old build
   set(USE_GL4ES ON)               # tree keeps its cached value
-  set(BUILD_NOPENGLDRV ON)
+  set(BUILD_UTGLR ON)
   set(BUILD_NULLSOUNDDRV ON)
   set(BUILD_NOPENALDRV ON)        # HP2's ALAudio on openal-soft (web audio backend) + EA-XA + Ogg Vorbis
                                   # music; the launcher sets AudioDevice=NOpenALDrv.NOpenALAudioSubsystem.
@@ -195,13 +195,13 @@ else()
   message(STATUS "Building ${CMAKE_BUILD_TYPE} with GCC or Clang")
   if(EMSCRIPTEN)
     # The three web build modes:
-    #   preset        HP2_WEB_PERF  HP2_WEB_DEBUG  compile   what it is for
+    #   preset        UE_WEB_PERF  UE_WEB_DEBUG  compile   what it is for
     #   wasm-perf     ON            -              -O2       shipping: link-time -O3 -g0, no assertions
     #   wasm          OFF           OFF            -O2 -g    the dev default: named stacks, DWARF, assertions
     #   wasm-debug    OFF           ON             -O0 -g    last resort: every local live, nothing inlined
-    if(HP2_WEB_DEBUG)
+    if(UE_WEB_DEBUG)
       add_compile_options(-O0 -g)
-    elseif(HP2_WEB_PERF)
+    elseif(UE_WEB_PERF)
       add_compile_options(-O2)
     else()
       add_compile_options(-O2 -g)
@@ -268,7 +268,7 @@ if(BUILD_XOPENGLDRV)
   message(STATUS "XOpenGLDrv: source = ${XOPENGL_SOURCE_DIR}")
 endif()
 
-if(BUILD_NOPENGLDRV)
+if(BUILD_UTGLR)
   set(UTGLR_GIT_REPOSITORY "https://github.com/10-p/utglr-copy.git" CACHE STRING "OpenGLDrv/UTGLR git repo (Dohnal drop + our port)")
   set(UTGLR_GIT_TAG "hp2" CACHE STRING "OpenGLDrv/UTGLR git tag/branch/commit")
   include(FetchContent)
@@ -311,7 +311,7 @@ else()
   message(FATAL_ERROR "This port builds only the SDL2 viewport driver (USE_SDL=ON).")
 endif()
 
-if(BUILD_NOPENGLDRV)
+if(BUILD_UTGLR)
   # gl4es (desktop GL -> GLES2) for the OpenGLDrv/UTGLR WebGL path. Fetched when USE_GL4ES (native gl4es
   # validation) or EMSCRIPTEN (the WebGL target). Source configurable via GL4ES_SOURCE_DIR.
   if(USE_GL4ES OR EMSCRIPTEN)
@@ -373,7 +373,7 @@ if(BUILD_NOPENALDRV)
   if(EMSCRIPTEN)
     include(OpenALSoft)
     ufront_openal_soft(PLATFORM WEB EAX OFF)
-  elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND HP2_BUNDLED_OPENAL)
+  elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND UE_BUNDLED_OPENAL)
     include(OpenALSoft)
     ufront_openal_soft(PLATFORM NATIVE EAX OFF)
   endif()
