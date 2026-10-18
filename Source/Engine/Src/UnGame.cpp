@@ -264,9 +264,8 @@ void UGameEngine::Init()
 		GFileManager->MakeDirectory( *GSys->SaveSlotPath, 1 );
 		appSprintf( Filename, TEXT("%s") PATH_SEPARATOR TEXT("Save%i.usa"), *GSys->SaveSlotPath, appAtoi(*LoadGameSlot) );
 		
-		// ufront: only continue a save that exists. The retail Windows front-end offered "Continue" (-LOAD=0) only
-		// when the slot held a save; our launcher passes -LOAD=0 on every start, and the retail engine flags the
-		// level LEVACT_Loading before the (then failing) load. No save -> just play the level we booted (new game).
+		// Continue only a save that exists: the frontend's default options pass -LOAD=0 on every start, and without a
+		// save the boot level is played as a new game (a failing load would leave the level LEVACT_Loading).
 		if( GFileManager->FileSize( Filename ) > 0 )
 		{
 			debugf( NAME_Log, TEXT("Loading game... filename: %s"), Filename );
@@ -875,9 +874,8 @@ void UGameEngine::FixUpLevel( )
 // Load a map.
 //
 #ifdef __EMSCRIPTEN__
-// ufront: what the native catch( const TCHAR* ) block in LoadMap does after a safely failed load -- the web build has
-// exception catching off, so its early exits must do it themselves. Without it the current level stays flagged
-// LEVACT_Loading (retail: set before the load) and the retail console paints its loading screen forever.
+// What LoadMap's catch( const TCHAR* ) does after a failed load, for the web build's early exits (exception catching
+// is off there): without it the level stays LEVACT_Loading and the console paints its loading screen forever.
 static void ufrontRestoreAfterFailedLoad( UClient* Client, ULevel* Level )
 {
 	if( Client && Client->Viewports.Num()>0 && Level && Level->GetLevelInfo() )
@@ -913,9 +911,8 @@ ULevel* UGameEngine::LoadMap( const FURL& URL, UPendingLevel* Pending, const TMa
 	guard(LoadingScreen);
 	if( Client && Client->Viewports.Num() && GLevel )
 	{
-		// Retail (HPCos 021009) order: hide the menu, fade out, THEN flag the old level as loading and draw one more
-		// frame so the console paints its loading screen (LevelAction==LEVACT_Loading); the proto set LEVACT_None
-		// before the fade and never showed it.
+		// The retail order: hide the menu, fade out, then flag the old level LEVACT_Loading and draw one more frame, so
+		// the console paints its loading screen.
 		UViewport* Viewport=Client->Viewports(0);
 		APlayerPawn* PP = Viewport->Actor;
 		if( PP )
@@ -1144,8 +1141,8 @@ ULevel* UGameEngine::LoadMap( const FURL& URL, UPendingLevel* Pending, const TMa
 		// Save the original map name in LevelInfo, so that it's retrievable from save games.
 		if( Info->LevelEnterText == TEXT("") )
 			Info->LevelEnterText = URL.Map;
-		// Retail (HPCos 021009) dropped the "Draw level info" frame here (Lock with a black ScreenClear, EndFlash,
-		// Console.DrawLevelInfo, Unlock+blit): it presented a cleared frame over the LEVACT_Loading screen drawn above.
+		// No "draw level info" frame here, as in the retail Engine: it would present a cleared frame over the loading
+		// screen drawn above.
 	}
 
 	guard(LoadLevel);
@@ -2114,13 +2111,13 @@ void UGameEngine::SaveGame( INT Position )
 
 	GLevel->GetLevelInfo()->LevelAction=LEVACT_Saving;
 
-	// Retail (HPCos 021009): every actor prepares for the save (Actor.PreSaveGame) before anything is written --
-	// harry clears PreviousLevelName, SloMo(1.0), copies the status managers into himself; Characters drop vendors.
+	// Every actor prepares for the save (Actor.PreSaveGame) before anything is written: harry clears
+	// PreviousLevelName, resets SloMo and copies the status managers into himself; Characters drop their vendors.
 	for( INT iActor=0; iActor<GLevel->Actors.Num(); iActor++ )
 		if( GLevel->Actors(iActor) )
 			GLevel->Actors(iActor)->eventPreSaveGame();
 
-	// Retail: no progress paint while the player's own loading screen is up.
+	// No progress paint while the player's own loading screen is up.
 	if( Client && Client->Viewports.Num() && Client->Viewports(0)->Actor
 	&&	!Client->Viewports(0)->Actor->bShowLoadingScreen )
 		PaintProgress();
@@ -2163,8 +2160,8 @@ void UGameEngine::SaveGame( INT Position )
 	SavePersistentActorCache();
 	// ****
 
-	// Retail: give the save slot its picture, then tell every actor the save is over (Actor.PostSaveGame;
-	// harry clears bShowLoadingScreen). Runs whether SavePackage succeeded or not, as shipped.
+	// Give the save slot its picture, then tell every actor the save is over (Actor.PostSaveGame; harry clears
+	// bShowLoadingScreen), whether SavePackage succeeded or not.
 	SetThumbnailForSaveSlot();
 	for( INT iActor=0; iActor<GLevel->Actors.Num(); iActor++ )
 		if( GLevel->Actors(iActor) )
@@ -2174,10 +2171,9 @@ void UGameEngine::SaveGame( INT Position )
 }
 
 //
-// Retail (HPCos 021009, Engine.dll 103abb00): copy the level's pre-made thumbnail into the save slot as Save0.bmp (the
-// retail PlayerPawn.SaveGame no longer screenshots). The level name is LevelInfo.LevelEnterText (HP2 keeps the map name
-// there, see LoadMap) without directory and extension: <appBaseDir>/Thumbnails/<Level>.bmp, else Thumbnails/Default.bmp.
-// False only when neither exists.
+// Copy the level's pre-made thumbnail into the save slot as Save0.bmp (the retail PlayerPawn.SaveGame takes no
+// screenshot): <appBaseDir>/Thumbnails/<Level>.bmp, else Thumbnails/Default.bmp, where <Level> is LevelEnterText (the
+// map name LoadMap stores) without directory and extension. False when there is no slot, no name or no thumbnail.
 //
 bool UGameEngine::SetThumbnailForSaveSlot()
 {
@@ -2279,8 +2275,7 @@ UBOOL UGameEngine::Key( UViewport* Viewport, EInputKey Key )
 UBOOL UGameEngine::InputEvent( UViewport* Viewport, EInputKey iKey, EInputAction State, FLOAT Delta )
 {
 	// Nasty nasty hack for special pause.
-	// Retail (HPCos 021009): only in debug mode -- [HGame.baseConsole] bDebugMode=True in the system ini
-	// (GConfig->GetStr, case-insensitive compare). Shipped retail ini has no such key, so Delete does nothing there.
+	// Only in debug mode: [HGame.baseConsole] bDebugMode=True in the system ini (the launcher writes it from -DEBUGMODE).
 	if (State == IST_Press && iKey == IK_Delete)
 	{
 		FString DebugMode = GConfig->GetStr( TEXT("HGame.baseConsole"), TEXT("bDebugMode") );

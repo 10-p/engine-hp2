@@ -149,9 +149,9 @@ void ULevel::ScreenActorsByGameState( void )
 		return;
 	}
 
-	// Retail (HPCos 021009, Engine.dll 103b87ed): GAMESTATE=<token> on the command line overrides the player's
-	// CurrentGameState (a dev switch). The shipped test is "!= 0" (sic), not ">= 0": a token at the very start of the
-	// master list is ignored, a token not in it is applied and then fails the check below. Kept as shipped.
+	// GAMESTATE=<token> on the command line overrides the player's CurrentGameState (a developer switch). The test is
+	// the retail "!= 0", not ">= 0": a token at the very start of the master list is ignored, and a token not in it
+	// is applied and then fails the check below.
 	FString CmdLineGState;
 	if( Parse( appCmdLine(), TEXT("GAMESTATE="), CmdLineGState ) && pPPawn->GameStateMasterList.InStr( *CmdLineGState ) != 0 )
 	{
@@ -248,8 +248,8 @@ void ULevel::ScreenActorsByGameState( void )
 			pAct->bInCurrentGameState = bInCurGState;
 		}
 
-		// Retail (HPCos 021009): in the game EVERY actor resolves its game state (the prototype only called the
-		// actors that have a GState group) -- e.g. a CutScene with no GState now goes to its idle state.
+		// In the game every actor resolves its game state, also one without a GState group (a CutScene without one
+		// goes to its idle state).
 		if( !GIsEditor )
 			pAct->eventOnResolveGameState();
 
@@ -362,8 +362,8 @@ bool ULevel::SavePersistentActors( const FString& MapName )
 			pActAr->Serialize(&buffer, iToSave );
 			IF_TRUE_MSG_AND_BREAK(pActAr->GetError(),TEXT("ULevelBase::SavePersistentActors ERROR: Saving name of actor!") ) 
 			
-			// Block 3.1i' ) Retail (HPCos 021009): then the size of the actor's CLASS name and the class name, so that
-			// LoadPersistentActors can respawn an actor that is not in the map (Case #3).
+			// Block 3.1i' ) Save the size of the actor's class name, then the class name, so that LoadPersistentActors
+			// can respawn an actor that is not in the map (Case #3).
 			appSprintf( buffer, TEXT("%s"), pAct->GetClass()->GetName() );
 			iToSave = (appStrlen(buffer)+1)*sizeof(TCHAR);
 			pActAr->Serialize(&iToSave, sizeof(iToSave) );
@@ -438,7 +438,7 @@ bool ULevel::LoadPersistentActors( const FString& MapName )
 	SQWORD		FileTime;
 	int			iPActorsInFile, iToLoad, iPropSize;
 	TCHAR		strName[256];
-	TCHAR		strClassName[256];	// retail: every PA record also carries its actor's class
+	TCHAR		strClassName[256];	// every PA record also carries its actor's class
 	bool		bError = false;
 
 	TMultiMap<FName,AActor*> ActorsToLoad;
@@ -542,15 +542,15 @@ bool ULevel::LoadPersistentActors( const FString& MapName )
 			// Block 3.1i ) Get the Persistent Actor's Name size then the name
 			pActAr->Serialize(&iToLoad, sizeof(iToLoad));
 			IF_TRUE_MSG_AND_BREAK(pActAr->GetError(),TEXT("ULevelBase::LoadPersistentActors ERROR: Loading size of actors name!") ) 
-			// ufront: bound every raw string read -- retail kept the "PA0" tag when it added the class name, so a file
-			// in the older layout would otherwise overrun the stack buffer. It now just stops this level's PA load.
+			// Every raw string read is bounded: the file tag is "PA0" in both the prototype's layout and this one, so a
+			// prototype file would overrun the buffer; a bad size stops this level's PA load instead.
 			IF_TRUE_MSG_AND_BREAK(iToLoad<=0 || iToLoad>(INT)sizeof(strName),TEXT("ULevelBase::LoadPersistentActors ERROR: Loading size of actors name!") ) 
 			
 			pActAr->Serialize(&strName, iToLoad );
 			IF_TRUE_MSG_AND_BREAK(pActAr->GetError(),TEXT("ULevelBase::LoadPersistentActors ERROR: Loading actors name!") ) 
 			strName[ARRAY_COUNT(strName)-1] = 0;
 
-			// Block 3.1i' ) Retail (HPCos 021009): then the size of the actor's class name and the class name
+			// Block 3.1i' ) Get the size of the actor's class name, then the class name
 			pActAr->Serialize(&iToLoad, sizeof(iToLoad));
 			IF_TRUE_MSG_AND_BREAK(pActAr->GetError() || iToLoad<=0 || iToLoad>(INT)sizeof(strClassName),TEXT("ULevelBase::LoadPersistentActors ERROR: Loading size of actors name!") ) 
 			pActAr->Serialize(&strClassName, iToLoad );
@@ -600,9 +600,9 @@ bool ULevel::LoadPersistentActors( const FString& MapName )
 				// Destroy our temp actor
 				TempActor.Destroy();
 */				
-				// Retail (HPCos 021009): respawn it from the class the save recorded, under its saved name (e.g. beans
-				// a chest spawned), then load it like a Case #1 actor below. An unknown class is skipped as before.
-				UClass* pClass = (UClass*)StaticFindObject( UClass::StaticClass(), ANY_PACKAGE, strClassName ); // retail passes NULL (any object); classes only is safe and equivalent in practice
+				// Respawn it from the class the save recorded, under its saved name (e.g. beans a chest spawned), then load
+				// it like a Case #1 actor below. An unknown class is skipped.
+				UClass* pClass = (UClass*)StaticFindObject( UClass::StaticClass(), ANY_PACKAGE, strClassName ); // classes only (the retail Engine looks the name up among all objects)
 				if( pClass == NULL )
 				{
 					// Seek past the actor in the level_pa.usa file
