@@ -18,6 +18,7 @@ FCoords             SpecialCoords;
 static FLOAT        UScale, VScale;
 static UTexture*    Textures[16];
 static FTextureInfo TextureInfo[16];
+static DWORD        SkinFlags[16]; // the flags each skin is drawn with, for its lock (UTexture::LockForDraw)
 static FTextureInfo EnvironmentInfo;
 static FVector      GUnlitColor;
 
@@ -568,6 +569,7 @@ void URender::DrawMesh
 		// Set up list for triangle sorting, adding all possibly visible triangles.
 		STAT(clock(GStat.MeshProcessTime));
 		FMeshTriSort* TriTop = &TriPool[0];
+		appMemzero( SkinFlags, sizeof(SkinFlags) );
 		for( INT i=0; i<Mesh->Tris.Num(); i++ )
 		{
 			FMeshTri*   Tri = &Mesh->Tris(i);
@@ -589,6 +591,8 @@ void URender::DrawMesh
 				{
 					// This is visible.
 					TriTop->Tri = Tri;
+					if( Tri->TextureIndex<ARRAY_COUNT(SkinFlags) )
+						SkinFlags[Tri->TextureIndex] |= PolyFlags;
 
 					// Set the sort key.
 					TriTop->Key
@@ -635,7 +639,7 @@ void URender::DrawMesh
 				Clock(GStat.MeshTmapTime);
 				Textures[i] = Textures[i]->Get( Frame->Viewport->CurrentTime );
 				INT ThisLOD = Min( TexLOD, Engine->Client->TextureLODSet[Textures[i]->LODSet] );
-				Textures[i]->Lock( TextureInfo[i], Frame->Viewport->CurrentTime, ThisLOD, Frame->Viewport->RenDev );
+				Textures[i]->LockForDraw( TextureInfo[i], Frame->Viewport->CurrentTime, ThisLOD, Frame->Viewport->RenDev, SkinFlags[i] );
 				EnvironmentMap = Textures[i];
 			}
 		}

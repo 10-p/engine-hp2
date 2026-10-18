@@ -450,15 +450,15 @@ void ParticleSystem::Render()
 	// Lock the texture and get the FTextureInfo object.
 	Texture = Texture->Get( Frame->Viewport->CurrentTime );
 
+	DWORD     PolyFlags = GetPolyFlags(ParticleFX) | Texture->PolyFlags;
 	FTextureInfo TextureInfo;
 	{
 		//FIX this means that all particles have the same texture ? 
 		//3rd Param is LOD, -1 means auto adjust, otherwise is exact mip level
 		Clock(GStat.ParticleRasterTime);
-		Texture->Lock( TextureInfo, Frame->Viewport->CurrentTime, 0, Frame->Viewport->RenDev );
+		Texture->LockForDraw( TextureInfo, Frame->Viewport->CurrentTime, 0, Frame->Viewport->RenDev, PolyFlags );
 	}
 
-	DWORD     PolyFlags = GetPolyFlags(ParticleFX) | Texture->PolyFlags;
 	FPlane    Color     = FPlane(1,1,1,0);
 	INT		  NumPolys  = GetNumPolys(),
 			  NumVerts	= GetNumVerts();

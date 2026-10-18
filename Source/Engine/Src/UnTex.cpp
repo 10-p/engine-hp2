@@ -77,14 +77,50 @@ void UTexture::Update( FTime CurrentTime )
 }
 
 //
+// A masked draw of a texture that has an S3TC copy gets the P8 mips under a cache ID of its own, so a renderer that
+// caches the S3TC upload under the texture's usual ID never hands it to a masked draw, or the reverse. MakeCacheID
+// puts a texture's object index in bits 8-39, so it never sets this bit.
+//
+#define MASKED_P8_CACHE_ID ((QWORD)1<<63)
+
+//
 // Lock a texture for rendering.
 //
 void UTexture::Lock( FTextureInfo& TextureInfo, FTime CurrentTime, INT LOD, URenderDevice* RenDev )
 {
 	guard(UTexture::Lock);
+	LockMips( TextureInfo, CurrentTime, LOD, RenDev, bHasComp && RenDev && RenDev->SupportsTC && CompFormat==TEXF_DXT1 );
+	unguardobj;
+}
+
+//
+// Lock a texture for a draw with these PolyFlags.
+//
+// PF_Masked makes palette index 0 transparent, and only the P8 mips say which texels those are. The S3TC copy is
+// DXT1 without alpha, so a masked draw of it shows those texels opaque, usually black. Such a draw takes the P8
+// mips: the texture as the software renderer draws it.
+//
+void UTexture::LockForDraw( FTextureInfo& TextureInfo, FTime CurrentTime, INT LOD, URenderDevice* RenDev, DWORD PolyFlags )
+{
+	guard(UTexture::LockForDraw);
+	UBOOL UseComp = bHasComp && RenDev && RenDev->SupportsTC && CompFormat==TEXF_DXT1;
+	if( UseComp && (PolyFlags & PF_Masked) && Mips.Num() )
+	{
+		LockMips( TextureInfo, CurrentTime, LOD, RenDev, 0 );
+		TextureInfo.CacheID |= MASKED_P8_CACHE_ID;
+	}
+	else Lock( TextureInfo, CurrentTime, LOD, RenDev );
+	unguardobj;
+}
+
+//
+// Lock the S3TC copy (UseComp) or the stored mips.
+//
+void UTexture::LockMips( FTextureInfo& TextureInfo, FTime CurrentTime, INT LOD, URenderDevice* RenDev, UBOOL UseComp )
+{
+	guard(UTexture::LockMips);
 
 	// See if format needs translating.
-	UBOOL UseComp = bHasComp && RenDev && RenDev->SupportsTC && CompFormat==TEXF_DXT1;
 	TArray<FMipmap>& WhichMips = UseComp ? CompMips : Mips;
 
 	// Fixup textures ripped of their mips, for dedicated server
