@@ -39,8 +39,8 @@ void URender::SetupDynamics( FSceneNode* Frame, AActor* Exclude )
 		{
 			if
 			(	(Actor != Exclude)
-			// Retail: with SHOWPATHS, hidden path markers (Keypoints incl. InterpolationPoints, PatrolPoints)
-			// still get a sprite proxy so DrawActorSprite can draw their paths.
+			// With SHOWPATHS, hidden path markers (Keypoints, InterpolationPoints included, and PatrolPoints) still get a
+			// sprite proxy, so DrawActorSprite can draw their paths.
 			&&	(	(GIsEditor ? !Actor->bHiddenEd : !Actor->bHidden)
 				||	(	(Frame->Viewport->Actor->ShowFlags & SHOW_Paths)
 					&&	(Actor->IsA(AKeypoint::StaticClass()) || Actor->IsA(APatrolPoint::StaticClass())) ) )
@@ -1095,7 +1095,7 @@ void URender::DrawActorSprite( FSceneNode* Frame, FDynamicSprite* Sprite )
 		unguard;
 	}
 
-	// Retail: collision cylinders are keyed on SHOW_Collision (SHOWCOLL); SHOW_Bounds keeps only the box below.
+	// Collision cylinders are keyed on SHOW_Collision (SHOWCOLL); SHOW_Bounds keeps only the box below.
 	if( ((ShowFlags & SHOW_Collision) && (Owner->bCollideWorld || Owner->bCollideActors) )
 	|| (GIsEditor && Owner->bSelected /*&& !Frame->Viewport->IsOrtho()*/) )
 	{
@@ -1150,7 +1150,7 @@ void URender::DrawActorSprite( FSceneNode* Frame, FDynamicSprite* Sprite )
 
 	}
 
-	// Retail (HPCos 021009): in-game path display (SHOWPATHS).
+	// In-game path display (SHOWPATHS).
 	if( ShowFlags & SHOW_Paths )
 	{
 		AInterpolationPoint* IP = Cast<AInterpolationPoint>(Owner);
@@ -1220,10 +1220,9 @@ void URender::DrawActorSprite( FSceneNode* Frame, FDynamicSprite* Sprite )
 }
 
 //
-// Retail (HPCos 021009, Render.dll export ?DrawInterpolationPathSegment@URender@@UAEXPAUFSceneNode@@PAVAInterpolationPoint@@1ABVFPlane@@H@Z):
-// in-game twin of UEditorEngine::DrawInterpolationPathSegment. Main segment uses LINE_None (no IsOrtho test);
-// the orientation axes (32 units, LINE_DepthCued) are drawn when bShowOrientation instead of matShowPathOrientation.
-// Like the editor version it recomputes To->PathDist (read by PHYS_Interpolating's constant-speed rate).
+// The in-game twin of UEditorEngine::DrawInterpolationPathSegment: the segment in LINE_None (no IsOrtho test), the
+// orientation axes (32 units, LINE_DepthCued) when bShowOrientation. Like the editor's, it recomputes To->PathDist
+// (read by PHYS_Interpolating's constant-speed rate).
 //
 void URender::DrawInterpolationPathSegment( FSceneNode* Frame, AInterpolationPoint* From, AInterpolationPoint* To, const FPlane& SegmentColor, UBOOL bShowOrientation )
 {

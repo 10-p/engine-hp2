@@ -350,7 +350,7 @@ class RENDER_API URender : public URenderBase
 	void DrawCylinder( FSceneNode* Frame, FPlane Color, DWORD LineFlags, const FCoords& Place, FLOAT Radius, FLOAT Height, FLOAT Width = -1 );
 	void Precache( UViewport* Viewport );
 
-	// Retail (HPCos 021009): new virtual after DrawCylinder (URender vtable slot 0xa4); SHOWPATHS display.
+	// Draws one interpolation path segment for SHOWPATHS (the retail Render's virtual after DrawCylinder).
 	virtual void DrawInterpolationPathSegment( FSceneNode* Frame, AInterpolationPoint* From, AInterpolationPoint* To, const FPlane& SegmentColor, UBOOL bShowOrientation );
 
 	// Dynamics cache.

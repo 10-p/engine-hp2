@@ -1,7 +1,7 @@
 // DumpFunctions.java -- Ghidra headless post-script: one line per function, for build-to-build diffing.
 //   analyzeHeadless <proj-dir> <proj> -import <dll> -postScript DumpFunctions.java <out.tsv> -scriptPath <dir>
 // Columns: entry  name  instructions  fingerprint  callees(sorted, ';')
-// fingerprint = sha1 over the normalised instruction stream: mnemonic + operand SHAPE (registers kept;
+// fingerprint = sha1 over the normalised instruction stream: mnemonic + operand shape (registers kept;
 // scalars, addresses and branch targets masked), so a function that only moved normalises identically.
 // callees = names of the functions it calls (thunks resolved), the anchor that matches unnamed helpers.
 import ghidra.app.script.GhidraScript;

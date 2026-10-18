@@ -956,7 +956,7 @@ public:
     BITFIELD bProjTarget:1;
     BITFIELD bDoNotBlockProjectiles:1;
     BITFIELD bAlignBottom:1;
-    // retail Engine.u (HPCos 021009): honoured by the collision-size alignment
+    // Retail Engine.u: aligns the mesh bottom whatever the collision and physics (USkeletalMesh::MeshAdjust).
     BITFIELD bAlignBottomAlways:1;
     BITFIELD bBlockCamera:1;
     BYTE LightType GCC_PACK(4);
@@ -1120,7 +1120,7 @@ public:
     {
         ProcessEvent(FindFunctionChecked(ENGINE_PostBeginPlay),NULL);
     }
-    // Retail Engine.u (HPCos 021009): `event PreSaveGame(); event PostSaveGame();` on Actor.
+    // Retail Engine.u: Actor's `event PreSaveGame()` and `event PostSaveGame()`.
     void eventPreSaveGame()
     {
         ProcessEvent(FindFunctionChecked(ENGINE_PreSaveGame),NULL);
@@ -2064,7 +2064,7 @@ public:
     FLOAT LastMessageWindow;
     BITFIELD bactionPressed:1 GCC_PACK(4);
     FLOAT aForMove GCC_PACK(4);
-    // retail Engine.u: `var travel bool` (script offset 2348)
+    // Retail Engine.u: a `travel bool` at script offset 2348.
     BITFIELD bShowLoadingScreen:1 GCC_PACK(4);
     INT TotalGameStateTokens GCC_PACK(4);
     INT GameStateTokenLen;
@@ -2433,7 +2433,7 @@ class ENGINE_API AInterpolationManager : public AInfo
 {
 public:
     class AInterpolationPoint* Dest;
-    // retail Engine.u: the point travelled FROM (Init / InterpolationPoint set it)
+    // Retail Engine.u: the point the manager travels from (script sets it in Init and at each InterpolationPoint).
     class AInterpolationPoint* Last;
     FLOAT PhysAlpha;
     FLOAT PhysRate;
@@ -3556,8 +3556,8 @@ public:
 };
 
 
-// Retail Engine.u (HPCos 021009) declares PatrolPoint `native` and the retail Engine.dll implements the class
-// (autoclassAPatrolPoint; no native functions). Layout from the retail script (PropertiesSize 1104).
+// Retail Engine.u declares PatrolPoint `native` (a native class without native functions); the members follow
+// the retail script layout (PropertiesSize 1104).
 class ENGINE_API APatrolPoint : public ANavigationPoint
 {
 public:

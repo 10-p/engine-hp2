@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-# ucdis.py -- UnrealScript bytecode disassembler for HP2 (UE1 build 433) packages, for packages shipped WITHOUT
+# ucdis.py -- UnrealScript bytecode disassembler for HP2 (UE1 build 433) packages, for packages shipped without
 # script text (the retail HGame/UWindow/...).   python3 tools/dev/retail/ucdis.py <pkg.u> <Class>[.<Function|State>] [<natives.txt>]
 # Grammar = Core/Src/UnClass.cpp UStruct::SerializeExpr (HP2 variant: optional EX_DebugInfo after calls, BoolVariable
-# as a prefix). In the FILE, object refs and names are compact indexes; jump targets are IN-MEMORY offsets (4 bytes per
+# as a prefix). In the file, object refs and names are compact indexes; jump targets are in-memory offsets (4 bytes per
 # ref/name), so the disassembler tracks both and prints memory offsets (the ones jumps use).
 # natives.txt: "<index> <Class> <execName>" lines (grep of IMPLEMENT_FUNCTION/AUTOGENERATE_FUNCTION in Source/).
 import os, struct, sys

@@ -34,7 +34,7 @@ struct USkeletalMesh::CFSkelHeader
 {
 	UMesh	*CachedMesh;
 	UAnimation *CachedAnim;
-	INT		CachedAnimBone;	// Retail (HPCos 021009): AnimBone the CachedLinks were built for (header 0x98 -> 0x9c).
+	INT		CachedAnimBone;	// the AnimBone the cached links were built for
 	FLOAT	CachedFrame;
 	FLOAT	CachedAlpha;
 	FName	CachedSeq;
@@ -280,7 +280,7 @@ void USkeletalMesh::FlipFaces()
 FVector USkeletalMesh::MeshAdjust( const AActor* Owner ) const
 {
 	// Adjust to align bottoms of mesh and collision cylinder.
-	// Retail (HPCos 021009): bAlignBottomAlways forces the alignment regardless of collision/physics.
+	// bAlignBottomAlways forces the alignment whatever the collision and physics.
 	if( Owner->bAlignBottomAlways
 	||	(Owner->bAlignBottom && Owner->bCollideWorld && Owner->Physics != PHYS_None && Owner->CollideType != CT_Shape) )
 		return FVector( 0, 0, -Owner->CollisionHeight - 2.5 
@@ -557,8 +557,7 @@ void USkeletalMesh::ApplyAnim
 		if (SkAnim && ThisMove )
 		{
 			// Match up all bones with a uAnim : in a non-dynamic array, inside the cached temp data chunk.
-			// Retail: also relink when the channel's AnimBone changed (the links of an aux channel only cover
-			// the AnimBone subtree, so a moved AnimBone with the same SkelAnim kept stale links in the proto).
+			// Also relink when the channel's AnimBone changed: an aux channel's links cover only the AnimBone subtree.
 			if ( SkAnim != FrameHdr->CachedAnim || AnimOwner->AnimBone != FrameHdr->CachedAnimBone )
 			{		
 				// Handle partial-skeleton animation.
