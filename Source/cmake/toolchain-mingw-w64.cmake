@@ -4,14 +4,14 @@
 # MSYS2 MINGW32 prompt on Windows needs no toolchain file and takes the same code paths; this file supplies
 # only what a cross build cannot infer.
 #
-# 32-bit: UE1 is 32-bit by construction, and Source/CMakeLists.txt demotes an x86_64 compiler to -m32 or
-# stops. Override MINGW_TARGET_ARCH only for an engine that is 64-bit clean.
+# MINGW_TARGET_ARCH picks the compiler: i686 (the windows preset) or x86_64 (windows64, which also sets
+# UE_ALLOW_64BIT; without it Source/CMakeLists.txt would demote the compiler to -m32).
 #
-# Usage: `cmake --preset windows` (the preset points here). Standalone:
+# Usage: `cmake --preset windows` or `--preset windows64` (the presets point here). Standalone:
 #   cmake -S Source -B build-windows -DCMAKE_TOOLCHAIN_FILE=Source/cmake/toolchain-mingw-w64.cmake
 
 set(CMAKE_SYSTEM_NAME Windows)
-set(MINGW_TARGET_ARCH "i686" CACHE STRING "MinGW-w64 target arch: i686 (UE1) or x86_64")
+set(MINGW_TARGET_ARCH "i686" CACHE STRING "MinGW-w64 target arch: i686 or x86_64")
 set(CMAKE_SYSTEM_PROCESSOR ${MINGW_TARGET_ARCH})
 
 set(_MINGW_TRIPLE "${MINGW_TARGET_ARCH}-w64-mingw32")

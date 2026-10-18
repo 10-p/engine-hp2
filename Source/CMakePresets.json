@@ -20,6 +20,22 @@
       }
     },
     {
+      "name": "native64",
+      "displayName": "Native Linux x86_64 (64-bit), one binary",
+      "description": "The 64-bit twin of native: the same one-binary package set, compiled for x86_64 (needs the amd64 libsdl2-dev). The shipped 32-bit .u packages run unchanged: script object references stay 4-byte object indices and the script-mirrored headers pack to 4. Builds in build-native64/.",
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/../build-native64",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "UE_ALLOW_64BIT": "ON",
+        "BUILD_EDITOR": "ON",
+        "BUILD_XOPENGLDRV": "ON",
+        "BUILD_UTGLR": "ON",
+        "BUILD_NOPENALDRV": "ON",
+        "BUILD_STATIC": "ON"
+      }
+    },
+    {
       "name": "wasm",
       "displayName": "Web (Emscripten/WASM), dev default",
       "description": "Emscripten web build: -O2 with DWARF and assertions, the everyday dev build (named stacks, readable errors, playable speed). Needs EMSDK in the environment (source /home/ion/WorkUnreal/env.sh). Builds in build-wasm/.",
@@ -68,13 +84,23 @@
         "BUILD_NULLSOUNDDRV": "ON",
         "BUILD_NOPENALDRV": "ON"
       }
+    },
+    {
+      "name": "windows64",
+      "inherits": "windows",
+      "displayName": "Windows x86_64 (MinGW-w64), one Game.exe",
+      "description": "The 64-bit twin of windows: x86_64-w64-mingw32 with the 64-bit SDL2 and OpenAL Soft builds (LLP64: long stays 4 bytes, pointers are 8). Builds in build-windows64/.",
+      "binaryDir": "${sourceDir}/../build-windows64",
+      "cacheVariables": { "MINGW_TARGET_ARCH": "x86_64", "UE_ALLOW_64BIT": "ON" }
     }
   ],
   "buildPresets": [
     { "name": "native", "configurePreset": "native" },
+    { "name": "native64", "configurePreset": "native64" },
     { "name": "wasm", "configurePreset": "wasm" },
     { "name": "wasm-debug", "configurePreset": "wasm-debug" },
     { "name": "wasm-perf", "configurePreset": "wasm-perf" },
-    { "name": "windows", "configurePreset": "windows" }
+    { "name": "windows", "configurePreset": "windows" },
+    { "name": "windows64", "configurePreset": "windows64" }
   ]
 }

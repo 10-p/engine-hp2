@@ -37,6 +37,9 @@ option(BUILD_NULLSOUNDDRV "Build SoundDrv (the null/silent audio subsystem)" ON)
 option(BUILD_NOPENALDRV "Build NOpenALDrv (OpenAL SFX + Ogg Vorbis music; web + native)" OFF)
 option(UE_BUNDLED_OPENAL "Native Linux: build openal-soft (the ufront fork) and ship libopenal.so.1 beside the binary, instead of linking whatever libopenal the system has" ON)
 option(BUILD_STATIC "Link everything into a single binary" OFF)
+# A 64-bit engine: OFF demotes an x86_64 compiler to -m32. The C++ side does not read it: PLATFORM_64BITS comes
+# from the compiler (Core/Inc/Core.h), so it cannot disagree with the code being compiled.
+option(UE_ALLOW_64BIT "Build x86_64 as a 64-bit engine instead of demoting to -m32" OFF)
 
 # Hardware render devices: orthogonal per-renderer toggles. XOpenGLDrv (OldUnreal, WebGL 2/GLES3) is the web
 # default; OpenGLDrv/UTGLR runs on the web through gl4es (WebGL 2, or WebGL 1 where that is all there is).
@@ -130,15 +133,23 @@ endif()
 message(STATUS "Target arch: ${TARGET_ARCH}")
 message(STATUS "64-bit: ${TARGET_IS_64BIT}")
 
-# UE1 is 32-bit by construction (pointer-sized fields inside reflected structs). Demote an x86_64 compiler.
+# UE1 needs a signed char (UnGnuG.h static_asserts it), and ARM's default is unsigned.
+if(TARGET_IS_ARM)
+  add_compile_options(-fsigned-char)
+endif()
+
+# A 64-bit engine runs the 32-bit .u packages unchanged (the script mirror contract, Core/Inc/UnObjBas.h). An
+# x86_64 compiler without UE_ALLOW_64BIT is demoted to -m32; 64-bit MSVC has never been built and is refused.
 if(TARGET_IS_64BIT)
-  if(TARGET_IS_X86 AND NOT MSVC)
-    message(STATUS "Building x86 binary with x86_64 compiler")
+  if(MSVC)
+    message(FATAL_ERROR "64-bit MSVC builds are not supported. Use -A Win32.")
+  elseif(TARGET_IS_X86 AND NOT UE_ALLOW_64BIT)
+    message(STATUS "Building x86 binary with x86_64 compiler (pass -DUE_ALLOW_64BIT=ON for x86_64)")
     set(TARGET_IS_64BIT FALSE)
     set(TARGET_ARCH "x86")
     add_compile_options(-m32)
   else()
-    message(FATAL_ERROR "64-bit platforms are not supported. If you're building on Windows with MSVC, try -A Win32.")
+    message(STATUS "Building a 64-bit engine for ${TARGET_ARCH}")
   endif()
 endif()
 
@@ -151,11 +162,6 @@ else()
 endif()
 message(STATUS "Windows target: ${TARGET_IS_WINDOWS}")
 
-if(TARGET_IS_64BIT)
-  add_definitions(-DPLATFORM_64BIT)
-else()
-  add_definitions(-DPLATFORM_32BIT)
-endif()
 if(TARGET_IS_X86)
   add_definitions(-DPLATFORM_X86)
 endif()
@@ -173,8 +179,12 @@ if(TARGET_IS_WINDOWS)
     # libstdc++; link it statically too, or the exe does not start outside the build machine (wine: exit 53).
     add_link_options(-Wl,-Bstatic,--whole-archive -lwinpthread -Wl,--no-whole-archive,-Bdynamic)
     # UE1 assumes Win32 /Zp4 struct packing; MinGW follows the MSVC ABI (double/int64 aligned to 8), so without
-    # this every class with a double comes out too long. Applied to all sources: packing must be uniform.
-    add_compile_options(-fpack-struct=4 -Wno-address-of-packed-member)
+    # this every class with a double comes out too long. Applied to all sources: packing must be uniform. Not on
+    # x86_64, where it would repack the Win64 API's structs too: there the script-mirrored headers pack
+    # themselves (#pragma pack(push,4), Core/Inc/UnObjBas.h).
+    if(NOT TARGET_IS_64BIT)
+      add_compile_options(-fpack-struct=4)
+    endif()
     # Windows puts in libraries what glibc keeps in libc: sockets are ws2_32, CoCreateGuid is ole32.
     link_libraries(ws2_32 ole32)
   endif()
@@ -217,7 +227,7 @@ else()
     add_compile_options(-O2)
   endif()
   add_compile_options(-ffunction-sections -fno-strict-aliasing)
-  add_compile_options(-Wno-write-strings -Wno-terminate)
+  add_compile_options(-Wno-write-strings -Wno-terminate -Wno-address-of-packed-member)
   # GCC: keep the stores a destructor makes to its own object. UE1 destroys native config arrays and strings
   # twice (UObject::ExitProperties, then the C++ destructor), which is safe only because ~FArray leaves
   # Data/ArrayNum/ArrayMax zeroed; GCC's lifetime dead-store elimination may delete those stores.
