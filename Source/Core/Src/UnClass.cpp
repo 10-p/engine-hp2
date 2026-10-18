@@ -390,9 +390,11 @@ void UStruct::Link( FArchive& Ar, UBOOL Props )
 		}
 		PropertiesSize = Align(PropertiesSize,PropertiesAlign);
 		// Layout guard: a native class's C++ sizeof must equal the size derived from the loaded .u property
-		// offsets, or its members (and any native subclass's) are read from the wrong offsets. Necessary but not
-		// sufficient: C++ may place a derived class's members in the base's tail padding, so the sizes can match
-		// while a member moves; only a per-property offset comparison catches that.
+		// offsets, or its members (and any native subclass's) are read from the wrong offsets and an object
+		// allocated at the script size is smaller than the class C++ writes through. The packages are fixed, so a
+		// mismatch is always a C++ header: fatal. Necessary but not sufficient: C++ may place a derived class's
+		// members in the base's tail padding, so the sizes can match while a member moves; only a per-property
+		// offset comparison catches that.
 		{
 			extern UStruct* GLayoutStructs[]; extern INT GLayoutSizes[]; extern INT GLayoutCount;
 			for( INT li=0; li<GLayoutCount; li++ )
@@ -414,6 +416,8 @@ void UStruct::Link( FArchive& Ar, UBOOL Props )
 						}
 						if( GetSuperStruct() )
 							debugf( NAME_Warning, TEXT("[layoutdiag] super %s PropertiesSize=%i"), GetSuperStruct()->GetName(), GetSuperStruct()->GetPropertiesSize() );
+						appErrorf( TEXT("Native class %s: C++ sizeof=%i but script layout=%i. The C++ header and the package disagree (the [layoutdiag] lines list the script layout)."),
+							GetName(), GLayoutSizes[li], PropertiesSize );
 					}
 					break;
 				}
