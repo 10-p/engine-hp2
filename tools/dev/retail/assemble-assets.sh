@@ -1,18 +1,17 @@
 #!/usr/bin/env bash
-# assemble-assets.sh -- build the RETAIL install tree (US English) from the retail disc image.
+# assemble-assets.sh -- build the retail install tree (US English) from the retail disc image.
 #
 #   tools/dev/retail/assemble-assets.sh <HarryPotter2.iso> <work-dir> <out-dir> <unshield-binary>
 #
-# The disc (volume HPCOS, build HPCos_021009_1205-1, InstallShield cabs dated 2002-10-15) carries the game in
-# setup/data1.cab + data2.cab, plus a LOOSE setup/hgame.u the installer copies over. Component -> folder, read off
-# the cab contents (docs/porting/retail-assets.md):
+# The disc (volume HPCOS, build HPCos_021009_1205-1) carries the game in setup/data1.cab + data2.cab, plus a loose
+# setup/hgame.u the installer copies over. Component -> folder, from the cab contents (docs/porting/retail-assets.md):
 #   Component_5  -> System/  (packages, .int, CUTSCENES/, Thumbnails/; retail *.dll/*.exe are copied but never
 #                             used -- mkrun-hp2.sh skips them)      Component_6 = an identical copy of CUTSCENES/
 #   Component_2  -> Maps/    Component_3 -> Music/    Component_4 -> Textures/ (*.utx only; *_utx are other languages)
 #   Component_7  -> System/  (*.usa: the US-English localisation; Language=usa)
 #   Component_8  -> Sounds/AllDialog.uax (AllDialog.USA_uax)  -- every other sound lives in System/HPSounds.u
 #   Component_9/10/11/12 = Spanish/French text + dialog, Component_1 = installer UI: not installed here.
-# Nothing here is ever committed; the out-dir lives outside every repo.
+# Needs 7z and unshield. Nothing here is committed; the out-dir lives outside every repository, and is made read-only.
 set -euo pipefail
 ISO="${1:?iso}"; WORK="${2:?work dir}"; OUT="${3:?out dir}"; UNSHIELD="${4:?unshield binary}"
 [ -e "$OUT" ] && { echo "refusing: $OUT exists (assemble into a fresh directory)"; exit 1; }

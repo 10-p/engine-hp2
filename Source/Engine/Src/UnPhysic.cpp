@@ -1107,7 +1107,7 @@ void APawn::physWalking(FLOAT deltaTime, INT Iterations)
 					((APawn *)this)->startSwimming(Velocity, timeTick, remainingTime, Iterations);
 					return;
 				}
-				// Retail 021009 (Engine.dll 103f6cc9): the step-down / SetBase may have started a fall -- stop walking this tick.
+				// The step-down or SetBase may have started a fall: stop walking this tick.
 				if ( IsA(APawn::StaticClass()) && (Physics == PHYS_Falling) )
 					return;
 			}
@@ -2774,8 +2774,8 @@ void AInterpolationManager::performPhysics(FLOAT DeltaTime)
 				eventUpdateCamera(OldAlpha);
 				FCoords OldCoords;
 				FVector StartControlPoint;
-				// Retail 021009 (Engine.dll 104044d4): the point travelled FROM is Last (set by script: Init /
-				// InterpolationPoint), not Dest->Prev -- they differ after a path switch.
+				// The point travelled from is Last (script sets it in Init and at each InterpolationPoint), not Dest->Prev:
+				// the two differ after a path switch.
 				if( Last )
 				{
 					//if( Last->bDontAlterRotation )
@@ -2835,7 +2835,7 @@ void AInterpolationManager::performPhysics(FLOAT DeltaTime)
 				OldDesiredZ = DesiredCoords.ZAxis;
 
 				FLOAT Smoothing = 1.f;
-				if ( Last ) // retail 021009: Last, not Dest->Prev
+				if ( Last )
 				{
 					if ( Last->Smoothing == 0.f )
 						Smoothing = 0.f;

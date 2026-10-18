@@ -34,11 +34,11 @@
 #define DEFAULT_STREAM_BUFFERS     4
 #define DEFAULT_STREAM_CHUNKSIZE   32768
 
-// (Retail ALAudio dropped the prototype's sound occlusion -- IsAudibleAt / CalculateRadiusMultiplier /
-// OCCLUSION_FACTOR 0.35 -- from PlaySound, ModifySound and Update; so does this driver.)
+// No sound occlusion (IsAudibleAt / CalculateRadiusMultiplier) in PlaySound, ModifySound or Update, as in the
+// retail ALAudio.
 
-// Retail: ambient sounds are (re)considered every AMBIENT_UPDATE_INTERVAL seconds, not every frame, and at
-// most MAX_AMBIENT_INSTANCES voices play one AmbientSound at a time (the highest priorities).
+// Ambient sounds are reconsidered every AMBIENT_UPDATE_INTERVAL seconds, and at most MAX_AMBIENT_INSTANCES
+// voices play one AmbientSound at a time (the highest priorities).
 #define AMBIENT_UPDATE_INTERVAL 0.2f
 #define MAX_AMBIENT_INSTANCES   3
 
@@ -143,8 +143,8 @@ struct FNALStream
 	void*			Ogg;			// OggVorbis_File* (heap; opaque so only NOpenALDrv.cpp includes vorbisfile, under pack(8))
 };
 
-// An ambient sound candidate (ALAudio's ALAmbient; retail added SourceIndex, 16 -> 20 bytes: the ambient
-// sounds already playing are listed too, so each AmbientSound can be capped at MAX_AMBIENT_INSTANCES).
+// An ambient sound candidate (ALAudio's ALAmbient). The ambient sounds already playing are listed too, with their
+// SourceIndex, so each AmbientSound can be capped at MAX_AMBIENT_INSTANCES.
 struct FNALAmbient
 {
 	AActor*		Actor;
@@ -186,9 +186,9 @@ class DLL_EXPORT UNOpenALAudioSubsystem : public UAudioSubsystem
 	UBOOL		Initialized;
 	UBOOL		LastRealtime;
 	UBOOL		LastPaused;
-	FLOAT		AmbientTimer;		// retail (+0x54): seconds since the last ambient pass (AMBIENT_UPDATE_INTERVAL)
+	FLOAT		AmbientTimer;		// seconds since the last ambient pass
 	UBOOL		RestartSounds;
-	UBOOL		Muted;				// retail (+0x5C): MUTESOUNDS/UNMUTESOUNDS -- every voice's gain held at 0
+	UBOOL		Muted;				// MUTESOUNDS/UNMUTESOUNDS: every voice's gain held at 0
 	UBOOL		OggUsable;			// libvorbisfile's struct layout matches ours (Init, VorbisLayout.c)
 	FPointRegion RegionListener;
 
@@ -250,7 +250,7 @@ class DLL_EXPORT UNOpenALAudioSubsystem : public UAudioSubsystem
 	FLOAT SoundPriority( UViewport* Viewport, FVector Location, FLOAT Volume, FLOAT Radius, INT Flags );
 	INT GetNewStreamStruct();
 	UBOOL alError( const TCHAR* Text, UBOOL Log = true );
-	INT FindLeastImportantSound( USound *pIncomingSound, INT Id, FLOAT Priority );	// retail signature
+	INT FindLeastImportantSound( USound *pIncomingSound, INT Id, FLOAT Priority );	// the retail signature
 
 	// Internals (the port's).
 	FLOAT SourceGain( INT Index, FLOAT Volume );

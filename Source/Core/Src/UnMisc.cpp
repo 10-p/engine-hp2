@@ -2115,12 +2115,12 @@ CORE_API void appInit( const TCHAR* InPackage, const TCHAR* InCmdLine, FMalloc* 
 
 
 //
-// Retail (HPCos 021009, Core.dll 10157b90): empty <SaveSlotPath>/cache. Split out of LoadPersistentActorCache and also
-// run from appPreExit, so no session PA cache is left behind on a normal exit.
+// Empty <SaveSlotPath>/cache, as the retail Core does: run by LoadPersistentActorCache and by appPreExit, so a
+// normal exit leaves no session PA cache behind.
 //
 static void ClearPersistentActorCache( void )
 {
-	if( !GSys || !*GSys->SaveSlotPath )	// ours: appPreExit can run before appInit set GSys up (ucc, early exits)
+	if( !GSys || !*GSys->SaveSlotPath )	// appPreExit can run before appInit has set GSys up (ucc, early exits)
 		return;
 	FString			Spec  = GSys->SaveSlotPath * TEXT("cache") * TEXT("*.*");
 	TArray<FString> Files = GFileManager->FindFiles( *Spec, true, false );
@@ -2148,7 +2148,7 @@ CORE_API void SavePersistentActorCache( void )
 	for( j=0; Files.IsValidIndex(j); j++ )
 	{
 		PAFileName = GSys->SaveSlotPath * Files(j);
-		if( GFileManager->FileSize( *PAFileName ) > 0 ) // retail 021009: > 0 (a failed size query is -1)
+		if( GFileManager->FileSize( *PAFileName ) > 0 ) // a failed size query is -1
 		{
 			GFileManager->Delete( *PAFileName, false, true );
 		}
@@ -2162,7 +2162,7 @@ CORE_API void SavePersistentActorCache( void )
 	for( j=0; Files.IsValidIndex(j); j++ )
 	{
 		PAFileName = GSys->SaveSlotPath * TEXT("cache") * Files(j);
-		if( GFileManager->FileSize( *PAFileName ) > 0 ) // retail 021009: > 0 (a failed size query is -1)
+		if( GFileManager->FileSize( *PAFileName ) > 0 ) // a failed size query is -1
 		{
 			GFileManager->Copy( *(GSys->SaveSlotPath * Files(j)), *PAFileName, true, true );
 		}
@@ -2191,7 +2191,7 @@ CORE_API void LoadPersistentActorCache( void )
 	for( j=0; Files.IsValidIndex(j); j++ )
 	{
 		PAFileName = GSys->SaveSlotPath * Files(j);
-		if( GFileManager->FileSize( *PAFileName ) > 0 ) // retail 021009: > 0 (a failed size query is -1)
+		if( GFileManager->FileSize( *PAFileName ) > 0 ) // a failed size query is -1
 		{
 			GFileManager->Copy( *(GSys->SaveSlotPath * TEXT("cache") * Files(j)), *PAFileName, true, true );
 		}
@@ -2207,7 +2207,7 @@ CORE_API void appPreExit()
 {
 	guard(appPreExit);
 
-	ClearPersistentActorCache();	// retail 021009: leave no session PA cache behind
+	ClearPersistentActorCache();
 
 	debugf( NAME_Exit, TEXT("Preparing to exit.") );
 	appPlatformPreExit();

@@ -472,8 +472,8 @@ void UNOpenALAudioSubsystem::SetViewport( UViewport* InViewport )
 {
 	guard(UNOpenALAudioSubsystem::SetViewport);
 
-	// Stop playing sounds -- the music too: retail dropped the prototype's "&& !(Flags & SF_Music)", so a map
-	// change (UGameEngine::LoadMap calls SetViewport(GetViewport())) or a device switch ends the song.
+	// Stop playing sounds, the music too: a map change (UGameEngine::LoadMap calls SetViewport) or a device switch
+	// ends the song.
 	for( INT i=0; i<Sources.Num(); i++ )
 		if( Sources(i).Started )
 			StopSoundSource( i );
@@ -993,8 +993,7 @@ INT UNOpenALAudioSubsystem::PlaySound( AActor* Actor, INT Id, USound* Sound, FVe
 	// Add any resident flags from the sound -tg
 	Sound->WorkingFlags = Sound->CoreFlags | Flags;
 
-	// (Retail registers the sound only once a voice is chosen and freed -- see below. The prototype registered
-	// first, and on failure stole a voice through FindLeastImportantSound and retried.)
+	// The sound is registered further down, once a voice is chosen and freed.
 
 	Volume = Clamp( Volume, 0.f, 1.f );
 
@@ -1012,7 +1011,7 @@ INT UNOpenALAudioSubsystem::PlaySound( AActor* Actor, INT Id, USound* Sound, FVe
 	}
 	else
 	{
-		// (Retail: no occlusion pass before the priority.)
+		// No occlusion pass before the priority.
 		Priority = SoundPriority( Viewport, Location, Volume * SoundVolume, Radius, Flags );
 	}
 
@@ -1044,7 +1043,7 @@ INT UNOpenALAudioSubsystem::PlaySound( AActor* Actor, INT Id, USound* Sound, FVe
 		}
 	}
 
-	// If no room to play the sound, see if we can make some room by killing a less important sound (retail).
+	// If no room to play the sound, see if we can make some room by killing a less important sound.
 	if( Index == -1 )
 	{
 		debugf( NAME_DevSound, TEXT("No empty slots in Sources() - try killing a sound") );
@@ -1058,8 +1057,8 @@ INT UNOpenALAudioSubsystem::PlaySound( AActor* Actor, INT Id, USound* Sound, FVe
 
 	StopSoundSource( Index );
 
-	// Retail registers here, after the voice (and the stream it held) is free: the early returns above no
-	// longer leave a registered-but-unbound stream behind, and a full stream table has just got one back.
+	// Register only now that the voice (and the stream it held) is free: the early returns above leave no
+	// registered-but-unbound stream behind, and a full stream table has just got one back.
 	if( !RegisterSound( Sound ) )
 		return -1;
 
@@ -1098,7 +1097,7 @@ INT UNOpenALAudioSubsystem::PlaySound( AActor* Actor, INT Id, USound* Sound, FVe
 
 	FNALSource& Src = Sources(Index);
 
-	// Set default values. (Retail: no initial occlusion pass -- the radius is the radius.)
+	// Set default values (no occlusion: the radius is the sound's).
 	Src.ZoneRadius		= Radius;
 	Src.UsedRadius		= Radius;
 	Src.WantedRadius	= Radius;
@@ -1252,14 +1251,14 @@ UBOOL UNOpenALAudioSubsystem::ModifySound( AActor* Actor, INT Id, USound * Sound
 			switch( parameter )
 			{
 			case SOUND_Volume:
-				// (Retail scales by SoundVolume here; SourceGain does that live. A muted voice stays silent.)
+				// SourceGain applies SoundVolume; a muted voice stays silent.
 				Sources(i).Volume = Clamp<FLOAT>( Value, 0.01f, 1.0f );
 				if( !Muted )
 					alSourcef( sid, AL_GAIN, SourceGain( i, Sources(i).Volume ) );
 				break;
 
 			case SOUND_Radius:
-				// (Retail: no occlusion pass.)
+				// No occlusion pass.
 				Sources(i).ZoneRadius	= Value;
 				Sources(i).UsedRadius	= Value;
 				Sources(i).WantedRadius	= Value;
@@ -1445,9 +1444,8 @@ void UNOpenALAudioSubsystem::UnpauseSounds()
 	Update: the per-frame loop (ALAudio's), plus the stream pump.
 ------------------------------------------------------------------------------------*/
 
-// Retail sorted the candidates twice behind a global mode flag: by AmbientSound (so the entries of one sound form
-// one run; retail ordered the runs by pointer value, here by object index -- deterministic, equally arbitrary),
-// then each run by priority, highest first. One composite key does both.
+// Ambient candidates sort by AmbientSound (one run per sound, the runs in object-index order), then by priority
+// within a run, highest first.
 static INT Compare( FNALAmbient& A, FNALAmbient& B )
 {
 	USound* SA = A.Actor->AmbientSound;
@@ -1519,8 +1517,8 @@ void UNOpenALAudioSubsystem::Update( FSceneNode* SceneNode )
 	}
 	unguard;
 
-	// Ambient sounds -- retail: a pass every AMBIENT_UPDATE_INTERVAL seconds (the prototype ran it every frame),
-	// both the starting and the out-of-range stopping below.
+	// Ambient sounds: one pass every AMBIENT_UPDATE_INTERVAL seconds, both the starting and the out-of-range
+	// stopping below.
 	AmbientTimer += DeltaTime;
 	if( AmbientTimer > AMBIENT_UPDATE_INTERVAL )
 	{
@@ -1543,8 +1541,8 @@ void UNOpenALAudioSubsystem::Update( FSceneNode* SceneNode )
 					Playing = Sources(j).Id == Id;
 				if( Playing )
 					continue;
-				// (Retail: the priority volume includes the global SoundVolume, as a playing voice's does; and
-				// no occlusion -- a plain SoundRadius*GAudioMaxRadiusMultiplier range check.)
+				// The priority volume includes SoundVolume, as a playing voice's does; the range check is a plain
+				// SoundRadius*GAudioMaxRadiusMultiplier (no occlusion).
 				if( Actor->IsOwnedBy( ViewTarget ) )
 				{
 					INT iAmbient = AmbientSounds.Add( 1 );
@@ -1565,7 +1563,7 @@ void UNOpenALAudioSubsystem::Update( FSceneNode* SceneNode )
 				}
 			}
 
-			// Retail: the ambient voices already playing compete with the new candidates.
+			// The ambient voices already playing compete with the new candidates.
 			for( INT i=0; i<Sources.Num(); i++ )
 			{
 				if( Sources(i).Id && (Sources(i).Id&14) == SLOT_Ambient*2 && Sources(i).Actor && Sources(i).Actor->AmbientSound )
@@ -1592,8 +1590,7 @@ void UNOpenALAudioSubsystem::Update( FSceneNode* SceneNode )
 						End++;
 					for( INT k=First+MAX_AMBIENT_INSTANCES; k<End; k++ )
 					{
-						// (Retail stopped the recorded index blindly; a voice an earlier run's PlaySound took over
-						// meanwhile carries another Id and is left alone.)
+						// A voice an earlier run's PlaySound has taken over carries another Id and is left alone.
 						const INT Idx = AmbientSounds(k).SourceIndex;
 						if( Idx != -1 && Sources(Idx).Id == AmbientSounds(k).Id )
 							StopSoundSource( Idx );
@@ -1696,13 +1693,13 @@ void UNOpenALAudioSubsystem::Update( FSceneNode* SceneNode )
 			Volume *= (1.f - Sources(i).FadeTime / Sources(i).FadeDuration);
 		}
 
-		// (Retail: a muted voice keeps gain 0 -- MUTESOUNDS.)
+		// A muted voice keeps gain 0 (MUTESOUNDS).
 		if( !Muted )
 			alSourcef( Sources(i).Source, AL_GAIN, SourceGain( i, Volume ) );
 
 		if( !(Sources(i).Flags & SF_No3D) )
 		{
-			// (Retail: no occlusion -- the zone radius is the radius.)
+			// No occlusion: the zone radius is the radius.
 			FLOAT Radius = Sources(i).Radius;
 			Sources(i).ZoneRadius = Radius;
 
@@ -1721,8 +1718,8 @@ void UNOpenALAudioSubsystem::Update( FSceneNode* SceneNode )
 			alSourcef( Sources(i).Source, AL_REFERENCE_DISTANCE, Radius * DISTANCE_FACTOR );
 		}
 
-		// Update the priority. (Retail's voice volume is the scaled one: SoundVolume for a sound, MusicVolume for
-		// a song -- SourceGain.)
+		// Update the priority, from the scaled voice volume (SourceGain: SoundVolume for a sound, MusicVolume for a
+		// song).
 		Sources(i).Priority = SoundPriority( Viewport, Sources(i).Location, SourceGain( i, Sources(i).Volume ), Sources(i).ZoneRadius, Sources(i).Flags );
 
 		if( !(Sources(i).Flags & SF_No3D) )
@@ -1875,8 +1872,8 @@ UBOOL UNOpenALAudioSubsystem::Exec( const TCHAR* Cmd, FOutputDevice& Ar )
 	}
 	else if( ParseCommand(&Str,TEXT("SETVOLUMES")) )
 	{
-		// Retail: HGame's FESoundVideoPage sends "SETVOLUMES MUSIC=<f>" / "SETVOLUMES SOUND=<f>" (then writes the
-		// ini with "set ini:Engine.Engine.AudioDevice ..."): new global volumes, applied to the playing voices.
+		// HGame's FESoundVideoPage sends "SETVOLUMES MUSIC=<f>" / "SETVOLUMES SOUND=<f>" (and writes the ini with
+		// "set ini:Engine.Engine.AudioDevice ..."): new global volumes, applied to the playing voices.
 		FLOAT Value;
 		if( Parse( Str, TEXT("SOUND="), Value ) )
 			SoundVolume = Clamp( Value, 0.f, 1.f );
@@ -1887,7 +1884,7 @@ UBOOL UNOpenALAudioSubsystem::Exec( const TCHAR* Cmd, FOutputDevice& Ar )
 	}
 	else if( ParseCommand(&Str,TEXT("SOUNDSOURCESTATES")) )
 	{
-		// Retail debug command.
+		// Debug command: the OpenAL source state of every voice.
 		for( INT i=0; i<Sources.Num(); i++ )
 		{
 			if( Sources(i).Id )
@@ -1903,7 +1900,7 @@ UBOOL UNOpenALAudioSubsystem::Exec( const TCHAR* Cmd, FOutputDevice& Ar )
 	}
 	else if( ParseCommand(&Str,TEXT("MUTESOUNDS")) )
 	{
-		// Retail: HGame mutes everything while a cut-scene is fast-forwarded (SkipCS), UNMUTESOUNDS after.
+		// HGame mutes everything while a cut-scene is fast-forwarded (SkipCS), UNMUTESOUNDS after.
 		// Voices keep playing; PlaySound/Update/ApplyVolumes leave their gain at 0 until then.
 		Muted = 1;
 		for( INT i=0; i<Sources.Num(); i++ )
@@ -2046,12 +2043,10 @@ UBOOL UNOpenALAudioSubsystem::alError( const TCHAR* Text, UBOOL Log )
 	return true;
 }
 
-// Retail's version (FindLeastImportantSound(USound*,INT,FLOAT)): only a voice LESS important than the incoming
-// sound may go. Among the AMBIENT voices, the AmbientSound with the most playing instances is culled first; with
-// no ambient voice playing, an incoming ambient sound finds nothing and any other sound may take any (less
-// important) voice. The incoming USound is no longer consulted, and SLOT_Talk is protected by its priority of
-// 100 instead of by slot. PlaySound only calls this after its own scan found no voice of lower priority, so in
-// practice it returns -1 -- retail too: the prototype's "steal the 4th instance of a sound" is gone.
+// Only a voice less important than the incoming sound may go. Among the ambient voices, the AmbientSound with the
+// most playing instances goes first; with no ambient voice playing, an incoming ambient sound finds nothing and any
+// other sound may take any less important voice. pIncomingSound is unread; SLOT_Talk is protected by its priority
+// of 100. PlaySound calls this only after its own scan found no voice of lower priority, so it returns -1 there.
 INT UNOpenALAudioSubsystem::FindLeastImportantSound( USound *pIncomingSound, INT Id, FLOAT Priority )
 {
 	guard(UNOpenALAudioSubsystem::FindLeastImportantSound);
