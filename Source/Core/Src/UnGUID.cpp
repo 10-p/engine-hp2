@@ -33,7 +33,7 @@
 	Private definitions.
 ----------------------------------------------------------------------------*/
 
-typedef unsigned long   unsigned32;
+typedef unsigned int    unsigned32;	// 32 bits on every target: uuid_t fills the 16-byte FGuid
 typedef unsigned short  unsigned16;
 typedef unsigned char   unsigned8;
 typedef unsigned char   byte;

@@ -12,8 +12,8 @@
 #define PATH(s) appUnixPath( s )
 char* appUnixPath( const char* Path );
 
-// Networking.
-unsigned long appGetLocalIP( void );
+// Networking. The IPv4 address in network byte order, 32 bits on every target.
+unsigned int appGetLocalIP( void );
 
 // String functions.
 int stricmp( const char* s, const char* t );
