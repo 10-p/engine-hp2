@@ -424,7 +424,9 @@ void UObject::execBoolVariable( FFrame& Stack, RESULT_DECL )
 
 	// Get bool variable.
 	BYTE B = *Stack.Code++;
-	UBoolProperty* Property = *(UBoolProperty**)Stack.Code;
+	// Peek the variable token's property without consuming it; by copy, as the operand is unaligned.
+	UBoolProperty* Property;
+	__builtin_memcpy( &Property, Stack.Code, sizeof(Property) );
 	(this->*GNatives[B])( Stack, NULL );
 	GProperty = Property;
 
