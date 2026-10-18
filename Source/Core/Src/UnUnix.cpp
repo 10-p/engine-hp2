@@ -808,8 +808,8 @@ static void appWriteSignalText( const char* A, const char* B )
 	fputs( A, stdout ); fputs( B, stdout ); fflush( stdout );
 #else
 	// Async-signal-safe: the signal can interrupt any thread inside malloc or the log.
-	write( 1, A, strlen(A) );
-	write( 1, B, strlen(B) );
+	if( write( 1, A, strlen(A) ) < 0 ) return;
+	if( write( 1, B, strlen(B) ) < 0 ) return;
 #endif
 }
 
