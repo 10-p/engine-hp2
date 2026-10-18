@@ -436,6 +436,7 @@ class CORE_API UClass : public UState
 
 	// In memory only.
 	FString				DefaultPropText;
+	const TCHAR*		NativeConfigNameStash;	// Native registration: the config name until Register() can make an FName.
 
 	// Constructors.
 	UClass();

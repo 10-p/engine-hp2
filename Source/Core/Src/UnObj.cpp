@@ -70,14 +70,16 @@ UObject::UObject( ENativeConstructor, UClass* InClass, const TCHAR* InName, cons
 	// Make sure registration is allowed now.
 	check(!GObjNoRegister);
 
-	// Setup registration info, for processing now (if inited) or later (if starting up).
-	check(sizeof(Outer       )>=sizeof(InPackageName));
-	check(sizeof(Name        )>=sizeof(InName       ));
-	check(sizeof(_LinkerIndex)>=sizeof(GAutoRegister));
-	*(const TCHAR  **)&Outer        = InPackageName;
-	*(const TCHAR  **)&Name         = InName;
-	*(UObject      **)&_LinkerIndex = GAutoRegister;
-	GAutoRegister                   = this;
+	// Setup registration info, for processing now (if inited) or later (if starting up). Names cannot be made
+	// yet, so the strings and the registration chain wait in the object's own pointer-sized fields until
+	// Register() (Name and _LinkerIndex are 4 bytes).
+	check(sizeof(Outer     )>=sizeof(InPackageName));
+	check(sizeof(StateFrame)>=sizeof(InName       ));
+	check(sizeof(_Linker   )>=sizeof(GAutoRegister));
+	*(const TCHAR  **)&Outer      = InPackageName;
+	*(const TCHAR  **)&StateFrame = InName;
+	*(UObject      **)&_Linker    = GAutoRegister;
+	GAutoRegister                 = this;
 
 	// Call native registration from terminal constructor.
 	if( GetInitialized() && GetClass()==StaticClass() )
@@ -97,18 +99,19 @@ UObject::UObject( EStaticConstructor, const TCHAR* InName, const TCHAR* InPackag
 {
 	guard(UObject::UObject);
 
-	// Setup registration info, for processing now (if inited) or later (if starting up).
-	check(sizeof(Outer       )>=sizeof(InPackageName));
-	check(sizeof(Name        )>=sizeof(InName       ));
-	check(sizeof(_LinkerIndex)>=sizeof(GAutoRegister));
-	*(const TCHAR  **)&Outer        = InPackageName;
-	*(const TCHAR  **)&Name         = InName;
+	// Setup registration info, for processing now (if inited) or later (if starting up), in pointer-sized fields
+	// (see the native constructor above).
+	check(sizeof(Outer     )>=sizeof(InPackageName));
+	check(sizeof(StateFrame)>=sizeof(InName       ));
+	check(sizeof(_Linker   )>=sizeof(GAutoRegister));
+	*(const TCHAR  **)&Outer      = InPackageName;
+	*(const TCHAR  **)&StateFrame = InName;
 	
 	// If we are not initialized yet, auto register.
 	if (!GObjInitialized)
 	{
-		*(UObject      **)&_LinkerIndex = GAutoRegister;
-		GAutoRegister                   = this;
+		*(UObject      **)&_Linker = GAutoRegister;
+		GAutoRegister              = this;
 	}
 	unguard;
 }
@@ -1246,13 +1249,15 @@ void UObject::Register()
 	guard(UObject::Register);
 	check(GObjInitialized);
 
-	// Get stashed registration info.
+	// Get stashed registration info (see the native constructor).
 	const TCHAR* InOuter = *(const TCHAR**)&Outer;
-	const TCHAR* InName  = *(const TCHAR**)&Name;
+	const TCHAR* InName  = *(const TCHAR**)&StateFrame;
 
-	// Set object properties.
+	// Set object properties, and give the parking fields back their real meaning.
 	Outer        = CreatePackage(NULL,InOuter);
 	Name         = InName;
+	StateFrame   = NULL;
+	_Linker      = NULL;
 	_LinkerIndex = INDEX_NONE;
 
 	// Validate the object.
@@ -1359,7 +1364,7 @@ void UObject::ProcessRegistrants()
 		// Make list of all objects to be registered.
 		GObjRegisterCount = -1;
 		FPushMemTag Push(TEXT("ProcessRegistrants"));
-		for( ; GAutoRegister; GAutoRegister=*(UObject **)&GAutoRegister->_LinkerIndex )
+		for( ; GAutoRegister; GAutoRegister=*(UObject **)&GAutoRegister->_Linker )
 			GObjRegistrants.AddItem( GAutoRegister );
 		for( INT i=0; i<GObjRegistrants.Num(); i++ )
 			GObjRegistrants(i)->ConditionalRegister();
