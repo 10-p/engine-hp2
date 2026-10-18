@@ -449,9 +449,10 @@ CORE_API void appMemcpy( void* Dest, const void* Src, INT Count );
 //
 // The size parameter is size_t, as the standard requires of a replacement operator new (unsigned long on wasm32).
 //
-// UE_REPLACEMENT_ALLOC forces the four replaceable no-extra-argument forms inline. Not inlined (at -O0) they are
-// emitted out of line as weak symbols, wasm-ld resolves the program-wide operator new to one of them, and
-// Emscripten's WasmFS static initializer then allocates through GMalloc before appInit, when it returns NULL.
+// UE_REPLACEMENT_ALLOC (a GCC/Clang attribute: every build here is GCC or Clang) forces the four replaceable
+// no-extra-argument forms inline. Not inlined (at -O0) they are emitted out of line as weak symbols, wasm-ld
+// resolves the program-wide operator new to one of them, and Emscripten's WasmFS static initializer then
+// allocates through GMalloc before appInit, when it returns NULL.
 // The Tag-taking placement forms are not replacement functions.
 #define UE_REPLACEMENT_ALLOC __attribute__((always_inline))
 inline void* operator new( size_t Size, const TCHAR* Tag )
