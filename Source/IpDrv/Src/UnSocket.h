@@ -39,7 +39,7 @@
 	#define ioctlsocket			ioctl
 	#define WSAGetLastError()	errno
 
-	#define GCC_OPT_INT_CAST	(DWORD*)
+	#define GCC_OPT_INT_CAST	(socklen_t*)
 #endif
 
 // IP address macros.
