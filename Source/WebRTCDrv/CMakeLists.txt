@@ -1,7 +1,7 @@
 project(WebRTCDrv)
 
 # WebRTCDrv: the UE1 WebRTC net driver (Emscripten/browser networking). The
-# transport is the glue webrtc_* ABI (baked vendor/glue/webrtc-shim.js), not BSD sockets.
+# transport is the glue's ue_net_* imports (vendor/glue/ue_abi.h, baked net-shim.js), not BSD sockets.
 set(SRC_FILES
   "WebRTCDrv.cpp"
   # The synthetic LAN: answers UE1 LAN discovery on IpDrv's AUdpLink from the WebRTC peer list.
@@ -17,6 +17,7 @@ target_include_directories(${PROJECT_NAME}
   ${CMAKE_CURRENT_SOURCE_DIR}/Inc
   PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/Src
+  ${CMAKE_SOURCE_DIR}/../vendor/glue
 )
 
 target_link_libraries(${PROJECT_NAME} Engine Core)

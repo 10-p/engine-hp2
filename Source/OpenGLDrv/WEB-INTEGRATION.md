@@ -23,7 +23,7 @@ The entire engine-side change set is:
   block, and — inside the existing `EMSCRIPTEN` branch — enabling `BUILD_UTGLR` iff `USE_GL4ES`).
 
 **Untouched:** `Core/Engine/Render/NSDLDrv/IpDrv/Fire/SoundDrv/UnrealTournament/Launch`, the frozen ABI
-(`vendor/glue/ue_abi.h`, v1), the vendored `webrtc-shim.js`, and all injected glue (FetchFS/IDB/WebRTC).
+(`vendor/glue/ue_abi.h`, v2), the vendored `net-shim.js`, and all injected glue (FetchFS/IDB/WebRTC).
 gl4es is compiled **statically into the wasm** — it is not glue, needs no runtime injection, and does not
 change the artifact contract or `meta.json` format. NOpenGLESDrv still builds and remains the default.
 

@@ -334,7 +334,7 @@ static UEngine* InitEngine()
 	// driver that is compiled in.
 	GConfig->SetString( TEXT("Engine.Engine"), TEXT("AudioDevice"),          TEXT("SoundDrv.NullAudioSubsystem") );
 #endif
-	// A browser has no BSD sockets: the net driver is WebRTCDrv, whose transport is the glue's webrtc_* ABI.
+	// A browser has no BSD sockets: the net driver is WebRTCDrv, whose transport is the glue's ue_net_* imports.
 	GConfig->SetString( TEXT("Engine.Engine"), TEXT("NetworkDevice"),        TEXT("WebRTCDrv.WebRTCNetDriver") );
 	// UGameEngine::Tick captures the pointer while a level is up and no menu shows; CaptureMouse=True keeps
 	// UGameEngine::Click from releasing it on every mouse-button release.

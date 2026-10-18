@@ -297,8 +297,8 @@ if(NOT EMSCRIPTEN AND NOT MINGW)
   add_subdirectory(UCC)
 endif()
 
-# The WebRTC net driver is a web-only package (its transport is the glue's webrtc_* ABI, linked in via
-# vendor/glue/webrtc-shim.js, not BSD sockets). The launcher makes it the web's NetworkDevice.
+# The WebRTC net driver is a web-only package (its transport is the glue's ue_net_* imports, linked in via
+# vendor/glue/net-shim.js, not BSD sockets). The launcher makes it the web's NetworkDevice.
 if(EMSCRIPTEN)
   add_subdirectory(WebRTCDrv)
   list(APPEND INSTALL_TARGETS WebRTCDrv)

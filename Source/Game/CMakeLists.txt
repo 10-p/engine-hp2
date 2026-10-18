@@ -91,8 +91,6 @@ if(EMSCRIPTEN)
     # linear memory. The host builds the backend through the exported functions below.
     # -sFORCE_FILESYSTEM (above) stays required: WasmFS omits the JS FS.* API without it, and the host glue
     # uses that API too.
-    # _webrtc_deferred_open is not exported: WebRTCDrv does not use the deferred-connect pair, and exporting an
-    # undefined symbol is a wasm-ld error ('symbol exported via --export not found').
     -sWASMFS
     "-sEXPORTED_FUNCTIONS=['_main','_malloc','_free','_close','_ue_exec_command','_wasmfs_create_jsimpl_backend','_wasmfs_create_file','_ufront_wasmfs_register','_ufront_wasmfs_set_pending']"
     # PThread: the host hands the FS sync channel to the worker that runs main(). Runtime methods are on
@@ -126,9 +124,9 @@ if(EMSCRIPTEN)
     # openal-soft reports every AL error by throwing and catching it, so catching must be on (the first AL
     # error would otherwise abort). Only its objects are built with -fexceptions.
     -sNO_DISABLE_EXCEPTION_CATCHING
-    # The thin shims: webrtc-shim.js defines the ABI's webrtc_* imports (forwarding to the host's
+    # The thin shims: net-shim.js defines the ABI's ue_net_* imports (forwarding to the host's
     # Module.UE.net.*), wasmfs-shim.js the WasmFS backend and its worker bootstrap.
-    "SHELL:--js-library ${CMAKE_SOURCE_DIR}/../vendor/glue/webrtc-shim.js"
+    "SHELL:--js-library ${CMAKE_SOURCE_DIR}/../vendor/glue/net-shim.js"
     "SHELL:--js-library ${CMAKE_SOURCE_DIR}/../vendor/glue/wasmfs-shim.js"
     # ufront_backbuffer_samples: a multisampled emulated back buffer for OpenGLDrv/UTGLR, which draws into
     # framebuffer 0.
@@ -162,7 +160,7 @@ if(EMSCRIPTEN)
   # The --js-library shims are link inputs too, which CMake does not infer from a link option: without this,
   # editing a shim leaves a stale .js while the build reports success.
   set_property(TARGET ${PROJECT_NAME} APPEND PROPERTY LINK_DEPENDS
-    "${CMAKE_SOURCE_DIR}/../vendor/glue/webrtc-shim.js"
+    "${CMAKE_SOURCE_DIR}/../vendor/glue/net-shim.js"
     "${CMAKE_SOURCE_DIR}/../vendor/glue/wasmfs-shim.js"
     "${CMAKE_CURRENT_SOURCE_DIR}/msaa-backbuffer.js")
   # Bare loader: SDLLaunch.js (+ .wasm/.data), no .html, into build-<cfg>/SDLLaunch/. `SDLLaunch` is the
