@@ -1,3 +1,5 @@
+Record — kept as history; the current state is in README.md, BUILD.md and the change inventory.
+
 # B: collision, movement, physics and interpolation (Engine.dll): prototype vs retail
 
 Scope: the pairs assigned in the task. Method: Ghidra decompiles were used to get oriented. Every claimed difference

@@ -1,3 +1,5 @@
+Record — kept as history; the current state is in README.md, BUILD.md and the change inventory.
+
 # A — Saving, persistent actors, game state (Engine.dll, plus a Core.dll spill-over)
 
 Analyst scope: proto `HarryPotter2/Assets/System/Engine.dll` vs retail `assets-retail/System/Engine.dll`

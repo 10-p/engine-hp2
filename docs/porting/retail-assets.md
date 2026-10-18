@@ -1,3 +1,5 @@
+Record — kept as history; the current state is in README.md, BUILD.md and the change inventory.
+
 # The retail branch: the HP2 port on the RETAIL assets
 
 **Why.** `Assets/` (and the source tree) are a **pre-release snapshot** dated 2002-09-06. The retail disc
