@@ -1,3 +1,5 @@
+Record — kept as history; the current state is in README.md, BUILD.md and the change inventory.
+
 # ufrontend target contract for `hp2` (Harry Potter and the Chamber of Secrets, UE1 build 433)
 
 Key: `ufrontend-target-contract` — analyst report (re-run, Opus), written 2026-09-26.

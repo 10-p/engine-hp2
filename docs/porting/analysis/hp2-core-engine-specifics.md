@@ -1,3 +1,5 @@
+Record — kept as history; the current state is in README.md, BUILD.md and the change inventory.
+
 # HP2 build-433 Core+Engine idioms that are hazards for a GCC / Emscripten / MinGW port
 
 Key: `hp2-core-engine-specifics` · analyst report (re-run) · 2026-09-26

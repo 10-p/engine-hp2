@@ -1,3 +1,5 @@
+Record — kept as history; the current state is in README.md, BUILD.md and the change inventory.
+
 # HP2 — how the game boots and what content it needs
 
 Analysis key: `hp2-game-boot-and-content` · written 2026-09-26 against

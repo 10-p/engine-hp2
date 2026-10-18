@@ -1,3 +1,5 @@
+Record — kept as history; the current state is in README.md, BUILD.md and the change inventory.
+
 # Template analysis: launcher and UCC (key: template-launcher-ucc)
 
 Scope: (1) the UT99 web-port SDL launcher (engine-ut99/Source/UnrealTournament) feature-by-feature, stock vs ufront additions;

@@ -1,3 +1,5 @@
+Record — kept as history; the current state is in README.md, BUILD.md and the change inventory.
+
 # Save-game storage: HP2 vs Unreal 1 vs UT99 OldSkool (+ the inis)
 
 **Owner request O1 (PLAN §11), investigation only — nothing is implemented here.** 2026-09-26.

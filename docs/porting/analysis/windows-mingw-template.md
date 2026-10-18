@@ -1,3 +1,5 @@
+Record — kept as history; the current state is in README.md, BUILD.md and the change inventory.
+
 # Windows (MinGW-w64 cross) target — engine-ut99 template as an HP2 replication checklist
 
 Key: `windows-mingw-template`

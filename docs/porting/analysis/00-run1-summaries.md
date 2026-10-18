@@ -1,3 +1,5 @@
+Record — kept as history; the current state is in README.md, BUILD.md and the change inventory.
+
 # Run-1 reader summaries (Fable, run wf_9a1145cc-842, 2026-09-25/26)
 
 The first analysis run finished 8 of 11 readers before the usage limit killed the rest. Its report FILES were later

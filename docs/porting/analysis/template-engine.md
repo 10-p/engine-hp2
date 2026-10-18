@@ -1,3 +1,5 @@
+Record — kept as history; the current state is in README.md, BUILD.md and the change inventory.
+
 # template-engine — the ENGINE package portability delta the HP2 port must replicate
 
 **Key:** `template-engine` · **Written:** 2026-09-26 (re-run; supersedes the 2026-09-25 draft) ·

@@ -1,3 +1,5 @@
+Record — kept as history; the current state is in README.md, BUILD.md and the change inventory.
+
 # web-layer-template — the Emscripten/web layer of engine-ut99, end to end, as an HP2 replication checklist
 
 **Key:** `web-layer-template` · **Run:** 2026-09-26 (fresh re-run; supersedes the 2026-09-25 draft) ·

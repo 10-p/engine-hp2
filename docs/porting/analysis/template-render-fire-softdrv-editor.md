@@ -1,3 +1,5 @@
+Record — kept as history; the current state is in README.md, BUILD.md and the change inventory.
+
 # Render, Fire, SoftDrv and the stripped Editor — template (UT99 v400 web) vs epic v400 vs HP2 build 433
 
 Analyst key: `template-render-fire-softdrv-editor` · run 2 (Opus), 2026-09-26 · read-only analysis: no file

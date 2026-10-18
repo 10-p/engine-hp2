@@ -1,3 +1,5 @@
+Record — kept as history; the current state is in README.md, BUILD.md and the change inventory.
+
 # template-core — Core package portability delta the HP2 port must replicate
 
 **Key:** `template-core` · **Written:** 2026-09-26 (relaunch; supersedes the 2026-09-25 run, re-derived

@@ -1,3 +1,5 @@
+Record — kept as history; the current state is in README.md, BUILD.md and the change inventory.
+
 # renderer-forks — XOpenGLDrv, UTGLR (OpenGLDrv), gl4es, NSDLDrv vs the HP2 build-433 render-device face
 
 Analyst key: `renderer-forks`. Re-run 2026-09-26 (supersedes the unfinished 2026-09-25 draft; every claim below was re-verified against the trees on disk).

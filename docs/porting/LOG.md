@@ -1,3 +1,5 @@
+Record — kept as history; the current state is in README.md, BUILD.md and the change inventory.
+
 # HP2 port — progress log
 
 One dated line per green milestone (PLAN §10). Newest last.

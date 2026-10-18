@@ -1,3 +1,5 @@
+Record — kept as history; the current state is in README.md, BUILD.md and the change inventory.
+
 # 00 — Completeness critique of the HP2 web-port analysis reports
 
 Author role: COMPLETENESS CRITIC (reads all analysis reports, finds gaps and contradictions, spot-checks claims against the code).

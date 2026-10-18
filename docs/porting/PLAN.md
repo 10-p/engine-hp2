@@ -1,3 +1,5 @@
+Record — kept as history; the current state is in README.md, BUILD.md and the change inventory.
+
 # HP2 web port — THE PLAN (read this first, then grind)
 
 **Goal:** Harry Potter and the Chamber of Secrets (PC, Unreal Engine 1 build 433) running in a browser

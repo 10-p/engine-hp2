@@ -1,3 +1,5 @@
+Record — kept as history; the current state is in README.md, BUILD.md and the change inventory.
+
 # Bootstrap on a new machine — both HP2 variants published side by side
 
 > **Superseded 2026-10-10.** HP2 now lives in the WorkUnreal workspace beside the other engines (`engine-hp2`,

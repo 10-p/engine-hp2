@@ -1,3 +1,5 @@
+Record — kept as history; the current state is in README.md, BUILD.md and the change inventory.
+
 # template-drivers — the helper/net drivers of engine-ut99 vs HP2 build 433
 
 Key: `template-drivers`. Subject: `NSDLDrv`, `NullDrv`, `SoundDrv`, `NOpenALDrv`, `IpDrv`, `WebRTCDrv`
