@@ -214,6 +214,12 @@ else()
   endif()
   add_compile_options(-ffunction-sections -fno-strict-aliasing)
   add_compile_options(-Wno-write-strings -Wno-terminate)
+  # GCC: keep the stores a destructor makes to its own object. UE1 destroys native config arrays and strings
+  # twice (UObject::ExitProperties, then the C++ destructor), which is safe only because ~FArray leaves
+  # Data/ArrayNum/ArrayMax zeroed; GCC's lifetime dead-store elimination may delete those stores.
+  if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    add_compile_options(-fno-lifetime-dse)
+  endif()
 endif()
 
 # ---------------------------------------------------------------------------------------------------------
