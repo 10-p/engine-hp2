@@ -191,7 +191,7 @@ INT FMeshIlluminator::ComputeAllLightVisibility( UBOOL Selected, UBOOL bVisibleO
 		}
 	}
 	Time = appSeconds() - Time;
-	debugf( NAME_Log, TEXT("Occluded %i views in %f sec (%f msec per light)"), n*6, Time, Time*(1000.0/n/6) );
+	debugf( NAME_Log, TEXT("Occluded %i views in %f sec (%f msec per light)"), n*6, Time.GetFloat(), Time.GetFloat()*(1000.0/n/6) );
 
 	// Delete viewport.
 	Viewport->Unlock(0);

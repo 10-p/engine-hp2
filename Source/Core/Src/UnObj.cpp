@@ -2119,7 +2119,7 @@ UBOOL UObject::StaticExec( const TCHAR* Cmd, FOutputDevice& Ar )
 	}
 	else if( ParseCommand(&Str,TEXT("GTIME")) )
 	{
-		debugf( TEXT("GTime = %f"), GTempTime );
+		debugf( TEXT("GTime = %f"), GTempTime.GetFloat() );
 		return 1;
 	}
 	else return 0; // Not executed
