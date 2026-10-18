@@ -13,6 +13,7 @@ def parse_header(path):
                 t=h[j].strip()
                 if 'DECLARE_CLASS' in t or t.startswith('};'): break
                 if not t or t in('{','public:') or t.startswith('//') or t.startswith('#'): j+=1; continue
+                t=re.sub(r'\s*//.*$','',t).strip()   # a trailing comment is not part of the member
                 raw=t; pk='GCC_PACK' in raw; al='GCC_ALIGN' in raw
                 t2=re.sub(r'GCC_PACK\(\d\)|GCC_ALIGN\(\d\)','',t).strip()
                 if t2.endswith(';') and '(' not in t2:

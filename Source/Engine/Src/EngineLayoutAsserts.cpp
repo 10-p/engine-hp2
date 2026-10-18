@@ -1,5 +1,4 @@
-// GENERATED from Assets/System/{Core,Engine}.u by tools/dev/layout/emit_asserts.py -- do not edit by hand,
-// except this preamble, the -Winvalid-offsetof block and the PLATFORM_64BITS guard.
+// GENERATED from Assets/System/{Core,Engine}.u by tools/dev/layout/emit_asserts.py -- do not edit by hand.
 //
 // Compile-time layout check: EngineClasses.h is frozen data that must match the shipped, never-recompiled
 // Engine.u byte for byte. Every non-bitfield member of every native class in it must sit at the offset the
@@ -7,21 +6,20 @@
 // size guard (Core UnClass.cpp) is necessary but not sufficient: a derived class's members can move into
 // the base's tail padding with both sizes unchanged (ABrush/AMover). These asserts see that. Offsets are
 // target-independent (i386 SysV, wasm32 with -fpack-struct=4, and MinGW's -mms-bitfields all reach the
-// script layout — the latter without the bColoredPad/bTwoWayPad pads), so a failure here is a real layout
+// script layout -- the latter without the bColoredPad/bTwoWayPad pads), so a failure here is a real layout
 // defect: fix the header, never this file. The offsets are the 32-bit script layout, so a 64-bit build skips them
 // (there UStruct::Link's size guard and tools/dev/layout/layout-sweep.gdb check the layout).
 //
-// Regenerate after any change to EngineClasses.h or the shipped .u, from the repo root:
-//   python3 tools/dev/layout/emit_asserts.py Source/Engine/Inc/EngineClasses.h Assets/System/Core.u Assets/System/Engine.u
-// It writes EngineLayoutAsserts.cpp into the current directory with a short header of its own: move it here
-// and put this preamble, the -Winvalid-offsetof block and the PLATFORM_64BITS guard back.
+// Regenerate after any change to EngineClasses.h or the shipped .u, from Source/Engine/Src:
+//   python3 ../../../tools/dev/layout/emit_asserts.py ../Inc/EngineClasses.h <assets>/System/Core.u <assets>/System/Engine.u
+// offsetof on a non-standard-layout class (they all have vtables) is conditionally supported; GCC and clang
+// evaluate __builtin_offsetof as a constant here and only warn, hence the pragma.
 #include "EnginePrivate.h"
 
-// offsetof on a non-standard-layout class (they all have vtables) is conditionally supported; GCC and
-// clang both evaluate __builtin_offsetof as a constant here, and only warn about it.
 #if __GNUC__
 #pragma GCC diagnostic ignored "-Winvalid-offsetof"
 #endif
+
 #define UE_OFS(C,M) __builtin_offsetof(C,M)
 
 #if !PLATFORM_64BITS
