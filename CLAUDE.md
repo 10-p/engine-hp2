@@ -15,8 +15,8 @@ SoftDrv), helper drivers (NSDLDrv, NOpenALDrv, NullDrv, SoundDrv, WebRTCDrv) and
 
 | Thing | Path | Role |
 |-------|------|------|
-| This repository | `/home/ion/WorkUnreal/engine-hp2` (branch `main`) | the prototype engine, target `hp2-proto` |
-| Its retail checkout | `/home/ion/WorkUnreal/engine-hp2-retail` (branch `retail`) | the retail engine, target `hp2-retail-exp` |
+| This checkout | `/home/ion/WorkUnreal/engine-hp2-retail` (branch `retail`) | the retail engine, target `hp2-retail-exp` |
+| The `main` checkout | `/home/ion/WorkUnreal/engine-hp2` (branch `main`) | the prototype engine, target `hp2-proto` |
 | The frontend | `/home/ion/WorkUnreal/unreal-frontend-arch-private` (branch `main`) | `targets/hp2-proto/`, `targets/hp2-retail-exp/` |
 | The Android app | `Android/` | the Gradle/NDK project: `libHP2.so` from `Source/CMakeLists.txt`, the launcher and the touch overlay (`BUILD.md`, Android); one app per branch, from `HP2_TARGET_ID` |
 | Renderer forks | `10-p/XOpenGLDrv@ufront`, `10-p/utglr-copy@main`, `10-p/gl4es@ufront` | fetched by CMake by branch; point `FETCHCONTENT_SOURCE_DIR_XOPENGLDRV` / `FETCHCONTENT_SOURCE_DIR_UTGLR` / `GL4ES_SOURCE_DIR` at a local clone to build an unpushed change |
@@ -26,8 +26,15 @@ SoftDrv), helper drivers (NSDLDrv, NOpenALDrv, NullDrv, SoundDrv, WebRTCDrv) and
 **`retail` holds retail-specific changes only.** A general engine change goes to `main`, and `retail` is rebased on
 top (`git fetch origin && git rebase --onto origin/main <old-base>`); never commit a general change to `retail`. The
 frontend's `publish-all` refuses a `retail` checkout that does not contain `origin/main` (`publish.engine.baseBranch`).
-Values that differ per branch: `HP2_TARGET_ID` (`Source/CMakeLists.txt`: `hp2-proto` here, `hp2-retail-exp` on retail;
+Values that differ per branch: `HP2_TARGET_ID` (`Source/CMakeLists.txt`: `hp2-retail-exp` here, `hp2-proto` on `main`;
 meta.json's `targetId` and the WebRTC peer prefix) and the content the inis and `EngineLayoutAsserts.cpp` describe.
+
+**This branch runs the retail disc** (build HPCos_021009_1205-1, content `/home/ion/WorkUnreal/assets/hp2-retail-exp-assets`):
+the retail `Engine.u` layout and natives, save path and persistent-actor format, collision and movement, loading flow
+and ALAudio behaviour, each recovered from the retail DLLs (`tools/dev/retail/`, `docs/porting/retail*` as records).
+Both ini sets boot `LocalMap=PrivetDr.unr` (a plain start is a new game; `-LOAD=<n>` continues an existing save) with
+`Language=usa`. A change that is not about the retail content goes to `main` first and reaches this branch by the
+rebase.
 
 Features are listed in the frontend's `/home/ion/WorkUnreal/unreal-frontend-arch-private/docs/14-change-inventory.md`;
 a new feature adds its line there. The baseline for "what we changed" is the Epic/KnowWonder drop in
