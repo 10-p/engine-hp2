@@ -95,7 +95,7 @@ private:
 	void FreeVertPoolIndex( DWORD i, INT NumVerts );
 	void SetupActorBrush( AMover* Actor );
 	void FlushActorBrush( AMover* Actor );
-	void FlushAllRelatedMovers( AMover* Actor );	// retail 021009
+	void FlushAllRelatedMovers( AMover* Actor );
 	void ForceGroupFlush( INT iNode );
 	void FilterFPoly( INT iAddSurf, INT iNode, INT iCoplanarParent, FPoly *EdPoly, INT Outside );
 	void AddPolyFragment( INT iAddSurf, INT iNode, INT iCoplanarParent, INT IsFront, FPoly* EdPoly );
@@ -250,9 +250,8 @@ void FMovingBrushTracker::Flush( AActor* Actor )
 }
 
 //
-// Retail 021009 (Engine.dll 10394660, guard name FMovingBrushTracker::FlushAllRelatedMovers): when a mover moves,
-// also re-add every STATIONARY mover whose first Bsp node's zones are both covered by the moving mover's first node,
-// so that their Bsp fragments are rebuilt together (no Other!=Actor test: the moving one is already assimilated).
+// When a mover moves, also re-add every stationary mover whose first Bsp node's two zones are in the moving mover's
+// first node's zone mask, so their Bsp fragments are rebuilt together (the moving mover itself is already added).
 //
 void FMovingBrushTracker::FlushAllRelatedMovers( AMover* Actor )
 {
@@ -298,7 +297,7 @@ void FMovingBrushTracker::Update( AActor* InActor )
 	{
 		// Update the single brush.
 		AddGroupActor( Actor );
-		FlushAllRelatedMovers( Actor ); // retail 021009
+		FlushAllRelatedMovers( Actor );
 	}
 
 	// Make a complete list of all actors that need flushing.

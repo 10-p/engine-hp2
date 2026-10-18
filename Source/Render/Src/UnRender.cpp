@@ -128,9 +128,8 @@ void URender::Init( UEngine* InEngine )
 	// Light manager.
 	GLightManager->Init();
 
-	// Retail (HPCos 021009): mesh shape-LOD distance from an ObjectDetail-style setting. NB the retail binary reads
-	// the literal section "Engine.Engine.ViewportManager" (no ini: indirection), which no shipped ini has, so
-	// GetStr returns "" and GlobalShapeLOD stays 1.0 -- effectively inert unless that section is added by hand.
+	// Mesh shape-LOD distance from an ObjectDetail* value of the literal section "Engine.Engine.ViewportManager", key
+	// TextureDetail, as the retail Render reads it. No shipped ini has that section, so GlobalShapeLOD stays 1.0.
 	FString ObjectDetail = GConfig->GetStr( TEXT("Engine.Engine.ViewportManager"), TEXT("TextureDetail") );
 	if( ObjectDetail==TEXT("ObjectDetailVeryHigh") )
 		GlobalShapeLOD = 0.1f;

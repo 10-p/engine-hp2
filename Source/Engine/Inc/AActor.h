@@ -68,7 +68,7 @@
 	// AActor collision functions.
 	virtual UPrimitive* GetPrimitive() const;
 	FVector GetCylinderExtent() const;
-	// Retail (HPCos 021009): ?IsOverlapping@AActor@@QAEHPAV1@M@Z -- non-const, the extent grown by Expand.
+	// The retail signature: this actor's extent, grown by Expand, against Other's primitive.
 	UBOOL IsOverlapping( AActor *Other, FLOAT Expand );
 
 	// AActor general functions.

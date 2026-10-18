@@ -3,8 +3,8 @@
 #   python3 tools/dev/retail/layout-diff.py <proto System dir> <retail System dir> [Pkg ...]
 # Uses tools/dev/layout/layout.py (HP2 433 UStruct::Link emulation). Reports every class whose (name, type,
 # offset, size) list or PropertiesSize differs, and classes present on one side only. Bools packed into one
-# word share an offset; a bool INSERTED into such a word changes no offset but shifts the bits after it, so
-# the per-class list also compares the ORDER of bools within each word.
+# word share an offset; a bool inserted into such a word changes no offset but shifts the bits after it, so
+# the per-class list also compares the order of bools within each word.
 import os, sys, importlib
 here = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(here, '..', 'layout'))

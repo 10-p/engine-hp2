@@ -1139,7 +1139,7 @@ void AActor::CheckHearSound(APawn* Hearer, INT Id, USound* Sound, FVector Parame
 	FLOAT DistSq = (HearSource-Location).SizeSquared();
 	if( DistSq < NewRadiusSquared )
 	{
-		// Retail 021009 (Engine.dll 10418a84): SLOT_Talk sounds are never occluded ((Id & 0xE) == SLOT_Talk*2).
+		// SLOT_Talk sounds are never occluded ((Id & 0xE) == SLOT_Talk*2).
 		if ( (Id & 0x0E) != (SLOT_Talk << 1) && !GetLevel()->Model->FastLineCheck(HearSource,Location) )
 		{
 			// if no line of sight, reduce radius and volume
@@ -2870,9 +2870,8 @@ void AActor::execIsSoftwareRendering( FFrame& Stack, RESULT_DECL )
 	unguardSlow;
 }
 
-// native(330) final function bool GetCurrentKeyState( EInputKey Key ) -- retail Engine.u/Engine.dll (HPCos 021009):
-// "returns 1 if key is down, 0 if key is up". Retail reads XLevel->Engine->Client->Viewports(0)->Input's key-down
-// table, clamped to IK_MAX-1 (Ghidra, retail Engine.dll FUN_10422c60), and returns 0 with no viewport.
+// native(330) final function bool GetCurrentKeyState( EInputKey Key ) (retail Engine.u): true while the key is down
+// in viewport 0's input table; false without a viewport.
 void AActor::execGetCurrentKeyState( FFrame& Stack, RESULT_DECL )
 {
 	guardSlow(AActor::execGetCurrentKeyState);

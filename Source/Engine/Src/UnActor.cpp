@@ -1110,9 +1110,8 @@ UBOOL AActor::IsOverlapping( AActor* Other, FLOAT Expand )
 	guardSlow(AActor::IsOverlapping);
 	checkSlow(Other!=NULL);
 
-	// Retail (HPCos 021009, Engine.dll FUN_103809c0): point-check this actor's collision extent, grown by Expand on
-	// every axis, against the OTHER actor's own collision primitive (cylinder, box, mesh or BSP brush). The prototype's
-	// brush / Level special cases and cylinder-only test are gone, so a mover or shaped actor untouches correctly.
+	// As the retail Engine does: point-check this actor's collision extent, grown by Expand on every axis, against
+	// the other actor's own primitive (cylinder, box, mesh or BSP brush), so movers and shaped actors untouch too.
 	FCheckResult Hit(1.f);
 	FVector Extent = GetPrimitive()->GetCollisionExtent(this) + FVector(Expand,Expand,Expand);
 	return Other->GetPrimitive()->PointCheck( Hit, Other, Location, Extent, 0 )==0;

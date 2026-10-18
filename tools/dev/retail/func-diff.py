@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-# func-diff.py -- which EXPORTED functions changed between two builds of the same Win32 DLL (prototype vs retail).
+# func-diff.py -- which exported functions changed between two builds of the same Win32 DLL (prototype vs retail).
 #   python3 tools/dev/retail/func-diff.py <proto.dll> <retail.dll>
 # Disassembles both with i686-w64-mingw32-objdump, cuts each export from its address to the next export or
-# function start, normalises every instruction (mnemonic + operand SHAPE: immediates, absolute addresses and
+# function start, normalises every instruction (mnemonic + operand shape: immediates, absolute addresses and
 # branch targets masked, registers kept) and reports exports whose normalised bodies differ. Same compiler,
 # same source except for the edits => an unchanged function normalises identically even though every address
 # moved. Data exports (vtables, statics) are skipped.
