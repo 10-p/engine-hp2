@@ -450,9 +450,6 @@ enum EAutoFovMode
 // the inputs change; only the primary view (the scope in UGameEngine::Draw) passes 1.
 ENGINE_API FLOAT ufrontEffectiveFov( FLOAT BaseFov, INT SizeX, INT SizeY, UBOOL bLog = 0 );
 
-// The uncorrected FovAngle of the frame being drawn, set by the scoped override in UGameEngine::Draw.
-ENGINE_API extern FLOAT GAutoFovFrameBase;
-
 /*-----------------------------------------------------------------------------
 	The End.
 -----------------------------------------------------------------------------*/

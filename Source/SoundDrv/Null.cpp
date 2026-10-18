@@ -21,9 +21,6 @@ class DLL_EXPORT UNullAudioSubsystem : public UAudioSubsystem
 {
 	DECLARE_CLASS(UNullAudioSubsystem, UAudioSubsystem, CLASS_Config, SoundDrv)
 
-	// Class registration hook. No config properties — silent audio needs none.
-	static void InternalClassInitializer( UClass* Class ) {}
-
 	// UAudioSubsystem interface (HP2 build 433, Engine/Inc/UnAudio.h). Return values follow ALAudio's "nothing
 	// played" answers: PlaySound -1 (script ignores it), PlayMusic 0 (MusicTrigger stores the handle and later
 	// passes it to StopMusic, which must accept 0). USound::Audio stays NULL -- only a real driver sets it.

@@ -25,7 +25,7 @@ EM_ASYNC_JS(void, ufront_yield_frame, (void), {
 
 // The running engine, for ue_exec_command and WebRTCDrv's listen-status push (set in InitEngine after
 // Engine->Init(); WebRTCDrv.cpp declares it extern).
-UEngine* GWebRTCEngine = NULL;
+UEngine* GEngineForExec = NULL;
 
 // The frame-pacing ring: the timings of the last UFRONT_PACE_MAX frames, read with `ufront_pacing` through
 // ue_exec_command. A mean frame rate (CurrentTickRate) hides an uneven frame-interval distribution, so every
@@ -93,10 +93,10 @@ extern "C" char* EMSCRIPTEN_KEEPALIVE ue_exec_command( const char* Cmd )
 		else Captured = UfrontPaceDump();
 		return (char*)(*Captured);
 	}
-	if( GWebRTCEngine && Cmd )
+	if( GEngineForExec && Cmd )
 	{
 		FStringOutputDevice Out;
-		GWebRTCEngine->Exec( Cmd, Out );
+		GEngineForExec->Exec( Cmd, Out );
 		Captured = Out;
 	}
 	return (char*)(*Captured);
@@ -198,13 +198,13 @@ static void NormalizeSubsystem( const TCHAR* Section, const TCHAR* Key, const TC
 	{
 		if( IsPackageClassAvailable( Preference[i] ) )
 		{
-			debugf( TEXT("ufront 2.34: [%s] %s=%s is not in this build -> %s"),
+			debugf( TEXT("[%s] %s=%s is not in this build -> %s"),
 				Section, Key, Configured.Len() ? *Configured : TEXT("(unset)"), Preference[i] );
 			GConfig->SetString( Section, Key, Preference[i] );
 			return;
 		}
 	}
-	debugf( NAME_Warning, TEXT("ufront 2.34: [%s] %s=%s is not in this build and no replacement is either"),
+	debugf( NAME_Warning, TEXT("[%s] %s=%s is not in this build and no replacement is either"),
 		Section, Key, Configured.Len() ? *Configured : TEXT("(unset)") );
 }
 #endif
@@ -237,12 +237,12 @@ static void SelectRenderDevice()
 			const TCHAR* Device = GRenderSwitches[i].Device;
 			if( IsPackageClassAvailable( Device ) )
 			{
-				debugf( TEXT("ufront 2.9: -%s selects render device %s"), GRenderSwitches[i].Param, Device );
+				debugf( TEXT("-%s selects render device %s"), GRenderSwitches[i].Param, Device );
 				SetRenderDeviceConfig( Device );
 				GRequestedRenderDevice = Device; // persist iff it initializes (PersistRenderChoiceIfSwitched)
 				return;
 			}
-			debugf( NAME_Warning, TEXT("ufront 2.9: render device %s not available (not compiled in this build) -> keeping the default; -%s ignored"), Device, GRenderSwitches[i].Param );
+			debugf( NAME_Warning, TEXT("render device %s not available (not compiled in this build) -> keeping the default; -%s ignored"), Device, GRenderSwitches[i].Param );
 			break; // fall through to the default selection
 		}
 	}
@@ -259,11 +259,11 @@ static void SelectRenderDevice()
 			&& UserSel.Len()>0 && appStricmp( *Persisted, *UserSel )==0;
 		if( IsPackageClassAvailable( *Persisted ) && ( IsHardwareDefaultEligible( *Persisted ) || bUserSelected ) )
 		{
-			debugf( TEXT("ufront 2.12: using the persisted %s render device %s"), bUserSelected ? TEXT("user-selected") : TEXT("hardware"), *Persisted );
+			debugf( TEXT("using the persisted %s render device %s"), bUserSelected ? TEXT("user-selected") : TEXT("hardware"), *Persisted );
 			SetRenderDeviceConfig( *Persisted );
 			return;
 		}
-		debugf( NAME_Warning, TEXT("ufront 2.9: persisted render device %s is not an eligible hardware default (unavailable or software opt-in) -> preference order"), *Persisted );
+		debugf( NAME_Warning, TEXT("persisted render device %s is not an eligible hardware default (unavailable or software opt-in) -> preference order"), *Persisted );
 	}
 
 	// 3) Preference order — first compiled-in device wins.
@@ -271,7 +271,7 @@ static void SelectRenderDevice()
 	{
 		if( IsPackageClassAvailable( GRenderPreference[i] ) )
 		{
-			debugf( TEXT("ufront 2.9: default render device %s (preference order)"), GRenderPreference[i] );
+			debugf( TEXT("default render device %s (preference order)"), GRenderPreference[i] );
 			SetRenderDeviceConfig( GRenderPreference[i] );
 			return;
 		}
@@ -280,11 +280,11 @@ static void SelectRenderDevice()
 	//    D3DDrv.D3DRenderDevice, which the engine loads LOAD_NoFail and would abort on.
 	if( IsPackageClassAvailable( TEXT("SoftDrv.SoftwareRenderDevice") ) )
 	{
-		debugf( NAME_Warning, TEXT("ufront 2.9: no hardware render device is compiled into this build -> SoftDrv.SoftwareRenderDevice") );
+		debugf( NAME_Warning, TEXT("no hardware render device is compiled into this build -> SoftDrv.SoftwareRenderDevice") );
 		SetRenderDeviceConfig( TEXT("SoftDrv.SoftwareRenderDevice") );
 		return;
 	}
-	debugf( NAME_Warning, TEXT("ufront 2.9: no known render device is compiled into this build!") );
+	debugf( NAME_Warning, TEXT("no known render device is compiled into this build!") );
 }
 
 // After Engine->Init(): persist a -*RENDERER switch's device so it sticks next boot. The render device itself
@@ -301,11 +301,11 @@ static void PersistRenderChoiceIfSwitched()
 		// hardware default (SoftDrv).
 		GConfig->SetString( TEXT("Engine.Engine"), TEXT("ufrontUserRenderDevice"), *GRequestedRenderDevice );
 		GConfig->Flush( 0 );
-		debugf( TEXT("ufront 2.12: persisted render device %s as a user selection (sticks next boot)"), *GRequestedRenderDevice );
+		debugf( TEXT("persisted render device %s as a user selection (sticks next boot)"), *GRequestedRenderDevice );
 	}
 	else
 	{
-		debugf( NAME_Warning, TEXT("ufront 2.9: render device changed from %s during init -> not persisted"), *GRequestedRenderDevice );
+		debugf( NAME_Warning, TEXT("render device changed from %s during init -> not persisted"), *GRequestedRenderDevice );
 	}
 }
 
@@ -405,7 +405,7 @@ static UEngine* InitEngine()
 	PersistRenderChoiceIfSwitched();
 #ifdef __EMSCRIPTEN__
 	// Expose the running engine to ue_exec_command and WebRTCDrv.
-	GWebRTCEngine = Engine;
+	GEngineForExec = Engine;
 #endif
 	debugf( TEXT("Startup time: %f seconds."), appSeconds()-LoadTime ); // FTime - FTime -> FLOAT
 

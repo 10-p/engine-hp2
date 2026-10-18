@@ -255,8 +255,6 @@ UBOOL UViewport::SetDrag( UBOOL NewDrag )
 	AutoFOV - aspect-correct field of view.
 -----------------------------------------------------------------------------*/
 
-ENGINE_API FLOAT GAutoFovFrameBase = 90.0f;
-
 static UBOOL  GAutoFovParsed   = 0;
 static INT    GAutoFovMode     = AUTOFOV_Adaptive;
 static FLOAT  GAutoFovRef      = 4.0f / 3.0f;

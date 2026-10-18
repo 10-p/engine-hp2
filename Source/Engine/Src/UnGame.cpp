@@ -1569,7 +1569,6 @@ struct FScopedAutoFov
 	:	Actor ( Viewport->Actor )
 	,	Saved ( Viewport->Actor->FovAngle )
 	{
-		GAutoFovFrameBase = Saved;
 		Actor->FovAngle = ufrontEffectiveFov( Saved, Viewport->SizeX, Viewport->SizeY, 1 );
 	}
 	~FScopedAutoFov()
@@ -1853,21 +1852,21 @@ void UGameEngine::Tick( FLOAT DeltaSeconds )
 	// in a menu. NSDLViewport::SetMouseCapture sets bWindowsMouseAvailable = !Capture, so a menu cursor follows
 	// the absolute WindowsMouseX/Y and gameplay gets relative deltas. Acts on state changes only.
 	{
-		static INT WebCap = -1;
-		static INT WebMenu = -1;
-		UViewport* WV = ( Client && Client->Viewports.Num()==1 ) ? Client->Viewports(0) : NULL;
-		INT Menu = ( WV && WV->Actor && ( WV->Actor->bShowMenu || WV->bShowWindowsMouse ) ) ? 1 : 0;
-		INT Want = ( WV && GLevel && WV->Actor && !Menu ) ? 1 : 0;
-		if( WV && ( Want != WebCap || Menu != WebMenu ) )
+		static INT LastCapture = -1;
+		static INT LastMenu = -1;
+		UViewport* MouseViewport = ( Client && Client->Viewports.Num()==1 ) ? Client->Viewports(0) : NULL;
+		INT Menu = ( MouseViewport && MouseViewport->Actor && ( MouseViewport->Actor->bShowMenu || MouseViewport->bShowWindowsMouse ) ) ? 1 : 0;
+		INT Want = ( MouseViewport && GLevel && MouseViewport->Actor && !Menu ) ? 1 : 0;
+		if( MouseViewport && ( Want != LastCapture || Menu != LastMenu ) )
 		{
-			debugf( TEXT("[webmouse] relative-capture=%i menu=%i (bShowMenu=%i bShowWinMouse=%i)"),
-				Want, Menu, WV->Actor ? (INT)WV->Actor->bShowMenu : -1, (INT)WV->bShowWindowsMouse );
-			if( Want != WebCap )
+			debugf( TEXT("[mouse] relative-capture=%i menu=%i (bShowMenu=%i bShowWinMouse=%i)"),
+				Want, Menu, MouseViewport->Actor ? (INT)MouseViewport->Actor->bShowMenu : -1, (INT)MouseViewport->bShowWindowsMouse );
+			if( Want != LastCapture )
 			{
-				WV->SetMouseCapture( Want, Want, 0 );
-				WebCap = Want;
+				MouseViewport->SetMouseCapture( Want, Want, 0 );
+				LastCapture = Want;
 			}
-			WebMenu = Menu;
+			LastMenu = Menu;
 		}
 	}
 #endif

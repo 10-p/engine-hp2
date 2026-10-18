@@ -78,7 +78,7 @@ void UNSDLClient::StaticConstructor()
 //
 UNSDLClient::UNSDLClient()
 {
-	guard(UNSDLClient::UWindowsClient);
+	guard(UNSDLClient::UNSDLClient);
 	// Assign nothing configurable here: the constructor runs on an object whose config the ini has already filled
 	// (StaticAllocateObject copies the class defaults LoadConfig set), so an assignment would override the ini.
 	Controller = NULL;

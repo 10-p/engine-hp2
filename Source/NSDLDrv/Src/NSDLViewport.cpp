@@ -180,17 +180,6 @@ void UNSDLViewport::InitKeyMap()
 }
 
 //
-// Static init.
-//
-void UNSDLViewport::InternalClassInitializer( UClass* Class )
-{
-	guard(UNSDLViewport::InternalClassInitializer);
-	// Fill in keymap.
-	InitKeyMap();
-	unguard;
-}
-
-//
 // Constructor.
 //
 UNSDLViewport::UNSDLViewport( ULevel* InLevel, UNSDLClient* InClient )
@@ -204,8 +193,7 @@ UNSDLViewport::UNSDLViewport( ULevel* InLevel, UNSDLClient* InClient )
 	SoftFBBytes = 0;
 #endif
 
-	// Fill the KeyMap here: InternalClassInitializer is a v200 class hook this engine never calls (IMPLEMENT_CLASS
-	// registers StaticConstructor), and an empty KeyMap maps every key to IK_None. Idempotent.
+	// Fill the KeyMap: an empty one maps every key to IK_None. Idempotent.
 	InitKeyMap();
 
 	// Set color bytes based on screen resolution.
@@ -1076,7 +1064,7 @@ void UNSDLViewport::SetMouseCapture( UBOOL Capture, UBOOL Clip, UBOOL OnlyFocus 
 
 UBOOL UNSDLViewport::CauseInputEvent( INT iKey, EInputAction Action, FLOAT Delta )
 {
-	guard(UWindowsViewport::CauseInputEvent);
+	guard(UNSDLViewport::CauseInputEvent);
 
 	// Route to engine if a valid key
 	if( iKey > 0 )
