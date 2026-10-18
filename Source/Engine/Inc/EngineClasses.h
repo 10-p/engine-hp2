@@ -2531,7 +2531,7 @@ struct AStatLog_eventLogGameSpecial_Parms
 class ENGINE_API AStatLog : public AInfo
 {
 public:
-    INT Context;
+    PTRINT Context; // An FMD5Context*: script says int, UStruct::Link gives it a pointer's size.
     BITFIELD bWorld:1 GCC_PACK(4);
     FLOAT TimeStamp GCC_PACK(4);
     FStringNoInit LocalStandard;
@@ -2585,7 +2585,7 @@ class ENGINE_API AStatLogFile : public AStatLog
 {
 public:
     BITFIELD bWatermark:1 GCC_PACK(4);
-    INT LogAr GCC_PACK(4);
+    PTRINT LogAr GCC_PACK(4); // An FArchive*: script says int, UStruct::Link gives it a pointer's size.
     FStringNoInit StatLogFile;
     FStringNoInit StatLogFinal;
     DECLARE_FUNCTION(execFileLog);

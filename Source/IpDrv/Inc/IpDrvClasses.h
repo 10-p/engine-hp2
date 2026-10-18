@@ -55,7 +55,7 @@ public:
     INT Socket;
     INT Port;
     INT RemoteSocket;
-    INT PrivateResolveInfo;
+    PTRINT PrivateResolveInfo; // An FResolveInfo*: script says int, UStruct::Link gives it a pointer's size.
     INT DataPending;
     BYTE ReceiveMode;
     // ReceiveMode leaves 3 bytes of tail padding. GCC reuses a base's tail padding for a derived class's

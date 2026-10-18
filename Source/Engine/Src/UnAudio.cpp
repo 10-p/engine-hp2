@@ -854,7 +854,7 @@ UBOOL FWaveModInfo::ReadWaveInfo( TArray<BYTE>& WavData )
 	// Chunk found ? smpl chunk is optional.
 	// Find the first sample-loop structure, and the total number of them.
 	// GWarn->Logf( TEXT("find sample-loop 0x%x"), RiffChunk );
-	if( (INT)RiffChunk+4<(INT)WaveDataEnd && RiffChunk->ChunkID == mmioFOURCC('s','m','p','l') )
+	if( (BYTE*)RiffChunk+4<WaveDataEnd && RiffChunk->ChunkID == mmioFOURCC('s','m','p','l') )
 	{
 		//GWarn->Logf( TEXT("loop") );
 		FSampleChunk pSampleChunk;
@@ -1247,7 +1247,7 @@ BYTE *FWaveModInfo::OffsetFromTime( float fTime )
 	//	Make sure the pointer we return is aligned on the proper boundary
 	//
 	if (iBytesPerSample > 1)
-		pbRet = (BYTE *) ((DWORD)pbRet & 0xFFFFFFFEL);
+		pbRet = (BYTE *) ((UPTRINT)pbRet & ~(UPTRINT)1);
 
 	return pbRet;
 }

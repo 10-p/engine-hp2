@@ -3222,7 +3222,7 @@ void USoftwareRenderDevice::DrawTile( FSceneNode* Frame, FTextureInfo& Texture, 
 	{
 		// Allocate a new Spritepalet, including the (colordepth specific) palette memory.
 		SpritePalet = (LitPalette*)GCache.Create( CacheID, Item, sizeof( LitPalette ) +  NewPaletteSize );
-		SpritePalet->OutPalette.PtrVOID =  ((BYTE*)&SpritePalet->OutPalette + 4) ; // point to allocated palette 
+		SpritePalet->OutPalette.PtrVOID = (BYTE*)(SpritePalet + 1); // the palette memory follows the struct
 		RemakeColors = 1;
 	}
 

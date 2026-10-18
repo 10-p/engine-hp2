@@ -327,7 +327,7 @@ public:
 			NewPtr = NULL;
 		}
 		return NewPtr;
-		unguardf(( TEXT("%08X %i %s"), (INT)Ptr, NewSize, Tag ));
+		unguardf(( TEXT("%p %i %s"), Ptr, NewSize, Tag ));
 	}
 	INT MemSize( void* Ptr )
 	{

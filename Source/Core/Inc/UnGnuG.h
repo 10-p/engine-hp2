@@ -155,6 +155,11 @@ typedef int16_t  			SWORD;		// 16-bit signed.
 typedef int32_t    			INT;		// 32-bit signed.
 typedef int64_t  			SQWORD;		// 64-bit signed.
 
+// Pointer-sized integers, for wherever a pointer passes through an integer (an address rounded up, a pointer
+// parked in a script-visible slot, printed or hashed). INT and DWORD stay 32-bit on every target.
+typedef intptr_t			PTRINT;		// Pointer-sized signed.
+typedef uintptr_t			UPTRINT;	// Pointer-sized unsigned.
+
 // Character types.
 typedef char			    ANSICHAR;	// An ANSI character.
 typedef uint16_t    		 UNICHAR;	// A unicode character.

@@ -165,7 +165,7 @@ CORE_API UBOOL					GLazyLoad=0;					/* Whether TLazyLoad arrays should be lazy-l
 CORE_API FGlobalMath			GMath;							/* Math code */
 CORE_API URenderDevice*			GRenderDevice=NULL;				/* S3TC Support - Global pointer to current rendering device */
 CORE_API FArchive*				GDummySave=&GArchiveDummySave;	/* No-op save archive */
-CORE_API DWORD                  GCurrentViewport=0;             /* Pointer to the currently active UViewport - the one with the white outline */
+CORE_API PTRINT                 GCurrentViewport=0;             /* Pointer to the currently active UViewport - the one with the white outline */
 CORE_API UBOOL					GEncryptLoad=0;					/* added by gk knowwonder enable encrypted load  */
 CORE_API UBOOL					GCurrentEncrypt=0;				/* added by gk knowwonder set if current file encrypted */
 CORE_API UDebugger*				GDebugger=NULL;					//DEBUGGER /* Unrealscript Debugger */

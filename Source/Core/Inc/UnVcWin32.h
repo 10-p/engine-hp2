@@ -73,6 +73,8 @@ typedef	signed char			SBYTE;		// 8-bit  signed.
 typedef signed short		SWORD;		// 16-bit signed.
 typedef signed int  		INT;		// 32-bit signed.
 typedef signed __int64		SQWORD;		// 64-bit signed.
+typedef INT_PTR				PTRINT;		// Pointer-sized signed.
+typedef UINT_PTR			UPTRINT;	// Pointer-sized unsigned.
 
 // Character types.
 typedef char				ANSICHAR;	// An ANSI character.

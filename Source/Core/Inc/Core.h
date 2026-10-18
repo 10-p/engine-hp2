@@ -70,6 +70,13 @@ private:
 	#error Unknown Compiler
 #endif
 
+// Pointer width, from the compiler, so it cannot disagree with the code being compiled. UE1 was written for
+// 32-bit; PLATFORM_64BITS marks the places where a 64-bit build needs a different answer.
+#if defined(_WIN64) || (defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ == 8)
+	#define PLATFORM_64BITS 1
+#endif
+static_assert(sizeof(PTRINT) == sizeof(void*) && sizeof(UPTRINT) == sizeof(void*), "PTRINT must be pointer-sized.");
+
 // Global constants.
 enum {MAXBYTE		= 0xff       };
 enum {MAXWORD		= 0xffffU    };
@@ -459,7 +466,7 @@ CORE_API extern UBOOL					GUnicodeOS;
 CORE_API extern class FGlobalMath		GMath;
 CORE_API extern	URenderDevice*			GRenderDevice;
 CORE_API extern class FArchive*         GDummySave;
-CORE_API extern DWORD					GCurrentViewport;
+CORE_API extern PTRINT					GCurrentViewport;
 CORE_API extern UBOOL					GEncryptLoad;
 CORE_API extern UBOOL					GCurrentEncrypt;
 CORE_API extern	UDebugger*				GDebugger; //DEBUGGER
