@@ -944,6 +944,11 @@ void UNSDLViewport::SetClientSize( INT NewX, INT NewY, UBOOL UpdateProfile )
 	if( hWnd )
 	{
 		SDL_SetWindowSize( hWnd, NewX, NewY );
+#if defined(__ANDROID__)
+		// The window is the screen (or the launcher's fixed-size surface) and keeps its size whatever is asked;
+		// the viewport, the framebuffer and the touch coordinates take the window's own.
+		SDL_GetWindowSize( hWnd, &NewX, &NewY );
+#endif
 		// Resize output texture if required.
 		if( SDLRen && SDLTex )
 		{
