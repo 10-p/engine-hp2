@@ -83,6 +83,11 @@ android {
                     '-DBUILD_STATIC=ON',
                     "-DFETCHCONTENT_SOURCE_DIR_SDL2=${sdl2Dir}".toString(),
                 ]
+                // -PxopenglDir=<path>: a local XOpenGLDrv clone instead of the fetched branch, as the other presets
+                // take FETCHCONTENT_SOURCE_DIR_XOPENGLDRV.
+                def xopenglDir = project.findProperty('xopenglDir')
+                if (xopenglDir)
+                    cmakeArgs += "-DFETCHCONTENT_SOURCE_DIR_XOPENGLDRV=${file(xopenglDir)}".toString()
                 // The engine optimised in every variant (the Gradle debug variant would build it at -O0);
                 // -PnativeDebug keeps the variant's own CMAKE_BUILD_TYPE.
                 if (!project.hasProperty('nativeDebug'))
