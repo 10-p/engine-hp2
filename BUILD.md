@@ -184,6 +184,7 @@ cd Android
 ./gradlew :app:assembleDebug        # -> app/build/outputs/apk/debug/app-debug.apk
 #   -Psdl2Dir=<path>     an SDL2 checkout (release-2.32.x); else one is cloned into Android/build/SDL2
 #   -PnativeDebug        the engine at the variant's own CMAKE_BUILD_TYPE (every variant is RelWithDebInfo otherwise)
+#   -PxopenglDir=<path>  a local XOpenGLDrv clone instead of the fetched branch (FETCHCONTENT_SOURCE_DIR_XOPENGLDRV)
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
@@ -219,10 +220,12 @@ working directory before SDL starts `SDL_main`, and the launcher (`MainActivity`
   Android scales to the screen; the engine sees the scaled size as its window.
 
 Controls: a pad through NSDLDrv's game-controller path (`UseJoystick`, the pad layout of `DefUser.ini`); touch
-as the mouse in the menus (tap to click); in play an on-screen overlay (a move stick on the left half, drag to
-look on the right, CAST, JUMP and MENU buttons) that drives the engine through
-`Source/NSDLDrv/Src/NSDLAndroid.cpp` on the mouse and pad keys `DefUser.ini` binds. The system's Back key is
-Escape.
+as the mouse in the menus (the book, the cut-scene console and the vendor bar: tap to click, the cursor at the
+finger); in play an on-screen overlay (a move stick on the left half, drag to look on the right, CAST, JUMP and
+MENU buttons) that drives the engine through `Source/NSDLDrv/Src/NSDLAndroid.cpp` on the mouse and pad keys
+`DefUser.ini` binds. The system's Back key is Escape (it opens and closes the book). The prototype's title level
+is play, not a menu: its Start is the spell cursor's target (drag on the right half moves the cursor, CAST
+clicks), as with a mouse. XOpenGLDrv draws without clip planes on the ES profile, as on the web.
 
 A command line can be passed from adb; the launcher's countdown then starts the game without a touch:
 
