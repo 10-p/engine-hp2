@@ -6,6 +6,9 @@
 		* Created by Tim Sweeney
 =============================================================================*/
 #include <stdio.h> // fputs/stdout for the stdout echo in Serialize.
+#if defined(UE_ANDROID_APP)
+#include <android/log.h> // the echo goes to logcat instead
+#endif
 
 //
 // ANSI file output device.
@@ -85,10 +88,15 @@ public:
 				// (Module.print). The trailing '\n' flushes Emscripten's line-buffered stdout (one console.log per line).
 				if( Event != NAME_Title )
 				{
+#if defined(UE_ANDROID_APP)
+					// The app has no terminal: the line goes to logcat (tag HP2) instead of stdout.
+					__android_log_print( ANDROID_LOG_INFO, "HP2", "%s: %s", FName::SafeString(Event), Data );
+#else
 					fputs( FName::SafeString(Event), stdout );
 					fputs( ": ", stdout );
 					fputs( Data, stdout );
 					fputc( '\n', stdout );
+#endif
 				}
 				if( GLogHook )
 					GLogHook->Serialize( Data, Event );

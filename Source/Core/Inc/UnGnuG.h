@@ -34,6 +34,20 @@
 #include <malloc.h>
 #include <dirent.h>
 #include <limits.h>
+#if defined(__ANDROID__)
+// Bionic's headers that SDL's pull in after this one: read here, before UnFile.h defines clock(Timer),
+// which bionic's `clock_t clock(void)` would otherwise meet.
+#include <time.h>
+#include <wchar.h>
+#include <ctime>
+#include <cwchar>
+#include <pthread.h>
+#include <signal.h>
+#include <sched.h>
+#include <sys/stat.h>
+#include <sys/select.h>
+#include <sys/time.h>
+#endif
 // Emscripten's musl does not define PATH_MAX through these headers; UnUnix.cpp and the launcher use
 // TCHAR[PATH_MAX] buffers.
 #ifndef PATH_MAX

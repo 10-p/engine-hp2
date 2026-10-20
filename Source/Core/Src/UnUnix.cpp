@@ -211,8 +211,19 @@ CORE_API void appRequestExit( UBOOL Force )
 	debugf( TEXT("appRequestExit(%i)"), Force );
 	if( Force )
 	{
+#if defined(UE_ANDROID_APP) && defined(PLATFORM_SDL)
+		// The app shows the error first (SDL's box runs on the UI thread and waits), then ends the process
+		// without exit()'s handlers: SDL_Quit from atexit would tear the display down under Android's own
+		// render thread, which aborts. The pause lets the stdio reader thread hand its last lines to logcat.
+		if( GIsCriticalError && GErrorHist[0] )
+			SDL_ShowSimpleMessageBox( SDL_MESSAGEBOX_ERROR, "Harry Potter 2", GErrorHist, NULL );
+		fflush( NULL );
+		usleep( 200000 );
+		_exit( 1 );
+#else
 		// Force immediate exit. Dangerous because config code isn't flushed, etc.
 		exit( 1 );
+#endif
 	}
 	else
 	{
@@ -708,7 +719,18 @@ CORE_API const char* appBaseDir()
 	if( !BaseDir[0] )
 	{
 		// Get directory this executable was launched from.
-#if defined(__EMSCRIPTEN__)
+#if defined(UE_ANDROID_APP)
+		// The game folder's System directory, set by the app's bridge (HP2_ANDROID_BASEDIR) before SDL_main;
+		// SDL_GetBasePath() is NULL on Android. The bridge has also made it the working directory.
+		if( const char* Dir = getenv( "HP2_ANDROID_BASEDIR" ) )
+		{
+			appStrncpy( BaseDir, Dir, sizeof(BaseDir)-1 );
+			if( BaseDir[0] && BaseDir[strlen(BaseDir)-1] != '/' )
+				appStrcat( BaseDir, "/" );
+		}
+		else if( getcwd( BaseDir, sizeof(BaseDir)-1 ) )
+			appStrcat( BaseDir, "/" );
+#elif defined(__EMSCRIPTEN__)
 		// SDL_GetBasePath() returns "/" here; the launcher chdirs to /System, so use getcwd().
 		if( getcwd( BaseDir, sizeof(BaseDir) ) )
 			appStrcat( BaseDir, "/" );

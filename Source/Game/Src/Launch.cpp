@@ -10,6 +10,62 @@ Revision history:
 #ifdef PLATFORM_SDL
 #include <SDL2/SDL.h>
 #endif
+#if defined(__ANDROID__)
+#include <android/log.h>
+#include <pthread.h>
+#include <unistd.h>
+
+// stdout and stderr on logcat (tag HP2-stdio): both are a pipe that a thread reads line by line. GLog's own
+// lines go to logcat directly (FOutputDeviceFile); this catches printf output, appThrowf's among it.
+static void* AndroidStdioReader( void* Arg )
+{
+	const int Fd = (int)(intptr_t)Arg;
+	char Buf[1024];
+	size_t Len = 0;
+	for( ;; )
+	{
+		const ssize_t N = read( Fd, Buf + Len, sizeof(Buf) - 1 - Len );
+		if( N <= 0 )
+			break;
+		Len += (size_t)N;
+		Buf[Len] = 0;
+		char* Start = Buf;
+		while( char* End = strchr( Start, '\n' ) )
+		{
+			*End = 0;
+			if( End > Start )
+				__android_log_write( ANDROID_LOG_INFO, "HP2-stdio", Start );
+			Start = End + 1;
+		}
+		Len = strlen( Start );
+		memmove( Buf, Start, Len + 1 );
+		if( Len == sizeof(Buf) - 1 )
+		{
+			__android_log_write( ANDROID_LOG_INFO, "HP2-stdio", Buf );
+			Len = 0;
+		}
+	}
+	return NULL;
+}
+static void AndroidRedirectStdio()
+{
+	int Fds[2];
+	if( pipe( Fds ) != 0 )
+		return;
+	setvbuf( stdout, NULL, _IOLBF, 0 );
+	setvbuf( stderr, NULL, _IONBF, 0 );
+	dup2( Fds[1], STDOUT_FILENO );
+	dup2( Fds[1], STDERR_FILENO );
+	close( Fds[1] );
+	pthread_t Thread;
+	pthread_attr_t Attr;
+	pthread_attr_init( &Attr );
+	pthread_attr_setdetachstate( &Attr, PTHREAD_CREATE_DETACHED );
+	if( pthread_create( &Thread, &Attr, AndroidStdioReader, (void*)(intptr_t)Fds[0] ) != 0 )
+		close( Fds[0] );
+	pthread_attr_destroy( &Attr );
+}
+#endif
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
 #include <emscripten/heap.h> // emscripten_get_heap_size (the pacing ring's heap column)
@@ -360,6 +416,23 @@ static UEngine* InitEngine()
 		NormalizeSubsystem( TEXT("Engine.Engine"), TEXT("NetworkDevice"),   NetPreference,      ARRAY_COUNT(NetPreference) );
 	}
 #endif
+#if defined(__ANDROID__)
+	// GameInfo's stat logs end in AStatLog's appCreateProc(), a fork/exec of a batcher an app does not carry.
+	GConfig->SetString( TEXT("Engine.GameInfo"),           TEXT("bWorldLog"), TEXT("False") );
+	GConfig->SetString( TEXT("Engine.GameInfo"),           TEXT("bLocalLog"), TEXT("False") );
+	// XOpenGLDrv on the GLES 3 context NSDLViewport makes: an ES shader profile, whatever a Game.ini derived
+	// from the retail Default.ini (which has no XOpenGLDrv section, so the device's own default, Core) says.
+	// A player's ES stays.
+	{
+		FString Profile;
+		GConfig->GetString( TEXT("XOpenGLDrv.XOpenGLRenderDevice"), TEXT("OpenGLVersion"), Profile );
+		if( appStricmp( *Profile, TEXT("ES") )!=0 && appStricmp( *Profile, TEXT("ES_WEBGL") )!=0 )
+		{
+			debugf( TEXT("[XOpenGLDrv.XOpenGLRenderDevice] OpenGLVersion=%s -> ES_WEBGL (GLES 3 context)"), *Profile );
+			GConfig->SetString( TEXT("XOpenGLDrv.XOpenGLRenderDevice"), TEXT("OpenGLVersion"), TEXT("ES_WEBGL") );
+		}
+	}
+#endif
 
 	// The render device, before Engine->Init() loads the subsystems.
 	SelectRenderDevice();
@@ -559,9 +632,13 @@ int CleanUpOnExit( int ErrorLevel, UEngine* Engine )
 }
 
 //
-// Entry point.
+// Entry point. On Android SDL_main (below) runs this on a thread of its own.
 //
+#if defined(__ANDROID__)
+static int HP2Main( int argc, char* argv[] )
+#else
 int main( int argc, char* argv[] )
+#endif
 {
 	try
 	{
@@ -594,7 +671,10 @@ int main( int argc, char* argv[] )
 	// Init core.
 	GIsClient = 1;
 	GIsGuarded = 0;
-#ifndef __EMSCRIPTEN__
+#if defined(UE_ANDROID_APP)
+	// The app's bridge has made the game folder's System/ the working directory, and appBaseDir() reads it
+	// from the bridge's HP2_ANDROID_BASEDIR (SDL_GetBasePath() is NULL on Android).
+#elif !defined(__EMSCRIPTEN__)
 	// HP2: natively, run from the executable's directory (System/). HP2's appInit derives MapPath from the
 	// base dir's "System" component and every Paths= entry is ../-relative; Core's appBaseDir() is
 	// SDL_GetBasePath() already, and the cwd has to agree for the relative package paths.
@@ -663,3 +743,36 @@ int main( int argc, char* argv[] )
 		return CleanUpOnExit( 1, NULL );
 	}
 }
+
+#if defined(__ANDROID__)
+//
+// Android: SDLActivity loads libHP2.so and calls SDL_main on its SDL thread, whose stack is Android's default
+// 1 MB. The engine runs on a thread of its own with the 8 MB a Linux main thread has (the script VM and the
+// level code recurse deeply); SDL_main waits for it. SDL's Android calls attach whichever thread makes them.
+//
+struct FHP2MainArgs { int argc; char** argv; int Result; };
+static void* HP2MainThread( void* Arg )
+{
+	FHP2MainArgs* Args = (FHP2MainArgs*)Arg;
+	Args->Result = HP2Main( Args->argc, Args->argv );
+	return NULL;
+}
+extern "C" __attribute__((visibility("default"))) int SDL_main( int argc, char** argv )
+{
+	AndroidRedirectStdio();
+	FHP2MainArgs Args = { argc, argv, 1 };
+	pthread_attr_t Attr;
+	pthread_attr_init( &Attr );
+	pthread_attr_setstacksize( &Attr, 8 * 1024 * 1024 );
+	pthread_t Thread;
+	if( pthread_create( &Thread, &Attr, HP2MainThread, &Args ) != 0 )
+	{
+		__android_log_write( ANDROID_LOG_ERROR, "HP2", "could not start the engine thread: running it on the SDL thread" );
+		Args.Result = HP2Main( argc, argv );
+	}
+	else
+		pthread_join( Thread, NULL );
+	pthread_attr_destroy( &Attr );
+	return Args.Result;
+}
+#endif
