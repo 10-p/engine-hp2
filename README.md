@@ -34,6 +34,9 @@ The baseline is the restructured prototype drop (`/home/ion/WorkUnreal/epic-sour
 - **WebRTC net driver** — WebRTCDrv over the glue's `ue_net_*` imports, the web's `NetworkDevice` (P2P is off for HP2).
 - **OpenAL Soft audio** — NOpenALDrv, HP2's retail ALAudio ported to openal-soft, with an in-tree EA-XA ADPCM decoder
   and Ogg Vorbis music, natively and on the web.
+- **Android build** — a Gradle/NDK project builds the game as `libHP2.so` with SDL2, a launcher picks the game
+  folder, touch is the mouse in the menus and an on-screen overlay drives play, game pads take the shared path;
+  one app per branch (prototype and retail) that install side by side.
 - **Windows build (MinGW-w64)** — one self-contained `Game.exe` (32- and 64-bit) with `OpenAL32.dll` beside it.
 - **64-bit builds** — `native64` (Linux x86_64) and `windows64` run the shipped 32-bit packages unchanged: script object
   references and names are 4-byte indices, script-mirrored headers pack to 4, pointer-sized integers wherever a

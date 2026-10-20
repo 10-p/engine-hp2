@@ -44,4 +44,5 @@ data), or an existing profile keeps its old copy.
 There are no native Asian or Thai fonts: `UViewport::CreateNativeFont` returns NULL and NSDLDrv, the viewport driver
 of every build here, does not override it.
 
-Change the web config here, never in the asset tree.
+Change the web config here, never in the asset tree. `../android/` is this pair with the Android deltas applied by
+`tools/dev/sync-android-ini.py`; change it there, by changing this folder or the script's delta list.

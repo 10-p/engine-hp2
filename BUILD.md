@@ -1,4 +1,4 @@
-# Building engine-hp2 (native, Windows, WebAssembly)
+# Building engine-hp2 (native, Windows, WebAssembly, Android)
 
 Everything is built and run inside the workspace `/home/ion/WorkUnreal` (`$W` below): this repository is
 `$W/engine-hp2` (`main`), its retail checkout `$W/engine-hp2-retail` (`retail`), the frontend
@@ -15,6 +15,7 @@ Everything is built and run inside the workspace `/home/ion/WorkUnreal` (`$W` be
 | `wasm-debug` | `build-wasm-debug/SDLLaunch/…` | web at `-O0` |
 | `wasm-perf` | `build-wasm-perf/SDLLaunch/…`, `SDLLaunch.js.symbols` | web shipping build (linked `-O3 -g0`, no assertions); what the frontend publishes |
 | `windows` | `build-windows/Game/Game.exe`, `OpenAL32.dll` | Windows x86 (MinGW-w64 cross), one self-contained exe |
+| `android-arm64` | `build-android-arm64/Game/libHP2.so`, `_deps/sdl2-build/libSDL2.so`, `libhp2_android_bridge.so` | the game as one shared library for Android arm64 (API 30, shared libc++; needs `ANDROID_NDK_HOME`): the configuration the Gradle project in `Android/` builds into the APK |
 | `windows64` | `build-windows64/Game/Game.exe`, `OpenAL32.dll` | the same for x86_64 |
 
 ```bash
@@ -46,6 +47,11 @@ The options this repository defines (`Source/CMakeLists.txt`; the presets set th
 | `BUILD_NOPENALDRV`, `BUILD_NULLSOUNDDRV` | per preset | the audio subsystems |
 | `BUILD_EDITOR`, `BUILD_STATIC`, `USE_GL4ES` | per preset | the Editor package, one static binary, UTGLR on gl4es |
 | `SOFTDRV_MAX_SCREEN` | 4096 (8192 on the web) | SoftDrv's largest viewport dimension |
+
+The Android client (`if(ANDROID AND USE_SDL)` in `Source/CMakeLists.txt`) forces its own set: static, Editor,
+XOpenGLDrv, SoftDrv, NullDrv, NOpenALDrv and the silent audio subsystem, no UTGLR (desktop GL) and no `ucc-bin`,
+`UE_ALLOW_64BIT` (the x86_64 ABI), `ASM=0`, `-fno-delete-null-pointer-checks` and clang's non-POD-varargs leniency;
+it defines `UE_ANDROID_APP` for the app's own platform paths.
 
 A software-only native tree (no GL devices) for parallel work:
 `cmake --preset native -B ../build-native-soft -DBUILD_XOPENGLDRV=OFF -DBUILD_UTGLR=OFF`.
@@ -157,6 +163,77 @@ ALAudio's float volumes (`SoundVolume`, `MusicVolume`) plus `OutputRate`, `UseHR
 oracle compares the decoded amplitude with the lip-sync tables shipped in `AllDialog.uax`:
 `cmake --build <native tree> --target eaxa_oracle && <tree>/NOpenALDrv/eaxa_oracle <assets>/Sounds` (the header of
 `Source/NOpenALDrv/Test/EAXAOracle.cpp`). Headless: `SDL_AUDIODRIVER=dummy` or openal-soft's `ALSOFT_DRIVERS=null`.
+
+## Android
+
+`Android/` is a Gradle/NDK project (Android Gradle plugin 9.4.0, Gradle 9.6.0 through the wrapper, its daemon on
+an installed JDK 17) whose `externalNativeBuild` points at `Source/CMakeLists.txt` (targets `Game`, the game as
+`libHP2.so`, and `hp2_android_bridge`), built for `arm64-v8a` (`-Pabis=arm64-v8a,x86_64` adds the emulator). It
+needs platform 36 (`compileSdk`; `targetSdk` 34, `minSdk` 30), build-tools 36.0.0, NDK 28.2.13676358 and CMake
+4.1.2 or newer. Ubuntu's packages install the SDK into `/usr/lib/android-sdk`; `local.properties` names it and the
+distribution's CMake:
+
+```bash
+sudo apt install openjdk-17-jdk cmake ninja-build adb google-android-cmdline-tools-19.0-installer \
+  google-android-platform-36-installer google-android-build-tools-36.0.0-installer google-android-ndk-r28c-installer
+printf 'sdk.dir=/usr/lib/android-sdk\ncmake.dir=/usr\n' > Android/local.properties
+```
+
+```bash
+cd Android
+./gradlew :app:assembleDebug        # -> app/build/outputs/apk/debug/app-debug.apk
+#   -Psdl2Dir=<path>     an SDL2 checkout (release-2.32.x); else one is cloned into Android/build/SDL2
+#   -PnativeDebug        the engine at the variant's own CMAKE_BUILD_TYPE (every variant is RelWithDebInfo otherwise)
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+```
+
+- The two branches build two apps that install side by side, from `HP2_TARGET_ID` in `Source/CMakeLists.txt`
+  (`Android/app/build.gradle` reads it): `main` is `com.hp2.android`, "HP2 Prototype", game folder `HP2`;
+  `retail` is `com.hp2.android.retail`, "HP2 Retail", game folder `HP2-Retail`. The Java package (and so the JNI
+  names) is `com.hp2.android` on both.
+- SDL2 is one checkout for both halves: the C library the engine's CMake builds (`FETCHCONTENT_SOURCE_DIR_SDL2`,
+  shared, `libSDL2.so`) and the Java `SDLActivity` compiled from `android-project/`.
+- openal-soft (OpenSL ES, no C++20 modules, no RTKit), libogg and libvorbis are linked statically into `libHP2.so`.
+- The engine runs on a thread of its own with an 8 MB stack (`SDL_main`, `Source/Game/Src/Launch.cpp`); the log
+  is on logcat (tag `HP2`, with stdout and stderr as `HP2-stdio` and the bridge as `HP2Bridge`) and in the game
+  folder's `System/Game.log`.
+- The inis: `tools/dev/sync-android-ini.py` writes `Config/System/android/{Default,DefUser}.ini` from the web
+  pair (`--check` verifies them; the deltas are `NetworkDevice=IpDrv.TcpNetDriver` and XOpenGLDrv `UseVSync=On`);
+  the APK carries them as assets, and the game installs them into the folder's `System/` before each start when
+  they differ. The engine derives `Game.ini` and `User.ini` from them when those are missing.
+
+The engine reads its game folder (the asset tree: `System/`, `Maps/`, `Textures/`, `Sounds/`, `Music/`, `Save/`)
+by path; the bridge (`Android/app/src/main/cpp/android_bridge.cpp`) sets `HP2_ANDROID_BASEDIR`, `HOME` and the
+working directory before SDL starts `SDL_main`, and the launcher (`MainActivity`) chooses which folder:
+
+- Internal storage (`/data/data/<applicationId>/files/<folder>`): fast, deleted with the app, no permission.
+  "Choose the HP2 folder" opens Android's folder picker, which gives the app that folder only, and "Copy to
+  internal storage" copies it in (only what is new or changed: a stopped copy resumes); with no folder chosen yet
+  it opens the picker first. "Copy settings and saves" writes the internal copy's `System/Game.ini`,
+  `System/User.ini` and `Save/` back to the chosen folder.
+- A game folder in place: `Android/data/<applicationId>/files/<folder>` on shared storage or an SD card needs no
+  permission; `/sdcard/<folder>` or `<folder>` at the top of an SD card needs All files access, which the launcher
+  asks for, with the copy as the alternative, only when the game is started from there. Shared storage is a FUSE
+  mount and the engine's case-insensitive file lookup is slow there; the internal copy is the fast choice.
+- The launcher's resolution scale (0.1 to 1) sizes SDL's surface buffer (`SurfaceHolder.setFixedSize`), which
+  Android scales to the screen; the engine sees the scaled size as its window.
+
+Controls: a pad through NSDLDrv's game-controller path (`UseJoystick`, the pad layout of `DefUser.ini`); touch
+as the mouse in the menus (tap to click); in play an on-screen overlay (a move stick on the left half, drag to
+look on the right, CAST, JUMP and MENU buttons) that drives the engine through
+`Source/NSDLDrv/Src/NSDLAndroid.cpp` on the mouse and pad keys `DefUser.ini` binds. The system's Back key is
+Escape.
+
+A command line can be passed from adb; the launcher's countdown then starts the game without a touch:
+
+```bash
+adb shell am start -n com.hp2.android/.MainActivity --es com.hp2.android.ARGS 'Ch1Rictusempra -SAVESLOT=1'
+adb logcat -s HP2 HP2-stdio HP2Bridge SDL
+```
+
+`GameActivity` is not exported; launch `MainActivity`. The same native configuration without the APK is the
+`android-arm64` preset (`ANDROID_NDK_HOME` set; pass `-DFETCHCONTENT_SOURCE_DIR_SDL2=<checkout>` to reuse the
+Gradle project's SDL2).
 
 ## Windows (MinGW-w64)
 

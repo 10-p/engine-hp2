@@ -18,6 +18,7 @@ SoftDrv), helper drivers (NSDLDrv, NOpenALDrv, NullDrv, SoundDrv, WebRTCDrv) and
 | This repository | `/home/ion/WorkUnreal/engine-hp2` (branch `main`) | the prototype engine, target `hp2-proto` |
 | Its retail checkout | `/home/ion/WorkUnreal/engine-hp2-retail` (branch `retail`) | the retail engine, target `hp2-retail-exp` |
 | The frontend | `/home/ion/WorkUnreal/unreal-frontend-arch-private` (branch `main`) | `targets/hp2-proto/`, `targets/hp2-retail-exp/` |
+| The Android app | `Android/` | the Gradle/NDK project: `libHP2.so` from `Source/CMakeLists.txt`, the launcher and the touch overlay (`BUILD.md`, Android); one app per branch, from `HP2_TARGET_ID` |
 | Renderer forks | `10-p/XOpenGLDrv@hp2-v433-compat`, `10-p/utglr-copy@hp2`, `10-p/gl4es@fix/cubemap-bind-active-unit` | fetched by CMake by branch; point `FETCHCONTENT_SOURCE_DIR_XOPENGLDRV` / `FETCHCONTENT_SOURCE_DIR_UTGLR` / `GL4ES_SOURCE_DIR` at a local clone to build an unpushed change |
 | Game content | `/home/ion/WorkUnreal/assets/hp2-proto-assets`, `…/hp2-retail-exp-assets` | never in git; read-only images with a writable overlay (`assets/mount-assets.sh` after a reboot) |
 | The baseline | `/home/ion/WorkUnreal/epic-sources/hp2-ue1-433-proto` (and `ut99-v400`, the three-way merge base) | the drop this engine is a modification of; see `epic-sources/README.md` |
@@ -39,7 +40,8 @@ instructions.
 Source/        every source folder of the drop (C++ packages and UnrealScript Classes/) plus the CMake build;
                the Windows-only originals (WinDrv, Window, D3DDrv, UnrealEd, Launch, FrontEnd, DebuggerLaunch,
                PackageTool, CutCompiler, Setup, Gesture*, EdSrc, Tools, ALAudio) are kept for reference, not built
-Config/System/ the shipped Default.ini and DefUser.ini; web/ is the web boot set (preloaded to /System)
+Config/System/ the shipped Default.ini and DefUser.ini; web/ is the web boot set (preloaded to /System);
+               android/ is generated from web/ by tools/dev/sync-android-ini.py (the APK installs it)
 Thirdparty/    the closed and vendored libraries the original build linked (no target links them)
 vendor/glue/   ue_abi.h, net-shim.js, wasmfs-shim.js from @ufront/glue (ABI version 2)
 tools/         developer tools (each script's header says how to run it; tools/dev/layout/README.md)
@@ -71,6 +73,12 @@ docs/          SOURCE-LAYOUT.md (drop → repository mapping) and the porting re
   manager folds `\` to `/` and resolves case per component; the web glue does not fold case under WasmFS, so this is
   engine work.
 - **Line endings:** the drop was CRLF, the repository is LF; diff against the drop with `--strip-trailing-cr`.
+- **Android** is the SDL client as a shared library (`UE_ANDROID_CLIENT` in CMake, `UE_ANDROID_APP` in the code
+  for the app's own paths: the game folder from `HP2_ANDROID_BASEDIR`, the log on logcat); `__ANDROID__` guards
+  what every Android build shares. Touch stays a mouse for the menus (the player's `bShowMenu` or the viewport's
+  `bShowWindowsMouse`, as `UGameEngine::Tick` releases the pointer); the overlay's input enters through
+  `Source/NSDLDrv/Src/NSDLAndroid.cpp`. The Android inis are generated (`tools/dev/sync-android-ini.py`), never
+  edited by hand. The retail app differs from the prototype one only through `HP2_TARGET_ID`.
 
 ## Rules
 
