@@ -3,9 +3,9 @@
 
 	The on-screen overlay (Android/app/src/main/java/com/hp2/android/GameActivity.java, a View above SDL's
 	surface) drives play in landscape: a move stick on the left half, a drag-look on the right half, and the
-	CAST, JUMP and MENU buttons. While a menu is up (the player's bShowMenu or the viewport's bShowWindowsMouse,
-	the condition UGameEngine::Tick releases the mouse on; published below) the overlay lets the touches through
-	to SDL, which turns them into mouse events for HP2's console menus.
+	CAST, JUMP and MENU buttons. While a menu is up (HP2's book, cut-scene console or vendor bar, the player's
+	bShowMenu or the viewport's bShowWindowsMouse; published below) the overlay lets the touches through to SDL,
+	which turns them into mouse events, and the viewport takes their absolute positions for the menu's cursor.
 
 	The overlay runs on Android's UI thread, so it writes its intent here through JNI and
 	UNSDLViewport::TickAndroidTouch (the engine thread) turns it into the CauseInputEvent calls a mouse and a
@@ -23,6 +23,7 @@
 #include <vector>
 
 #include "NSDLDrv.h"
+#include "UnCon.h"
 
 // The button ids GameActivity.Hp2TouchOverlayView sends.
 enum EAndroidTouchButton
@@ -105,12 +106,72 @@ Java_com_hp2_android_GameActivity_nativeTouchButton( JNIEnv*, jclass, jint Butto
 } // extern "C"
 
 //
+// HP2's UWindow menus are up while the console's book is open, the cut-scene console shows or the vendor bar
+// shows (what HPConsole draws them on). The script properties are read through the console's and the book's
+// class, looked up once per class. The title level is play: its Start is a spell-cursor target.
+//
+static UBOOL AndroidConsoleMenuUp( UConsole* Console )
+{
+	static UClass* ConsoleClass = NULL;
+	static UObjectProperty* BookProp = NULL;
+	static UBoolProperty* CutConsoleProp = NULL;
+	static UBoolProperty* VendorBarProp = NULL;
+	static UClass* BookClass = NULL;
+	static UBoolProperty* IsOpenProp = NULL;
+	if( !Console )
+		return 0;
+	if( Console->GetClass() != ConsoleClass )
+	{
+		ConsoleClass   = Console->GetClass();
+		BookProp       = FindField<UObjectProperty>( ConsoleClass, TEXT("menuBook") );
+		CutConsoleProp = FindField<UBoolProperty>( ConsoleClass, TEXT("bShowCutConsole") );
+		VendorBarProp  = FindField<UBoolProperty>( ConsoleClass, TEXT("bVendorBar") );
+		debugf( NAME_Init, TEXT("NSDLAndroid: console %s: menuBook %s, bShowCutConsole %s, bVendorBar %s"), ConsoleClass->GetPathName(),
+			BookProp ? TEXT("found") : TEXT("missing"), CutConsoleProp ? TEXT("found") : TEXT("missing"), VendorBarProp ? TEXT("found") : TEXT("missing") );
+	}
+	const BYTE* Base = (const BYTE*)Console;
+	if( CutConsoleProp && ( *(const BITFIELD*)(Base + CutConsoleProp->Offset) & CutConsoleProp->BitMask ) )
+		return 1;
+	if( VendorBarProp && ( *(const BITFIELD*)(Base + VendorBarProp->Offset) & VendorBarProp->BitMask ) )
+		return 1;
+	// An object property holds a pointer, on a 4-byte boundary.
+	UObject* Book = NULL;
+	if( BookProp )
+		appMemcpy( &Book, Base + BookProp->Offset, sizeof(Book) );
+	if( !Book )
+		return 0;
+	if( Book->GetClass() != BookClass )
+	{
+		BookClass  = Book->GetClass();
+		IsOpenProp = FindField<UBoolProperty>( BookClass, TEXT("bIsOpen") );
+		debugf( NAME_Init, TEXT("NSDLAndroid: menu book %s: bIsOpen %s"), BookClass->GetPathName(), IsOpenProp ? TEXT("found") : TEXT("missing") );
+	}
+	return IsOpenProp && ( *(const BITFIELD*)((const BYTE*)Book + IsOpenProp->Offset) & IsOpenProp->BitMask );
+}
+
+//
 // Fold the overlay's input into the engine's, once per tick on the engine thread.
 //
 void UNSDLViewport::TickAndroidTouch()
 {
 	guard(UNSDLViewport::TickAndroidTouch);
 
+	// HP2's menus run on the game's own cursor, moved by mouse deltas under capture. With touch the cursor has to
+	// be where the finger is: while a menu is up the viewport shows the windows mouse (UGameEngine::Tick then
+	// releases the capture, and HPConsole takes the absolute WindowsMouseX/Y), and clears it when the menu goes
+	// unless script set it (WindowConsole.LaunchUWindow, the vendor bar).
+	static UBOOL MenuMouseSet = 0;
+	const UBOOL ConsoleMenu = AndroidConsoleMenuUp( Console );
+	if( ConsoleMenu && !bShowWindowsMouse )
+	{
+		bShowWindowsMouse = 1;
+		MenuMouseSet = 1;
+	}
+	else if( !ConsoleMenu && MenuMouseSet )
+	{
+		bShowWindowsMouse = 0;
+		MenuMouseSet = 0;
+	}
 	const UBOOL MenuUp = ( Actor && Actor->bShowMenu ) || bShowWindowsMouse;
 	GAndroidMenuVisible.store( MenuUp ? true : false, std::memory_order_relaxed );
 
