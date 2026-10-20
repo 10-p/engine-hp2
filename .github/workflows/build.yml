@@ -176,11 +176,56 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  android:
+    name: android (arm64 APK)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      # JDK 17: the Gradle daemon's (Android/gradle/gradle-daemon-jvm.properties).
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # Only platform-tools: the action's default list names `tools`, which the current SDK repository does not
+      # have. The NDK and CMake come from the next step.
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+
+      # The NDK and the CMake the Gradle plugin asks for; the NDK version matches app/build.gradle's ndkVersion,
+      # because AGP silently downloads its own on a mismatch. CI writes its own local.properties for this
+      # runner's SDK.
+      - name: Install the NDK + CMake and point the build at this runner's SDK
+        run: |
+          sdkmanager --install "ndk;28.2.13676358" "cmake;4.1.2" >/dev/null
+          printf 'sdk.dir=%s\nndk.dir=%s/ndk/28.2.13676358\n' "$ANDROID_HOME" "$ANDROID_HOME" > Android/local.properties
+
+      # The Gradle project's default ABI set (arm64-v8a; -Pabis= adds the emulator's x86_64). The app's identity
+      # follows HP2_TARGET_ID, so the retail branch builds its own app from the same project.
+      - name: Build the APK
+        run: ./gradlew assembleDebug --console=plain
+        working-directory: Android
+
+      - name: Assert the ABI is packaged
+        run: |
+          set -euo pipefail
+          apk=Android/app/build/outputs/apk/debug/app-debug.apk
+          unzip -l "$apk" | grep -q "lib/arm64-v8a/libHP2.so" || { echo "::error::missing arm64-v8a"; exit 1; }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hp2-android
+          path: Android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 7
+
   # The newest build of main as a release: release assets do not expire, workflow artifacts do. The release is
   # deleted and recreated so its tag moves to the new commit and retired builds drop out.
   latest:
     name: rolling "latest" release
-    needs: [linux, windows, web]
+    needs: [linux, windows, web, android]
     if: github.event_name == 'push' && github.ref_name == 'main'
     runs-on: ubuntu-24.04
     # The default workflow token is read-only.
