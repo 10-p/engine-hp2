@@ -15,8 +15,10 @@ import android.util.Log;
 import android.util.SparseArray;
 import android.view.MotionEvent;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.WindowManager;
 import android.widget.FrameLayout;
+import android.widget.RelativeLayout;
 
 import java.io.File;
 import java.io.InputStream;
@@ -128,6 +130,11 @@ public class GameActivity extends SDLActivity {
         if (scale < RENDER_SCALE_MIN || scale >= RENDER_SCALE_MAX || mSurface == null) return;
         int[] screen = landscapeScreen(this);
         int[] frame = frameSize(screen[0], screen[1], scale);
+        // SDL adds its surface view to its layout without layout parameters, and a SurfaceView with a fixed-size
+        // surface then measures to that size; filling the parent keeps the view the screen's size, so the compositor
+        // scales the fixed-size buffer to it.
+        mSurface.setLayoutParams(new RelativeLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         mSurface.getHolder().setFixedSize(frame[0], frame[1]);
         Log.i(TAG, "resolution scale " + scale + ": " + frame[0] + "x" + frame[1] + " for the " + screen[0] + "x" + screen[1] + " screen");
     }
