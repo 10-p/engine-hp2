@@ -158,7 +158,7 @@ public class MainActivity extends Activity {
         scroll.addView(col);
 
         TextView title = new TextView(this);
-        title.setText("UNREAL TOURNAMENT");
+        title.setText(getString(R.string.app_name).toUpperCase(Locale.US));
         title.setTextColor(0xFFE0A030);
         title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 22f);
         title.setGravity(Gravity.CENTER);
