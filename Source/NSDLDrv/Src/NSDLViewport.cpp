@@ -1325,8 +1325,23 @@ UBOOL UNSDLViewport::TickInput()
 					// deltas go out too (SDL fills xrel/yrel in this mode) for script that moves a cursor by the axes.
 					// Play is captured (the branch below), so the pawn is not fed twice.
 					Client->Engine->MousePosition( this, 0, Ev.motion.x, Ev.motion.y );
-					if( Ev.motion.xrel ) CauseInputEvent( IK_MouseX, IST_Axis, Ev.motion.xrel );
-					if( Ev.motion.yrel ) CauseInputEvent( IK_MouseY, IST_Axis, -Ev.motion.yrel );
+					INT XRel = Ev.motion.xrel, YRel = Ev.motion.yrel;
+#if defined(__ANDROID__)
+					// A finger's first position comes with zero deltas, and the console moves its hover only on
+					// the axis events: the delta from the previous touch position stands in.
+					{
+						static INT LastX = -1, LastY = -1;
+						if( !XRel && !YRel && LastX >= 0 )
+						{
+							XRel = Ev.motion.x - LastX;
+							YRel = Ev.motion.y - LastY;
+						}
+						LastX = Ev.motion.x;
+						LastY = Ev.motion.y;
+					}
+#endif
+					if( XRel ) CauseInputEvent( IK_MouseX, IST_Axis, XRel );
+					if( YRel ) CauseInputEvent( IK_MouseY, IST_Axis, -YRel );
 				}
 				else
 				{
