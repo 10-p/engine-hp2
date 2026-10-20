@@ -1135,6 +1135,12 @@ void UNSDLViewport::UpdatePadAxis( INT Axis, INT NewValue )
 // never saw them go down and never reports their release, so they are a tap: released at the next tick.
 static BYTE GHeldTap[32];
 static INT GHeldTapNum = 0;
+#if defined(__ANDROID__)
+// Mouse button events held back for later ticks (TickInput).
+struct FAndroidClick { BYTE Key; BYTE Action; };
+static FAndroidClick GAndroidClick[16];
+static INT GAndroidClickNum = 0;
+#endif
 static INT GPadsOn = -1;	// UseJoystick as last seen (-1: not yet; the client's Init said it)
 
 //
@@ -1167,6 +1173,19 @@ UBOOL UNSDLViewport::TickInput()
 	for( INT k = 0; k < GHeldTapNum; k++ )
 		CauseInputEvent( GHeldTap[k], IST_Release );
 	GHeldTapNum = 0;
+
+#if defined(__ANDROID__)
+	// A touch's tap arrives in one poll: the motion, the press and the release. The console acts on the cursor
+	// it drew last frame, so a press sent with its motion lands where the finger was before. In absolute mode
+	// each button event waits for a later tick, one per tick, after a frame has put the cursor under the finger.
+	if( GAndroidClickNum )
+	{
+		CauseInputEvent( GAndroidClick[0].Key, (EInputAction)GAndroidClick[0].Action );
+		for( INT k = 1; k < GAndroidClickNum; k++ )
+			GAndroidClick[k-1] = GAndroidClick[k];
+		GAndroidClickNum--;
+	}
+#endif
 
 	// UseJoystick, read every tick, so `set ini:Engine.Engine.ViewportManager UseJoystick ...` on this live client
 	// takes effect at once: off closes the pad (keys released), on opens the first one present (a pad connected
@@ -1213,6 +1232,15 @@ UBOOL UNSDLViewport::TickInput()
 				break;
 			case SDL_MOUSEBUTTONDOWN:
 			case SDL_MOUSEBUTTONUP:
+#if defined(__ANDROID__)
+				if( !SDL_GetRelativeMouseMode() && GAndroidClickNum < ARRAY_COUNT(GAndroidClick) )
+				{
+					GAndroidClick[GAndroidClickNum].Key = MouseButtonMap[Ev.button.button];
+					GAndroidClick[GAndroidClickNum].Action = ( Ev.type == SDL_MOUSEBUTTONDOWN ) ? IST_Press : IST_Release;
+					GAndroidClickNum++;
+					break;
+				}
+#endif
 				CauseInputEvent( MouseButtonMap[Ev.button.button], ( Ev.type == SDL_MOUSEBUTTONDOWN ) ? IST_Press : IST_Release );
 				break;
 			case SDL_MOUSEWHEEL:
