@@ -2,7 +2,15 @@ project(Game CXX)
 
 set(SRC_FILES "Src/Launch.cpp")
 
-add_executable(${PROJECT_NAME} ${SRC_FILES})
+# Android: the game is a shared library, libHP2.so, that SDLActivity loads (GameActivity.getLibraries names
+# it) and whose SDL_main it calls; everywhere else an executable.
+if(UE_ANDROID_CLIENT)
+  add_library(${PROJECT_NAME} SHARED ${SRC_FILES})
+  set_target_properties(${PROJECT_NAME} PROPERTIES OUTPUT_NAME HP2 PREFIX "lib" SUFFIX ".so")
+  target_link_libraries(${PROJECT_NAME} log android)
+else()
+  add_executable(${PROJECT_NAME} ${SRC_FILES})
+endif()
 
 target_include_directories(${PROJECT_NAME}
   PUBLIC
@@ -18,7 +26,10 @@ if(USE_SDL)
   # SDL / NSDLDrv path (POSIX/Windows with SDL2).
   # Under Emscripten SDL2 comes from the -sUSE_SDL=2 port (link flags below) and NSDLDrv from the
   # --whole-archive static set; linking NSDLDrv here as well double-defines its symbols, which wasm-ld rejects.
-  if(NOT EMSCRIPTEN)
+  # On Android NSDLDrv comes in with the --whole-archive set too, and lld rejects the second copy.
+  if(UE_ANDROID_CLIENT)
+    target_link_libraries(${PROJECT_NAME} ${SDL2_LIBRARY})
+  elseif(NOT EMSCRIPTEN)
     target_link_libraries(${PROJECT_NAME} ${SDL2_LIBRARY} NSDLDrv)
   endif()
   target_include_directories(${PROJECT_NAME} PRIVATE ${SDL2_INCLUDE_DIR})

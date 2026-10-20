@@ -86,7 +86,7 @@ if(EMSCRIPTEN)
 elseif(TARGET OpenAL)
   # Native Linux with UE_BUNDLED_OPENAL: the parent built the same fork SHARED (cmake/OpenALSoft.cmake
   # NATIVE); the launcher copies libopenal.so.1 beside the binary and links with $ORIGIN, so this DT_NEEDED
-  # resolves there.
+  # resolves there. Android: the parent built it STATIC (cmake/OpenALSoft.cmake ANDROID), into libHP2.so.
   set(OPENAL_LIBRARY OpenAL)
 elseif(MINGW AND CMAKE_CROSSCOMPILING)
   # Cross-building for Windows: no system OpenAL, so cmake/OpenALMingw.cmake fetches OpenAL Soft's official
