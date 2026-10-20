@@ -142,6 +142,10 @@ void UNSDLViewport::InitKeyMap()
 	KeyMap[SDL_SCANCODE_RALT] = IK_Alt;
 	KeyMap[SDL_SCANCODE_GRAVE] = IK_Tilde;
 	KeyMap[SDL_SCANCODE_ESCAPE] = IK_Escape;
+#if defined(__ANDROID__)
+	// The system's Back key (UNSDLClient::Init traps it) is the game's Escape.
+	KeyMap[SDL_SCANCODE_AC_BACK] = IK_Escape;
+#endif
 	KeyMap[SDL_SCANCODE_SPACE] = IK_Space;
 	KeyMap[SDL_SCANCODE_RETURN] = IK_Enter;
 	KeyMap[SDL_SCANCODE_BACKSPACE] = IK_Backspace;
@@ -290,8 +294,8 @@ void UNSDLViewport::OpenWindow( PTRINT InParentWindow, UBOOL Temporary, INT NewX
 	UBOOL DoRepaint=0, DoSetActive=0;
 	UBOOL DoOpenGL=0;
 	UBOOL NoHard=ParseParam( appCmdLine(), "nohard" );
-	// The GLES major of the web GL context (2 = WebGL 1, 3 = WebGL 2), set from the render-device name below and
-	// read only by the __EMSCRIPTEN__ context code.
+	// The GLES major of the web and Android GL context (2 = WebGL 1 / GLES 2, 3 = WebGL 2 / GLES 3), set from the
+	// render-device name below and read only by the __EMSCRIPTEN__ and __ANDROID__ context code.
 	INT WebGLESMajor = 2;
 	UBOOL XOpenGLDevice = 0; // XOpenGLDrv needs WebGL 2, so it never falls back to WebGL 1
 
@@ -397,6 +401,13 @@ void UNSDLViewport::OpenWindow( PTRINT InParentWindow, UBOOL Temporary, INT NewX
 			Flags |= SDL_WINDOW_OPENGL;
 #endif
 		}
+#if defined(__ANDROID__)
+		// The whole screen, landscape either way up, with the system bars hidden: SDLActivity reads the
+		// orientation hint when the window is created. The ini's StartupFullscreen stays off, so the viewport
+		// keeps the absolute mouse path the menus use with touch (ResizeViewport).
+		SDL_SetHint( SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight" );
+		Flags |= SDL_WINDOW_FULLSCREEN_DESKTOP;
+#endif
 
 		// Set OpenGL attributes if needed.
 		if( DoOpenGL )
@@ -407,6 +418,14 @@ void UNSDLViewport::OpenWindow( PTRINT InParentWindow, UBOOL Temporary, INT NewX
 			SDL_GL_SetAttribute( SDL_GL_CONTEXT_MAJOR_VERSION, WebGLESMajor );
 			SDL_GL_SetAttribute( SDL_GL_CONTEXT_MINOR_VERSION, 0 );
 			SDL_GL_SetAttribute( SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES );
+#elif defined(__ANDROID__)
+			// Android has GLES only: GLES 3.0 for XOpenGLDrv (WebGLESMajor, from the device name above), with a
+			// 24-bit depth buffer (SDL's default asks for 16).
+			SDL_GL_SetAttribute( SDL_GL_CONTEXT_MAJOR_VERSION, WebGLESMajor );
+			SDL_GL_SetAttribute( SDL_GL_CONTEXT_MINOR_VERSION, 0 );
+			SDL_GL_SetAttribute( SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES );
+			SDL_GL_SetAttribute( SDL_GL_DEPTH_SIZE, 24 );
+			SDL_GL_SetAttribute( SDL_GL_STENCIL_SIZE, 8 );
 #else
 			// Every GL device here (XOpenGLDrv, OpenGLDrv/UTGLR) draws on a desktop compatibility context.
 			SDL_GL_SetAttribute( SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_COMPATIBILITY );
@@ -976,10 +995,16 @@ void UNSDLViewport::MakeFullscreen( INT NewX, INT NewY, UBOOL UpdateProfile )
 	SavedX = SizeX;
 	SavedY = SizeY;
 
+#if defined(__ANDROID__)
+	// The window is the screen already (OpenWindow): the surface's size stays, whatever the ini asks for.
+	SDL_SetWindowFullscreen( hWnd, SDL_WINDOW_FULLSCREEN_DESKTOP );
+	(void)NewX; (void)NewY;
+#else
 	// Fullscreen rendering. For now no borderless.
 	// Note: FullscreenViewport tracking removed - Unreal 1 specific
 	SetClientSize( NewX, NewY, false );
 	SDL_SetWindowFullscreen( hWnd, SDL_WINDOW_FULLSCREEN );
+#endif
 
 	if( UpdateProfile )
 	{
@@ -998,12 +1023,16 @@ void UNSDLViewport::EndFullscreen()
 {
 	guard(UNSDLViewport::EndFullscreen);
 
+#if defined(__ANDROID__)
+	// The window stays the screen.
+#else
 	// Restore the saved size only when leaving real fullscreen: ResizeViewport's windowed branch calls this after
 	// every SetClientSize, and with SavedX/SavedY still 0 SetClientSize would clamp the window to 320x240.
 	const UBOOL WasFullscreen = hWnd && ( SDL_GetWindowFlags( hWnd ) & SDL_WINDOW_FULLSCREEN );
 	SDL_SetWindowFullscreen( hWnd, 0 );
 	if( WasFullscreen && SavedX > 0 && SavedY > 0 )
 		SetClientSize( SavedX, SavedY, false );
+#endif
 
 	unguard;
 }
@@ -1329,6 +1358,10 @@ UBOOL UNSDLViewport::TickInput()
 			CauseInputEvent( Key, IST_Axis, FltValue * Scale );
 		}
 	}
+
+#if defined(__ANDROID__)
+	TickAndroidTouch();
+#endif
 
 	InputUpdateTime = CurTime;
 
