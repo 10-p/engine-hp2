@@ -387,8 +387,8 @@ Specified for the implementing agent in the ufrontend clone:
 - a launch with no map lands on the title level and never loads the save;
 - the launch is always `<map>?load=<n>`, never a bare `load=`.
 
-**Landed (2026-09-26).** ufrontend 2.82 (`44d5379`, `8a2241f` on main) implemented the kickoff; the `hp2` branch
-was rebased on it and hp2 got `defaults.engineOptions` = `CPUSPEED=3000 -LOAD=0` (`abbda65`). One correction to the
+**Landed (2026-09-26).** ufrontend 2.82 (`2a4c4b4`, `5b92927` on main) implemented the kickoff; the `hp2` branch
+was rebased on it and hp2 got `defaults.engineOptions` = `CPUSPEED=3000 -LOAD=0` (`6918111`). One correction to the
 kickoff: a plain Start sends **no** map (the field is empty; `defaults.map` is only a hint and the save-pick
 fallback), so hp2 boots the title level with `-LOAD=0`. Checked natively in a fresh run tree: with no save the
 engine logs `Failed to load '../Save/Save0.usa'` and keeps the title level running (the title cutscene plays); with

@@ -155,7 +155,7 @@ Pages: `https://<host>:8093/hp2-proto/` and `https://<host>:8093/hp2-retail-exp/
   $W/HarryPotter2-retail/build-wasm-perf/SDLLaunch` then `yarn e2e --target hp2-retail-exp`: 15/15.
 - Both: WebGL 2 (XOpenGL) default renderer, UTGLR/SoftDrv/Null selectable, OpenAL audio (Ogg music, EA-XA sounds,
   lip-synced dialog), AutoFOV (Hor+ on wide windows), saves persisted in IndexedDB `hp2-proto-user-data` / `hp2-retail-exp-user-data`.
-- New game over an existing save = Storage -> Clear User Data. Since ufrontend `659b18d` (on `main`, rebased in) every
+- New game over an existing save = Storage -> Clear User Data. Since ufrontend `9172fb8` (on `main`, rebased in) every
   Storage clear waits for its deletes and reloads the page itself; the hp2 help text still says "reload the page" —
   verify on hp2 (no hp2 E2E covers it yet) and drop the manual step (handover item).
 

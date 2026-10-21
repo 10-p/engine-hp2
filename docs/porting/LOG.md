@@ -87,8 +87,8 @@ One dated line per green milestone (PLAN §10). Newest last.
   (Jellybeans, secrets) never reached the save slot (`79b21ff`). After it: hp2 E2E 10/10, Windows rebuilt, and the
   publish folder re-published at `150e6fb` and boot-checked (title level, WebGL 2, openal-soft, music, debug off).
 - 2026-09-26 — **Rebased on ufrontend 2.82 + continue on Start.** The `hp2` branch rebased onto `origin/main`
-  `bca749d` (one STATE.md conflict); hp2 `defaults.engineOptions` = `CPUSPEED=3000 -LOAD=0` (`abbda65`), help/README
-  refreshed (`ecfe6c2`). A plain Start boots the title level; `-LOAD=0` continues `Save/Save0.usa` when it exists and
+  `0e6a99a` (one STATE.md conflict); hp2 `defaults.engineOptions` = `CPUSPEED=3000 -LOAD=0` (`6918111`), help/README
+  refreshed (`ec7f4d3`). A plain Start boots the title level; `-LOAD=0` continues `Save/Save0.usa` when it exists and
   is a harmless `Failed to load` when it does not (native run in a fresh tree). hp2 E2E 11/11 (+ first-light
   options check, + `continueOnStart`), gates green. Found: Clear User Data leaves the restored save in the engine
   filesystem until a page reload (generic; reported). Publish folder rebuilt from these HEADs and re-served on :8092.
@@ -120,7 +120,7 @@ One dated line per green milestone (PLAN §10). Newest last.
   Playwright 1.60 has no ubuntu26.04 build (the 24.04 one runs). Retail tree reassembled from the ISO (556 files, `Core.u`
   `c480e9a6…`). Found: CMake caches yarn's temporary node shim as `NODE_EXECUTABLE` when a web tree is first configured
   inside `yarn publish-all` (the next build fails) — configure outside yarn (bootstrap §8). ufrontend `hp2-prototype` /
-  `hp2-retail` rebased on `main` `7fb637e` (its E2E timing fixes made the clear-all test pass); two rebase follow-ups:
+  `hp2-retail` rebased on `main` `4affbe7` (its E2E timing fixes made the clear-all test pass); two rebase follow-ups:
   the no-engine-specifics gate vs an upstream comment naming hp2, and the new clear-config-state test skipping the
   PeerServer on a single-player target. Both variants published, served and E2E 15/15.
 - 2026-10-03 — **`Entryhall_hub` ghosts: shipped data, not the port.** `NHNick1`/`fatfriar0`/`bloodybaron0` are parked in
