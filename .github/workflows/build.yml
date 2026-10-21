@@ -177,7 +177,7 @@ jobs:
           retention-days: 7
 
   android:
-    name: android (arm64 APK)
+    name: android (arm64 + arm32 APK)
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -202,17 +202,18 @@ jobs:
           sdkmanager --install "ndk;28.2.13676358" "cmake;4.1.2" >/dev/null
           printf 'sdk.dir=%s\nndk.dir=%s/ndk/28.2.13676358\n' "$ANDROID_HOME" "$ANDROID_HOME" > Android/local.properties
 
-      # The Gradle project's default ABI set (arm64-v8a; -Pabis= adds the emulator's x86_64). The app's identity
+      # The Gradle project's default ABI set (armeabi-v7a and arm64-v8a). The app's identity
       # follows HP2_TARGET_ID, so the retail branch builds its own app from the same project.
       - name: Build the APK
         run: ./gradlew assembleDebug --console=plain
         working-directory: Android
 
-      - name: Assert the ABI is packaged
+      - name: Assert both ABIs are packaged
         run: |
           set -euo pipefail
           apk=Android/app/build/outputs/apk/debug/app-debug.apk
           unzip -l "$apk" | grep -q "lib/arm64-v8a/libHP2.so" || { echo "::error::missing arm64-v8a"; exit 1; }
+          unzip -l "$apk" | grep -q "lib/armeabi-v7a/libHP2.so" || { echo "::error::missing armeabi-v7a"; exit 1; }
 
       - uses: actions/upload-artifact@v4
         with:
