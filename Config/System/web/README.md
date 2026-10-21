@@ -13,7 +13,9 @@ data), or an existing profile keeps its old copy.
 `../Default.ini` and `../DefUser.ini` are HP2's retail inis, which the native run tree uses
 (`tools/dev/mkrun-hp2.sh` copies them); the launcher replaces the Win32 driver names they carry
 (`WinDrv.WindowsClient`, `ALAudio.ALAudioSubsystem`, `D3DDrv.D3DRenderDevice`) with drivers this build contains.
-`DefUser.ini` here is the same retail file (player class `HGame.harry`, the spell, broom and duel bindings).
+`DefUser.ini` here is the same retail file (player class `HGame.harry`, the spell, broom and duel bindings). Both
+`DefUser.ini` files set `[Engine.PlayerPawn] bMaxMouseSmoothing=False`: the view and the camera stop on the frame the
+mouse stops (the script's default keeps turning for up to `MouseSmoothThreshold` after it).
 
 ## Rules for `Default.ini`
 
