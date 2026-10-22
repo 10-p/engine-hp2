@@ -11,7 +11,7 @@ Building and testing it for the browser is in [`WEB_INTEGRATION.md`](WEB_INTEGRA
 | | |
 |---|---|
 | Repository | `XOPENGL_GIT_REPOSITORY`, default `https://github.com/10-p/XOpenGLDrv.git` |
-| Branch | `XOPENGL_GIT_TAG`, default `hp2-v433-compat` |
+| Branch | `XOPENGL_GIT_TAG`, default `ufront` |
 | Local clone | `-DFETCHCONTENT_SOURCE_DIR_XOPENGLDRV=<path>` builds an unpushed change |
 | Compiled | every `Src/*.cpp` of the fetched tree (`file(GLOB)`: shaders `*_GLSL.cpp`, the vendored desktop-GL `glad.cpp`, the DXT1 decoder `decompress.cpp`) |
 | Includes | the fork's `Inc/` (its own `glad.h`/`glext.h`) and `glm/`; `Render.h` from `Source/Render/Inc` through the `Render` target |

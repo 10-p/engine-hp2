@@ -31,8 +31,8 @@ build and native Linux (`UE_BUNDLED_OPENAL`) build the openal-soft fork (`10-p/o
 `Source/cmake/OpenALSoft.cmake`); NOpenALDrv fetches libogg and libvorbis. No preset needs the game content: the web
 link preloads only the tracked web inis (`Config/System/web/`).
 
-The renderer forks are fetched by branch (`Source/CMakeLists.txt`): XOpenGLDrv `10-p/XOpenGLDrv@hp2-v433-compat`,
-UTGLR `10-p/utglr-copy@hp2`, gl4es `10-p/gl4es@fix/cubemap-bind-active-unit`. To build an unpushed change of one,
+The renderer forks are fetched by branch (`Source/CMakeLists.txt`): XOpenGLDrv `10-p/XOpenGLDrv@ufront`,
+UTGLR `10-p/utglr-copy@main`, gl4es `10-p/gl4es@ufront`. To build an unpushed change of one,
 point `-DFETCHCONTENT_SOURCE_DIR_XOPENGLDRV=`, `-DFETCHCONTENT_SOURCE_DIR_UTGLR=` or `-DGL4ES_SOURCE_DIR=` at a local
 clone; `meta.json` then records that dependency as `local:<path>`.
 
