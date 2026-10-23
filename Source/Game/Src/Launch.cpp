@@ -6,6 +6,11 @@ Revision history:
 	* Created by Brandon Reinhart.
 =============================================================================*/
 
+#ifdef __EMSCRIPTEN__
+// Before the engine headers: html5.h pulls in <time.h>, and UnFile.h #defines clock(). The page's visibility,
+// for the frame wait.
+#include <emscripten/html5.h>
+#endif
 #include "LaunchPrivate.h"
 #ifdef PLATFORM_SDL
 #include <SDL2/SDL.h>
@@ -71,12 +76,80 @@ static void AndroidRedirectStdio()
 #include <emscripten/heap.h> // emscripten_get_heap_size (the pacing ring's heap column)
 #include <unistd.h> // chdir
 
-// The per-frame yield. The engine thread returns to its event loop every frame: that is when the worker's
-// OffscreenCanvas is presented. A timer task lets the compositor present the frame; a MessagePort task chain
-// does not (frames are overwritten unseen), and requestAnimationFrame would tie the frame rate to the display.
-EM_ASYNC_JS(void, ufront_yield_frame, (void), {
-    await new Promise((resolve) => { setTimeout(resolve, 0); });
+// Whether the page is hidden, for the frame wait (the worker has no document of its own).
+EM_JS(void, ufront_set_hidden, (int hidden), {
+    globalThis.ufrontHidden = !!hidden;
 });
+
+// A hidden page has no display frames: its frames run from timers.
+static EM_BOOL UfrontVisibilityChange( int EventType, const EmscriptenVisibilityChangeEvent* Event, void* UserData )
+{
+	ufront_set_hidden( Event->hidden );
+	return EM_TRUE;
+}
+
+// The per-frame wait. The engine thread returns to the worker's event loop every frame: that is when the worker's
+// OffscreenCanvas is composited (the frame's present point) and when input and console commands arrive. It resumes
+// at the display's next frame (the worker's requestAnimationFrame), or at the first display frame that reaches
+// waitMs from now: frames that start on the display's frames take the browser's mouse motion (one coalesced event a
+// display frame) one batch a frame, and are shown at an even pace. Where the worker has no requestAnimationFrame,
+// while the page is hidden and with -TIMERFRAMES, a timer resumes it instead (waitMs, or 0 ms); a display frame
+// that does not come within 100 ms (the page hidden meanwhile) gives way to a timer too. EM_ASYNC_JS imports match
+// Asyncify's default `__asyncjs__*` list, so no ASYNCIFY_IMPORTS entry is needed.
+EM_ASYNC_JS(void, ufront_wait_frame, (int onDisplayFrame, double waitMs), {
+    const end = performance.now() + Math.max(0, waitMs);
+    for (;;) {
+        if (!onDisplayFrame || typeof requestAnimationFrame !== 'function' || globalThis.ufrontHidden) {
+            const left = end - performance.now();
+            await new Promise((resolve) => { setTimeout(resolve, Math.max(0, left)); });
+            return;
+        }
+        await new Promise((resolve) => {
+            const t = setTimeout(resolve, 100);
+            requestAnimationFrame(() => { clearTimeout(t); resolve(); });
+        });
+        if (performance.now() >= end - 1)
+            return;
+    }
+});
+
+// -TIMERFRAMES (e.g. a benchmark): frames resume from timers alone. The first call, on the engine's thread, also
+// starts following the page's visibility.
+static INT UfrontOnDisplayFrame()
+{
+	static INT OnDisplayFrame = -1;
+	if( OnDisplayFrame < 0 )
+	{
+		OnDisplayFrame = !ParseParam( appCmdLine(), TEXT("TIMERFRAMES") );
+		debugf( NAME_Init, TEXT("ufront: frames start %s"), OnDisplayFrame ? TEXT("on the display's frames") : TEXT("from timers") );
+		EmscriptenVisibilityChangeEvent Status;
+		if( emscripten_get_visibility_status( &Status ) == EMSCRIPTEN_RESULT_SUCCESS )
+			ufront_set_hidden( Status.hidden );
+		emscripten_set_visibilitychange_callback( NULL, EM_TRUE, UfrontVisibilityChange );
+	}
+	return OnDisplayFrame;
+}
+
+// Wait until the next frame may start: the display's next frame (Period 0), or with a frame-rate cap a display
+// frame, at most one a Period on average. Each frame's due time is the one before plus Period, so a cap the
+// display's rate does not divide still averages the cap (some display frames are skipped); a frame later than its
+// due time moves the schedule to itself. Returns the wait the cap asked for in ms, INDEX_NONE without a cap.
+static INT UfrontWaitFrame( FLOAT Period )
+{
+	static FTime Due;
+	if( Period <= 0.f )
+	{
+		ufront_wait_frame( UfrontOnDisplayFrame(), 0.0 );
+		return INDEX_NONE;
+	}
+	const FLOAT WaitMs = Max( 0.f, Due - appSeconds() ) * 1000.f;
+	ufront_wait_frame( UfrontOnDisplayFrame(), WaitMs );
+	const FTime Then = appSeconds();
+	Due = Due + Period;
+	if( Then - Due > 0.f )
+		Due = Then;
+	return (INT)WaitMs;
+}
 
 
 // The running engine, for ue_exec_command and WebRTCDrv's listen-status push (set in InitEngine after
@@ -87,7 +160,7 @@ UEngine* GEngineForExec = NULL;
 // ue_exec_command. A mean frame rate (CurrentTickRate) hides an uneven frame-interval distribution, so every
 // frame is kept and the reader computes percentiles and judder.
 //   TickMs     — Engine->Tick + GWindowManager->Tick: simulation and the whole render/submit path.
-//   YieldMs    — the present point: emscripten_sleep when the cap leaves budget, ufront_yield_frame when not.
+//   YieldMs    — the present point: the frame wait (UfrontWaitFrame).
 //   SleepReqMs — what the cap asked for.
 #define UFRONT_PACE_MAX 4096
 struct FUfrontPaceSample
@@ -95,7 +168,7 @@ struct FUfrontPaceSample
 	FLOAT  Start;      // seconds since the main loop started
 	FLOAT  TickMs;
 	FLOAT  YieldMs;
-	INT    SleepReqMs; // what the cap computed; INDEX_NONE marks the yield (no-budget) path
+	INT    SleepReqMs; // the wait the cap asked for; INDEX_NONE without a cap
 	// wasm heap size: under -pthread a memory.grow rebuilds every thread's typed-array views, a stall suspect.
 	INT    HeapMB;
 };
@@ -578,19 +651,14 @@ static void MainLoop( UEngine* Engine )
 			Cap = ClientCap;
 		}
 #ifdef __EMSCRIPTEN__
-		// The browser event loop must run every frame, so the frame yields: emscripten_sleep (Asyncify) for the
-		// budget the cap leaves, else ufront_yield_frame, a task boundary with no added sleep. Not
-		// emscripten_set_main_loop: its simulate_infinite_loop unwind collides with main()'s try/catch.
+		// The browser event loop must run every frame, so the loop waits through Asyncify until the next frame may
+		// start (UfrontWaitFrame). Not emscripten_set_main_loop: its simulate_infinite_loop unwind collides with
+		// main()'s try/catch.
 		{
-			FLOAT Budget = Cap>0.f ? (1.f/Cap) : 0.f;
-			INT SleepMs = (INT)((Budget - (appSeconds()-OldTime)) * 1000.f);
-			if( SleepMs > 1 )
-				emscripten_sleep( SleepMs );
-			else
-				ufront_yield_frame();
-			// One pacing sample per frame, recorded after the yield so YieldMs covers the present point.
+			const INT SleepReqMs = UfrontWaitFrame( Cap>0.f ? (1.f/Cap) : 0.f );
+			// One pacing sample per frame, recorded after the wait so YieldMs covers the present point.
 			const FTime PaceEnd = appSeconds();
-			UfrontPaceRecord( PaceFrameStart-PaceEpoch, (PaceTickEnd-PaceFrameStart)*1000.f, (PaceEnd-PaceTickEnd)*1000.f, SleepMs>1 ? SleepMs : INDEX_NONE );
+			UfrontPaceRecord( PaceFrameStart-PaceEpoch, (PaceTickEnd-PaceFrameStart)*1000.f, (PaceEnd-PaceTickEnd)*1000.f, SleepReqMs );
 		}
 #else
 		if( Cap>0.0 )

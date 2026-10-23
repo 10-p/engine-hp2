@@ -82,7 +82,8 @@ if(EMSCRIPTEN)
   target_link_options(${PROJECT_NAME} PRIVATE
     -sASYNCIFY
     -sASYNCIFY_STACK_SIZE=262144
-    # emscripten_sleep is the main loop's per-frame sleep; __syscall_openat is listed for FetchFS's on-demand open.
+    # emscripten_sleep is WebRTCDrv's handshake wait; __syscall_openat is listed for FetchFS's on-demand open; the
+    # frame wait (an EM_ASYNC_JS import) is in Asyncify's default import list.
     "-sASYNCIFY_IMPORTS=['emscripten_sleep','emscripten_set_main_loop','__syscall_openat']"
     # WebGL 1 and 2: NSDLViewport asks for WebGL 2 for every GL device and lets UTGLR fall back to WebGL 1.
     # GL_ENABLE_GET_PROC_ADDRESS lets glad (XOpenGL) and gl4es (UTGLR) resolve entry points. FULL_ES2 is

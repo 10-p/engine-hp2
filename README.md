@@ -23,8 +23,8 @@ The baseline is the restructured prototype drop (`/home/ion/WorkUnreal/epic-sour
 
 - **WebAssembly build** — the `wasm`, `wasm-debug` and `wasm-perf` presets build one static `SDLLaunch.{js,wasm,data}`
   plus `meta.json` (pthreads with the engine on a worker, WasmFS, Asyncify, an offscreen framebuffer); the web boot
-  inis are preloaded, the main loop yields every frame, the web driver set is forced, and the package loaders fail
-  soft because exception catching is off.
+  inis are preloaded, the main loop yields every frame until the display's next frame, the web driver set is
+  forced, and the package loaders fail soft because exception catching is off.
 - **SDL2 client driver** — NSDLDrv on HP2's 433 interfaces: window, input, game pads with hot-plug, the options-page
   commands; every GL device gets WebGL 2 on the web.
 - **OpenGL renderers** — XOpenGLDrv (WebGL 2) and UTGLR OpenGLDrv (WebGL 1/2 through gl4es), fetched from their forks,
