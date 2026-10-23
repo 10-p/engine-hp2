@@ -1836,8 +1836,9 @@ void UGameEngine::Tick( FLOAT DeltaSeconds )
 		INT Want = ( MouseViewport && GLevel && MouseViewport->Actor && !Menu ) ? 1 : 0;
 		if( MouseViewport && ( Want != LastCapture || Menu != LastMenu ) )
 		{
-			debugf( TEXT("[mouse] relative-capture=%i menu=%i (bShowMenu=%i bShowWinMouse=%i)"),
-				Want, Menu, MouseViewport->Actor ? (INT)MouseViewport->Actor->bShowMenu : -1, (INT)MouseViewport->bShowWindowsMouse );
+			if( GUfrontLog )
+				debugf( TEXT("[mouse] relative-capture=%i menu=%i (bShowMenu=%i bShowWinMouse=%i)"),
+					Want, Menu, MouseViewport->Actor ? (INT)MouseViewport->Actor->bShowMenu : -1, (INT)MouseViewport->bShowWindowsMouse );
 			if( Want != LastCapture )
 			{
 				MouseViewport->SetMouseCapture( Want, Want, 0 );

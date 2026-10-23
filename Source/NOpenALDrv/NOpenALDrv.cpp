@@ -578,7 +578,7 @@ UBOOL UNOpenALAudioSubsystem::OpenStream( FNALStream& Stream, USound* Sound, INT
 		Stream.Channels	= 1;
 		Stream.Format	= AL_FORMAT_MONO16;
 		Stream.Xa.Init( (const uint8_t*)&Sound->Data(0), Sound->Data.Num(), Sound->raw_NumSamples );
-		if( StatXaStreams++ == 0 )
+		if( StatXaStreams++ == 0 && GUfrontLog )
 			debugf( TEXT("NOpenALDrv: first EA-XA stream: %s (%i samples @ %i Hz, %i bytes, flags %i)"), Sound->GetPathName(),
 				Sound->raw_NumSamples, Stream.Rate, Sound->Data.Num(), Sound->CoreFlags );
 		return 1;
@@ -873,7 +873,7 @@ UBOOL UNOpenALAudioSubsystem::RegisterSound( USound* Sound )
 			Buffers(Slot).Buffer = bid;
 			Buffers(Slot).Flags  = BufferFlags;
 			Sound->SetHandle( Slot + 1 );
-			if( StatWavBuffers++ == 0 )
+			if( StatWavBuffers++ == 0 && GUfrontLog )
 				debugf( TEXT("NOpenALDrv: first PCM sound: %s (%i Hz, %i bit, %i ch)"), Sound->GetPathName(),
 					*WaveInfo.pSamplesPerSec, *WaveInfo.pBitsPerSample, *WaveInfo.pChannels );
 		}
@@ -1184,8 +1184,11 @@ INT UNOpenALAudioSubsystem::PlaySound( AActor* Actor, INT Id, USound* Sound, FVe
 	{
 		const UBOOL HasChannel = Src.LipSyncAnimMgr->Start( appSeconds().GetFloat() );
 		if( StatLipSync++ == 0 )
-			debugf( TEXT("NOpenALDrv: first lip-synced line: %s on %s (%i amplitude frames, mouth channel %s)"), Sound->GetPathName(),
-				Actor->GetName(), Sound->LipSyncData.Num(), HasChannel ? TEXT("created") : TEXT("none") );
+		{
+			if( GUfrontLog )
+				debugf( TEXT("NOpenALDrv: first lip-synced line: %s on %s (%i amplitude frames, mouth channel %s)"), Sound->GetPathName(),
+					Actor->GetName(), Sound->LipSyncData.Num(), HasChannel ? TEXT("created") : TEXT("none") );
+		}
 		else
 			debugf( NAME_DevSound, TEXT("NOpenALDrv: lip-synced line %s on %s (%i frames, channel %s)"), Sound->GetName(),
 				Actor->GetName(), Sound->LipSyncData.Num(), HasChannel ? TEXT("created") : TEXT("none") );
@@ -1798,7 +1801,8 @@ void UNOpenALAudioSubsystem::UpdateReverb( AZoneInfo* Zone )
 		static UBOOL LoggedReverb = 0;
 		if( !LoggedReverb )
 		{
-			debugf( TEXT("NOpenALDrv: EAX reverb applied for zone %s (MasterGain %i)"), ReverbZone->GetName(), ReverbZone->MasterGain );
+			if( GUfrontLog )
+				debugf( TEXT("NOpenALDrv: EAX reverb applied for zone %s (MasterGain %i)"), ReverbZone->GetName(), ReverbZone->MasterGain );
 			LoggedReverb = 1;
 		}
 	}

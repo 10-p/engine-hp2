@@ -275,7 +275,8 @@ static void ufrontParseAutoFov()
 	GAutoFovMode = Clamp( Mode, (INT)AUTOFOV_Off, (INT)AUTOFOV_Adaptive );
 	GAutoFovRef  = (Ref > 0.01f) ? Ref : (4.0f / 3.0f);
 
-	debugf( NAME_Log, TEXT("[AutoFOV] mode=%i referenceAspect=%f"), GAutoFovMode, GAutoFovRef );
+	if( GUfrontLog )
+		debugf( NAME_Log, TEXT("[AutoFOV] mode=%i referenceAspect=%f"), GAutoFovMode, GAutoFovRef );
 	unguard;
 }
 
@@ -302,8 +303,9 @@ ENGINE_API FLOAT ufrontEffectiveFov( FLOAT BaseFov, INT SizeX, INT SizeY, UBOOL 
 		GAutoFovLastX    = SizeX;
 		GAutoFovLastY    = SizeY;
 		GAutoFovLastBase = Base;
-		debugf( NAME_Log, TEXT("[AutoFOV] viewport=%ix%i aspect=%f base=%f effective=%f"),
-			SizeX, SizeY, Aspect, Base, Eff );
+		if( GUfrontLog )
+			debugf( NAME_Log, TEXT("[AutoFOV] viewport=%ix%i aspect=%f base=%f effective=%f"),
+				SizeX, SizeY, Aspect, Base, Eff );
 	}
 	return Eff;
 	unguard;

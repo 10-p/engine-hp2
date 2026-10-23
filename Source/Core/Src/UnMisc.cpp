@@ -1947,6 +1947,7 @@ CORE_API void appInit( const TCHAR* InPackage, const TCHAR* InCmdLine, FMalloc* 
 
 	// Parameters.
 	GIsStrict = ParseParam( appCmdLine(), TEXT("STRICT") );
+	GUfrontLog = ParseParam( appCmdLine(), TEXT("UFRONTLOG") );
 
 	// Ini.
 	TCHAR GIni[512]=TEXT("");

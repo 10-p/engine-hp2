@@ -135,6 +135,10 @@ sweep check the layout. The UTGLR fork rounds its pointers through the engine's 
   (frames, fps, frame ms avg/min/max/p99, the 1% low, the viewport size). `Source/Engine/Src/UnFpsLog.cpp`.
 - **`Init: Language: <ext>`** at start-up: the language this run took (`[Engine.Engine] Language`, read after the
   `-ini:` overrides).
+- **`-UFRONTLOG`** also logs the port's diagnostic and repeated lines (`GUfrontLog`): the `[AutoFOV]` lines, the
+  `[mouse]` capture hand-overs, NOpenALDrv's `first EA-XA stream` / `first PCM sound` / `first lip-synced line` and
+  first reverb zone, and the `[WebRTC-LAN]` discovery rounds. The tests pass it; a player's log leaves them out.
+  Status lines, warnings, errors and console-command answers are always logged.
 - **The command line holds 4,096 characters** (launcher, UCC, Core's `GCmdLine`); a token that does not fit is dropped
   whole, with a warning once the log is up.
 - **`ucc make` saves are deterministic**: stable sorts in `SavePackage`, the `.int` files in Windows' order in
