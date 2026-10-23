@@ -72,6 +72,12 @@ and messages on. `ucc-bin` uses its own `HP.ini`: `./ucc-bin Core.SimpleCommandl
 `./ucc-bin batchexport HGame.u class uc <dir>`. SIGTERM, SIGHUP and Ctrl-C ask the main loop to exit cleanly (a
 second one is ignored); before the main loop the process ends at once.
 
+`-INPUTTEST=<file>` opens the input test channel (`Source/NSDLDrv/Src/NSDLInputTest.h`): commands appended to the file
+drive a virtual SDL game controller that takes the pad's place, run console commands and watch Harry once per input
+tick. `tools/dev/inputtest/run.sh <run-tree> <scenario> <out-dir> [<args>]` runs the native build under Xvfb with it
+and feeds it a scenario (`move.scen`: the move stick's speed against tilt, its turn and the Walking button, on
+`GreatHall_G` with `-NULLRENDERER`); `rate.py` reads the watch lines.
+
 ## Checks before a commit that touches engine code
 
 - The native class layout: `UStruct::Link` stops with a fatal error when a native class's C++ size differs from its

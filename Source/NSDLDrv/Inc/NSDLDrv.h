@@ -18,6 +18,8 @@
 
 extern NSDLDRV_API UBOOL GTickDue;
 
+class FNSDLInputTest;
+
 //
 // A SDL2 viewport.
 //
@@ -83,6 +85,8 @@ private:
 	SWORD JoyAxis[SDL_CONTROLLER_AXIS_MAX];
 	void UpdatePadAxis( INT Axis, INT NewValue );	// one stick or trigger value, read from the pad's state
 	void ReleasePad();	// every pad key up and the axes zeroed (the pad went, or UseJoystick went off)
+	FNSDLInputTest* InputTest;	// the input test channel (-INPUTTEST=), NULL without it
+	friend class FNSDLInputTest;
 	UBOOL QuitRequested;
 	FTime InputUpdateTime; // HP2 433: appSeconds() returns FTime
 public:

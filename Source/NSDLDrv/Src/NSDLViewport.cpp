@@ -9,6 +9,7 @@
 #endif
 
 #include "NSDLDrv.h"
+#include "NSDLInputTest.h"
 #include "UnRender.h"
 
 #if defined(__EMSCRIPTEN__) && defined(__EMSCRIPTEN_PTHREADS__)
@@ -222,6 +223,10 @@ UNSDLViewport::UNSDLViewport( ULevel* InLevel, UNSDLClient* InClient )
 	Destroyed = false;
 	QuitRequested = false;
 	HoldCount = 0;
+	InputTest = NULL;
+	FString InputTestFile;
+	if( Parse( appCmdLine(), TEXT("INPUTTEST="), InputTestFile ) )
+		InputTest = new FNSDLInputTest( *InputTestFile );
 
 	unguard;
 }
@@ -231,6 +236,8 @@ void UNSDLViewport::Destroy()
 {
 	guard(UNSDLViewport::Destroy);
 	// Note: FullscreenViewport tracking removed - Unreal 1 specific
+	delete InputTest;
+	InputTest = NULL;
 	UViewport::Destroy();
 	unguard;
 }
@@ -1173,6 +1180,9 @@ UBOOL UNSDLViewport::TickInput()
 	for( INT k = 0; k < GHeldTapNum; k++ )
 		CauseInputEvent( GHeldTap[k], IST_Release );
 	GHeldTapNum = 0;
+
+	if( InputTest )
+		InputTest->Tick( this );
 
 #if defined(__ANDROID__)
 	// A touch's tap arrives in one poll: the motion, the press and the release. The console acts on the cursor
