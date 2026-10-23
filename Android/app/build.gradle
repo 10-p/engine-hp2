@@ -33,8 +33,8 @@ def hp2AppName = hp2Retail ? 'HP2 Retail' : 'HP2 Prototype'
 def hp2GameFolder = hp2Retail ? 'HP2-Retail' : 'HP2'
 logger.lifecycle("HP2 target ${hp2Target}: \"${hp2AppName}\", game folder ${hp2GameFolder}")
 
-// The ABIs: 32-bit and 64-bit ARM devices in one APK; -Pabis=<list> builds others (x86_64 for a fast emulator).
-def hp2Abis = (project.findProperty('abis') ?: 'armeabi-v7a,arm64-v8a').split(',').collect { it.trim() }
+// The ABIs of every APK: 32-bit and 64-bit ARM devices, and x86_64 (x86 Chromebooks, the emulator).
+def hp2Abis = ['armeabi-v7a', 'arm64-v8a', 'x86_64']
 
 // What the APK installs into the game folder's System/ before each start (GameActivity): the Android inis
 // of Config/System/android, those of them that exist.
