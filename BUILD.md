@@ -149,8 +149,11 @@ sweep check the layout. The UTGLR fork rounds its pointers through the engine's 
   read every tick, so `set ini:Engine.Engine.ViewportManager UseJoystick False` closes the pad (every key released) and
   `True` opens the first one present; a pad connected later opens on `SDL_CONTROLLERDEVICEADDED`. Sticks and triggers
   are read from the pad's state each tick; on the web the press that made the browser list the pad is read from
-  `navigator.getGamepads()` and given to the game as a tap. The compiled defaults (Scale, dead zones) are in
-  `UNSDLClient::StaticConstructor`. Log lines: `NSDLClient: game pad connected: <name>`, `disconnected`, `buttons held
+  `navigator.getGamepads()` and given to the game as a tap. The left stick tilted out of its dead zone (radially;
+  each axis keeps its own dead zone, so a push ahead does not turn Harry) but below `PadWalkTilt` (0.5 of the
+  stick's travel; 0 never) walks, as the Walking button does: the stick keeps a bit of its own set in the player's
+  `bRun` (the Walking key writes the whole byte; the stick sets its bit again the next tick). The compiled defaults
+  (Scale, dead zones) are in `UNSDLClient::StaticConstructor`. Log lines: `NSDLClient: game pad connected: <name>`, `disconnected`, `buttons held
   at the connect given to the game: 0x<mask>`, `game pads on|off (UseJoystick)`.
 - **Antialiasing on the web** (`UseAA`, `NumAASamples` of XOpenGL and UTGLR; the launcher's Advanced switch): every GL
   device draws on WebGL 2. XOpenGLDrv multisamples in framebuffers of its own; UTGLR draws into framebuffer 0, which

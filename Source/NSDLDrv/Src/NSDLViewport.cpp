@@ -1057,7 +1057,10 @@ void UNSDLViewport::UpdateInput( UBOOL Reset )
 	guard(UNSDLViewport::UpdateInput);
 
 	if( Reset )
+	{
 		appMemset( (void*)JoyAxis, 0, sizeof(JoyAxis) );
+		MoveStick[0] = MoveStick[1] = 0;
+	}
 
 	unguard;
 }
@@ -1117,6 +1120,8 @@ void UNSDLViewport::UpdatePadAxis( INT Axis, INT NewValue )
 	const BYTE Key = JoyAxisMap[Axis];
 	const INT PrevValue = JoyAxis[Axis];
 	INT DeadZone = 0;
+	if( Axis == SDL_CONTROLLER_AXIS_LEFTX || Axis == SDL_CONTROLLER_AXIS_LEFTY )
+		MoveStick[Axis - SDL_CONTROLLER_AXIS_LEFTX] = (SWORD)Clamp( NewValue, -32767, 32767 );
 	if ( Key < IK_JoyX )
 	{
 		// Treat the axis like a trigger.
@@ -1165,6 +1170,31 @@ void UNSDLViewport::ReleasePad()
 		if( JoyAxisMap[a] && JoyAxisMap[a] < IK_JoyX && JoyAxis[a] >= JoyAxisPressThreshold )
 			CauseInputEvent( JoyAxisMap[a], IST_Release );
 		JoyAxis[a] = 0;
+	}
+	MoveStick[0] = MoveStick[1] = 0;
+	unguard;
+}
+
+// The move stick's walk is one bit of the player's walk button (bRun), apart from the 1 the Walking key sets: that
+// key's press and release overwrite the byte, and the stick sets its bit again on the next tick.
+static const BYTE PadWalkBit = 0x40;
+
+//
+// The left stick tilted out of its dead zone (radially) but less than PadWalkTilt walks. Its axes keep their dead
+// zone per axis: the stick's X turns Harry, and the cross-shaped zone keeps a push ahead from turning him.
+//
+void UNSDLViewport::TickMoveStickWalk()
+{
+	guard(UNSDLViewport::TickMoveStickWalk);
+	const FLOAT X = MoveStick[0] / 32767.f, Y = MoveStick[1] / 32767.f;
+	const FLOAT Tilt = Min( (FLOAT)appSqrt( X*X + Y*Y ), 1.f );
+	const UBOOL Walk = Tilt > 0.f && Tilt >= Client->DeadZoneXYZ && Tilt < Client->PadWalkTilt;
+	if( Actor )
+	{
+		if( Walk )
+			Actor->bRun |= PadWalkBit;
+		else
+			Actor->bRun &= ~PadWalkBit;
 	}
 	unguard;
 }
@@ -1416,6 +1446,7 @@ UBOOL UNSDLViewport::TickInput()
 			CauseInputEvent( Key, IST_Axis, FltValue * Scale );
 		}
 	}
+	TickMoveStickWalk();
 
 #if defined(__ANDROID__)
 	TickAndroidTouch();

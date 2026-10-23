@@ -28,6 +28,7 @@ void UNSDLClient::StaticConstructor()
 	new(GetClass(), "ScaleRUV",          RF_Public)UFloatProperty(CPP_PROPERTY(ScaleRUV),         "Joystick", CPF_Config );
 	new(GetClass(), "InvertY",           RF_Public)UBoolProperty(CPP_PROPERTY(InvertY),           "Joystick", CPF_Config );
 	new(GetClass(), "InvertV",           RF_Public)UBoolProperty(CPP_PROPERTY(InvertV),           "Joystick", CPF_Config );
+	new(GetClass(), "PadWalkTilt",       RF_Public)UFloatProperty(CPP_PROPERTY(PadWalkTilt),      "Joystick", CPF_Config );
 
 	// Compiled defaults. Registering an option assigns no value (UClient::StaticConstructor assigns none either),
 	// so without a [NSDLDrv.NSDLClient] section (the native Default.ini has none) every option would be zero: no
@@ -55,7 +56,7 @@ void UNSDLClient::StaticConstructor()
 	TextureLODSet[1]    = 0;   // TextureDetail = High
 	TextureLODSet[2]    = 0;   // SkinDetail    = High
 
-	// This driver's own nine.
+	// This driver's own ten.
 	DefaultDisplay      = 0;
 	StartupFullscreen   = 0;
 	UseJoystick         = 1;
@@ -65,6 +66,7 @@ void UNSDLClient::StaticConstructor()
 	ScaleRUV            = 500.0f;
 	InvertY             = 0;
 	InvertV             = 0;
+	PadWalkTilt         = 0.5f;	// the move stick walks below half its travel
 
 	// HP2 433: UClient's two extra config keys (registered in UnCamMgr.cpp); retail Default.ini values.
 	NoFractalAnim       = 0;
