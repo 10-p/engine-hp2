@@ -793,8 +793,17 @@ UBOOL UNSDLViewport::ResizeViewport( DWORD NewBlitFlags, INT InNewX, INT InNewY,
 	else
 	{
 		// Windowed resize.
+#if defined(__EMSCRIPTEN__) || defined(__ANDROID__)
 		SetClientSize( NewX, NewY, 1 );
 		EndFullscreen();
+#else
+		SetClientSize( NewX, NewY, 0 );
+		EndFullscreen();
+		// The profile keeps the window's size as the windowed one (MakeFullscreen keeps the fullscreen one).
+		Client->WindowedViewportX = SizeX;
+		Client->WindowedViewportY = SizeY;
+		Client->SaveConfig();
+#endif
 	}
 
 	// Update color depth if requested (render devices read this).
@@ -1416,6 +1425,15 @@ UBOOL UNSDLViewport::TickInput()
 					const INT NewX = Align( Ev.window.data1, 4 ), NewY = Ev.window.data2;
 					if( NewX != SizeX || NewY != SizeY )
 						SetClientSize( NewX, NewY, false );
+#if !defined(__EMSCRIPTEN__) && !defined(__ANDROID__)
+					// A window resized from outside keeps its size in the profile as the windowed one.
+					if( !IsFullscreen() && ( Client->WindowedViewportX != SizeX || Client->WindowedViewportY != SizeY ) )
+					{
+						Client->WindowedViewportX = SizeX;
+						Client->WindowedViewportY = SizeY;
+						Client->SaveConfig();
+					}
+#endif
 #endif
 				}
 				break;
@@ -1474,9 +1492,23 @@ UBOOL UNSDLViewport::Exec( const TCHAR* Cmd, FOutputDevice& Ar )
 	{
 		// Toggle fullscreen.
 		// Note: FullscreenViewport tracking removed - Unreal 1 specific
+#if defined(__EMSCRIPTEN__) || defined(__ANDROID__)
 		Client->EndFullscreen();
 		if( !(Actor->ShowFlags & SHOW_ChildWindow) )
 			Client->TryRenderDevice( this, "ini:Engine.Engine.GameRenderDevice", 1 );
+#else
+		if( IsFullscreen() )
+			Client->EndFullscreen();
+		else if( !(Actor->ShowFlags & SHOW_ChildWindow) )
+		{
+			Client->TryRenderDevice( this, "ini:Engine.Engine.GameRenderDevice", 1 );
+			// A game device that fails falls back to the windowed device, fullscreen and then in a window.
+			if( !RenDev )
+				Client->TryRenderDevice( this, "ini:Engine.Engine.WindowedRenderDevice", 1 );
+			if( !RenDev )
+				Client->TryRenderDevice( this, "ini:Engine.Engine.WindowedRenderDevice", 0 );
+		}
+#endif
 		return 1;
 	}
 	else if( ParseCommand(&Cmd, TEXT("GetCurrentRes")) )
@@ -1509,6 +1541,10 @@ UBOOL UNSDLViewport::Exec( const TCHAR* Cmd, FOutputDevice& Ar )
 #ifdef __EMSCRIPTEN__
 			// HP2's options page calls SetRes on Apply; on the web the page owns the canvas size.
 			debugf( NAME_Log, TEXT("SetRes %ix%i ignored: the page sizes the canvas"), X, Y );
+#elif !defined(__ANDROID__)
+			// The render device takes the size in the current mode, windowed or fullscreen; if it cannot, fullscreen ends.
+			if( RenDev && !RenDev->SetRes( X, Y, ColorBytes, IsFullscreen() ) )
+				EndFullscreen();
 #else
 			// Note: FullscreenViewport tracking removed - Unreal 1 specific
 			// HP2: stay windowed unless already fullscreen (the retail SetRes kept the current mode).
