@@ -225,7 +225,9 @@ working directory before SDL starts `SDL_main`, and the launcher (`MainActivity`
   asks for, with the copy as the alternative, only when the game is started from there. Shared storage is a FUSE
   mount and the engine's case-insensitive file lookup is slow there; the internal copy is the fast choice.
 - The launcher's resolution scale (0.1 to 1) sizes SDL's surface buffer (`SurfaceHolder.setFixedSize`), which
-  Android scales to the screen; the engine sees the scaled size as its window.
+  Android scales to the screen; the engine sees the scaled size as its window. SDL's surface view (`FrameSurface`)
+  scales every touch and mouse position from the screen to that buffer before SDL reads it, so a tap lands where it
+  is drawn at every scale.
 
 Controls: a pad through NSDLDrv's game-controller path (`UseJoystick`, the pad layout of `DefUser.ini`); touch
 as the mouse in the menus (the book, the cut-scene console and the vendor bar: tap to click, the cursor at the
