@@ -18,6 +18,8 @@
 
 extern NSDLDRV_API UBOOL GTickDue;
 
+class FNSDLInputTest;
+
 //
 // A SDL2 viewport.
 //
@@ -81,8 +83,12 @@ private:
 	INT DisplayIndex;
 	SDL_Rect DisplaySize;
 	SWORD JoyAxis[SDL_CONTROLLER_AXIS_MAX];
+	SWORD MoveStick[2];	// the left stick's X and Y before any dead zone: the move stick (TickMoveStickWalk)
 	void UpdatePadAxis( INT Axis, INT NewValue );	// one stick or trigger value, read from the pad's state
+	void TickMoveStickWalk();
 	void ReleasePad();	// every pad key up and the axes zeroed (the pad went, or UseJoystick went off)
+	FNSDLInputTest* InputTest;	// the input test channel (-INPUTTEST=), NULL without it
+	friend class FNSDLInputTest;
 	UBOOL QuitRequested;
 	FTime InputUpdateTime; // HP2 433: appSeconds() returns FTime
 public:
@@ -122,6 +128,7 @@ class NSDLDRV_API UNSDLClient : public UClient, public FNotifyHook
 	FLOAT ScaleRUV;
 	FLOAT DeadZoneXYZ;
 	FLOAT DeadZoneRUV;
+	FLOAT PadWalkTilt;	// the move stick out of its dead zone but tilted less than this (0..1) walks; 0: never
 
 	// Constructors.
 	UNSDLClient();
