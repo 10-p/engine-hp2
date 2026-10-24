@@ -154,8 +154,8 @@ sweep check the layout. The UTGLR fork rounds its pointers through the engine's 
   `True` opens the first one present; a pad connected later opens on `SDL_CONTROLLERDEVICEADDED`. Sticks and triggers
   are read from the pad's state each tick; on the web the press that made the browser list the pad is read from
   `navigator.getGamepads()` and given to the game as a tap. The left stick tilted out of its dead zone (radially;
-  each axis keeps its own dead zone, so a push ahead does not turn Harry) but below `PadWalkTilt` (0.5 of the
-  stick's travel; 0 never) walks, as the Walking button does: the stick keeps a bit of its own set in the player's
+  each axis keeps its own dead zone, so a push ahead does not turn Harry) but below `[NSDLDrv.NSDLClient] PadWalkTilt`
+  (0.5 of the stick's travel; 0 never) walks, as the Walking button does: the stick keeps a bit of its own set in the player's
   `bRun` (the Walking key writes the whole byte; the stick sets its bit again the next tick). The compiled defaults
   (Scale, dead zones) are in `UNSDLClient::StaticConstructor`. Log lines: `NSDLClient: game pad connected: <name>`, `disconnected`, `buttons held
   at the connect given to the game: 0x<mask>`, `game pads on|off (UseJoystick)`.
@@ -242,10 +242,12 @@ Controls: a pad through NSDLDrv's game-controller path (`UseJoystick`, the pad l
 as the mouse in the menus (the book, the cut-scene console and the vendor bar: tap to click, the cursor at the
 finger); in play an on-screen overlay (a move stick on the left half, drag to look on the right, CAST, JUMP and
 MENU buttons) that drives the engine through `Source/NSDLDrv/Src/NSDLAndroid.cpp` on the mouse and pad keys
-`DefUser.ini` binds. The move stick tilts fully `MOVE_FULL_TILT_DP` (12 dp) from where the finger is held, in the
-drag's direction, with a dead zone of `MOVE_DEAD_ZONE_DP` (3 dp) for a resting finger and for each axis (its X turns
-Harry); past full tilt the held point follows the finger (`GameActivity.java`). It never walks. The system's Back key
-is Escape (it opens and closes the book). The prototype's title level
+`DefUser.ini` binds. The move stick tilts fully as the launcher's "Touch move stick" settings say: full speed at a
+drag of 12 dp from where the finger is held (4 to 60), a dead zone of 3 dp for a resting finger and one of 3 dp for
+each axis, as its X turns Harry (each 0 to 10, always below full speed), saved with the launcher's other settings and
+handed to the game when it starts (`GameActivity.EXTRA_MOVE_FULL_TILT_DP`, `EXTRA_MOVE_DEAD_ZONE_DP`,
+`EXTRA_MOVE_AXIS_DEAD_ZONE_DP`); past full tilt the held point follows the finger. It never walks. The system's Back
+key is Escape (it opens and closes the book). The prototype's title level
 is play, not a menu: its Start is the spell cursor's target (drag on the right half moves the cursor, CAST
 clicks), as with a mouse. XOpenGLDrv draws without clip planes on the ES profile, as on the web.
 
