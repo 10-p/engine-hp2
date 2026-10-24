@@ -14,7 +14,7 @@ Everything is built and run inside the workspace `/home/ion/WorkUnreal` (`$W` be
 | `wasm` | `build-wasm/SDLLaunch/SDLLaunch.{js,wasm,data}`, `meta.json` | web, `-O2` with DWARF and assertions |
 | `wasm-debug` | `build-wasm-debug/SDLLaunch/…` | web at `-O0` |
 | `wasm-perf` | `build-wasm-perf/SDLLaunch/…`, `SDLLaunch.js.symbols` | web shipping build (linked `-O3 -g0`, no assertions); what the frontend publishes |
-| `windows` | `build-windows/Game/Game.exe`, `OpenAL32.dll`, `build-windows/UCC/ucc-bin.exe` | Windows x86 (MinGW-w64 cross), one self-contained exe |
+| `windows` | `build-windows/Game/Game.exe`, `OpenAL32.dll`, `build-windows/UCC/ucc.exe` | Windows x86 (MinGW-w64 cross), one self-contained exe |
 | `android-arm64` | `build-android-arm64/Game/libHP2.so`, `_deps/sdl2-build/libSDL2.so`, `libhp2_android_bridge.so` | the game as one shared library for Android arm64 (API 30, shared libc++; needs `ANDROID_NDK_HOME`): the configuration the Gradle project in `Android/` builds into the APK |
 | `windows64` | `build-windows64/…` (the same files) | the same for x86_64 |
 
@@ -279,9 +279,9 @@ At 64 bits a WinSock `SOCKET` is 8 bytes: `InternetLink`'s script `int Socket` h
 Wine's file lookup is case-insensitive, so a Windows run says nothing about the path and case handling; test that
 natively or on the web. Stop a hung prefix with `wineserver -k`.
 
-`ucc-bin.exe` is the console tool, with the system DLLs only (no `OpenAL32.dll`): it reads its arguments, its own
-`HP.ini` and writes `ucc-bin.log` as `ucc-bin` does on Linux (`wine ucc-bin.exe help`), and the console's Ctrl-C (a
-SIGINT to the wine process) asks it to exit cleanly. `mkrun-hp2.sh --windows` copies it beside `Game.exe`.
+`ucc.exe` is the console tool, the retail UCC's name, with the system DLLs only (no `OpenAL32.dll`): it reads its
+arguments and its own `HP.ini` as `ucc-bin` does on Linux and writes `ucc.log` (`wine ucc.exe help`), and the console's
+Ctrl-C (a SIGINT to the wine process) asks it to exit cleanly. `mkrun-hp2.sh --windows` copies it beside `Game.exe`.
 
 ## CI
 

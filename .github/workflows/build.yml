@@ -121,11 +121,11 @@ jobs:
           if [ -n "$bad" ]; then echo "::error::non-system DLL imports: $bad"; exit 1; fi
           test -f build-${{ matrix.preset }}/Game/OpenAL32.dll
 
-      # ucc-bin.exe, the console tool, needs no DLL beside it: system DLLs only.
-      - name: Check ucc-bin.exe imports only system DLLs
+      # ucc.exe, the console tool, needs no DLL beside it: system DLLs only.
+      - name: Check ucc.exe imports only system DLLs
         run: |
           set -euo pipefail
-          imports=$(${{ matrix.objdump }} -p build-${{ matrix.preset }}/UCC/ucc-bin.exe | sed -n 's/^\tDLL Name: //p' | sort -u)
+          imports=$(${{ matrix.objdump }} -p build-${{ matrix.preset }}/UCC/ucc.exe | sed -n 's/^\tDLL Name: //p' | sort -u)
           echo "$imports"
           bad=$(echo "$imports" | grep -viE '^(ADVAPI32|GDI32|IMM32|KERNEL32|msvcrt|ole32|OLEAUT32|SETUPAPI|SHELL32|USER32|VERSION|WINMM|WS2_32)\.dll$' || true)
           if [ -n "$bad" ]; then echo "::error::non-system DLL imports: $bad"; exit 1; fi
@@ -136,7 +136,7 @@ jobs:
           path: |
             build-${{ matrix.preset }}/Game/Game.exe
             build-${{ matrix.preset }}/Game/OpenAL32.dll
-            build-${{ matrix.preset }}/UCC/ucc-bin.exe
+            build-${{ matrix.preset }}/UCC/ucc.exe
           if-no-files-found: error
           retention-days: 7
 
