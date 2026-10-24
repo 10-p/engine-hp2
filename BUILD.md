@@ -144,9 +144,9 @@ sweep check the layout. The UTGLR fork rounds its pointers through the engine's 
 - **`-UFRONTLOG`** also logs the port's diagnostic and repeated lines (`GUfrontLog`): the `[AutoFOV]` lines, the
   `[mouse]` capture hand-overs, NOpenALDrv's `first EA-XA stream` / `first PCM sound` / `first lip-synced line` and
   first reverb zone, the `[WebRTC-LAN]` discovery rounds, and the device information of every render device after
-  the process's first (a fullscreen switch re-creates it): XOpenGLDrv's extension list, capability lines and
-  shader-compile messages, UTGLR's `GL_EXTENSIONS` and `Device supports` lines. The tests pass it; a player's log
-  leaves them out.
+  the process's first (a fullscreen switch re-creates it): the GL strings, XOpenGLDrv's extension list, capability
+  lines, VSync state, flushes and shader-compile messages, UTGLR's `GL_EXTENSIONS`, `Device supports` lines and
+  buffer and texture limits. The tests pass it; a player's log leaves them out.
   Status lines, warnings, errors and console-command answers are always logged.
 - **The command line holds 4,096 characters** (launcher, UCC, Core's `GCmdLine`); a token that does not fit is dropped
   whole, with a warning once the log is up.
