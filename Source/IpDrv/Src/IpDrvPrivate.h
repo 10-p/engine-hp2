@@ -44,6 +44,7 @@ Revision history:
 	#include <errno.h>
 	#include <pthread.h>
 	#include <fcntl.h>
+	#include <poll.h>
 #endif
 
 #include "Engine.h"

@@ -10,8 +10,8 @@
 	{ 
 		return *(SOCKET*)&Socket;
 	}
-	// Does this link own a socket? On BSD sockets 0 is a valid descriptor, INVALID_SOCKET (-1) is none and
-	// FD_SET(-1) writes outside the fd_set, so every "has a socket" test uses this, not `if( GetSocket() )`.
+	// Does this link own a socket? On BSD sockets 0 is a valid descriptor and INVALID_SOCKET (-1) is none, so
+	// every "has a socket" test uses this, not `if( GetSocket() )`.
 	UBOOL HasSocket()
 	{
 		return GetSocket() != INVALID_SOCKET;
