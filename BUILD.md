@@ -236,7 +236,10 @@ Controls: a pad through NSDLDrv's game-controller path (`UseJoystick`, the pad l
 as the mouse in the menus (the book, the cut-scene console and the vendor bar: tap to click, the cursor at the
 finger); in play an on-screen overlay (a move stick on the left half, drag to look on the right, CAST, JUMP and
 MENU buttons) that drives the engine through `Source/NSDLDrv/Src/NSDLAndroid.cpp` on the mouse and pad keys
-`DefUser.ini` binds. The system's Back key is Escape (it opens and closes the book). The prototype's title level
+`DefUser.ini` binds. The move stick tilts fully `MOVE_FULL_TILT_DP` (12 dp) from where the finger is held, in the
+drag's direction, with a dead zone of `MOVE_DEAD_ZONE_DP` (3 dp) for a resting finger and for each axis (its X turns
+Harry); past full tilt the held point follows the finger (`GameActivity.java`). It never walks. The system's Back key
+is Escape (it opens and closes the book). The prototype's title level
 is play, not a menu: its Start is the spell cursor's target (drag on the right half moves the cursor, CAST
 clicks), as with a mouse. XOpenGLDrv draws without clip planes on the ES profile, as on the web.
 
