@@ -353,9 +353,9 @@ add_subdirectory(Engine)
 add_subdirectory(Render)
 add_subdirectory(IpDrv)
 add_subdirectory(Fire)
-# ucc — the command-line tool (commandlets such as `make`). Native Linux only: there is no Windows, web or
-# Android ucc.
-if(NOT EMSCRIPTEN AND NOT MINGW AND NOT UE_ANDROID_CLIENT)
+# ucc — the command-line tool (commandlets such as `make`), on Linux and Windows. There is no web or Android
+# ucc.
+if(NOT EMSCRIPTEN AND NOT UE_ANDROID_CLIENT)
   add_subdirectory(UCC)
 endif()
 
