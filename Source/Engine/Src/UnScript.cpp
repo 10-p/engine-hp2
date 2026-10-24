@@ -459,11 +459,13 @@ void APawn::execClientHearSound( FFrame& Stack, RESULT_DECL )
 	FLOAT Volume = 0.01f * Parameters.X;	// TG ALPHA - why the 0.01 factor???
 	FLOAT Radius = Parameters.Y;
 	FLOAT Pitch  = 0.01f * Parameters.Z;
+	// A sound whose package is not in the connection's package map (AllDialog, loaded on demand) arrives as None.
 	if
-	(	IsA(APlayerPawn::StaticClass()) 
+	(	IsA(APlayerPawn::StaticClass())
 	&&	((APlayerPawn*)this)->Player
 	&&	((APlayerPawn*)this)->Player->IsA(UViewport::StaticClass())
-	&&	GetLevel()->Engine->Audio )
+	&&	GetLevel()->Engine->Audio
+	&&	Sound )
 	{
 		if( Actor && Actor->bDeleteMe )
 			Actor = NULL;

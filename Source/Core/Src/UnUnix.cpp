@@ -819,8 +819,8 @@ void appPlatformPreInit()
 	Exit signals.
 -----------------------------------------------------------------------------*/
 
-// SIGTERM, SIGHUP and SIGINT ask the main loop to exit cleanly. Before the main loop runs there is nothing to
-// leave cleanly, so the process ends at once; a second signal while an exit is pending is reported and ignored.
+// SIGTERM, SIGHUP and SIGINT ask the main loop to exit cleanly; before it runs the process ends at once. A signal
+// while an exit is pending (an earlier signal's or the Exit command's, the shutdown included) is reported and ignored.
 #ifndef __EMSCRIPTEN__
 static volatile INT GExitSignals = 0;
 
@@ -837,15 +837,15 @@ static void appWriteSignalText( const char* A, const char* B )
 
 static UBOOL appHandleExitSignal( const char* Name )
 {
+	if( GExitSignals++ || GIsRequestingExit )
+	{
+		appWriteSignalText( Name, ": exit already requested; this one is ignored.\n" );
+		return 1;
+	}
 	if( !GIsRunning )
 	{
 		appWriteSignalText( Name, ": before the main loop, exiting now.\n" );
 		_exit( 1 );
-	}
-	if( GExitSignals++ )
-	{
-		appWriteSignalText( Name, ": exit already requested; this one is ignored.\n" );
-		return 1;
 	}
 	appWriteSignalText( Name, ": requesting exit.\n" );
 	GIsRequestingExit = 1;
