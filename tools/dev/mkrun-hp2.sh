@@ -40,7 +40,7 @@ mkdir -p "$RUN/Save"
 if [ "$WINDOWS" = 1 ]; then
     cp -f --remove-destination "$BUILD/Game/Game.exe" "$RUN/System/"
     for dll in "$BUILD"/Game/*.dll; do [ -e "$dll" ] && cp -f --remove-destination "$dll" "$RUN/System/"; done
-    [ -e "$BUILD/UCC/ucc-bin.exe" ] && cp -f --remove-destination "$BUILD/UCC/ucc-bin.exe" "$RUN/System/"
+    [ -e "$BUILD/UCC/ucc.exe" ] && cp -f --remove-destination "$BUILD/UCC/ucc.exe" "$RUN/System/"
 else
     cp -f --remove-destination "$BUILD/Game/Game" "$RUN/System/"
     chmod +x "$RUN/System/Game"

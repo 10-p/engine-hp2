@@ -8,8 +8,12 @@ set(SRC_FILES
 
 add_executable(${PROJECT_NAME} ${SRC_FILES})
 
-# The binary is `ucc-bin`, the classic Linux UE1 name.
-set_target_properties(${PROJECT_NAME} PROPERTIES OUTPUT_NAME ucc-bin)
+# The binary is `ucc-bin`, the classic Linux UE1 name, and `ucc.exe` on Windows, the original UCC.exe's name.
+if(WIN32)
+  set_target_properties(${PROJECT_NAME} PROPERTIES OUTPUT_NAME ucc)
+else()
+  set_target_properties(${PROJECT_NAME} PROPERTIES OUTPUT_NAME ucc-bin)
+endif()
 
 target_include_directories(${PROJECT_NAME}
   PRIVATE
