@@ -242,6 +242,10 @@ working directory before SDL starts `SDL_main`, and the launcher (`MainActivity`
   Android scales to the screen; the engine sees the scaled size as its window. SDL's surface view (`FrameSurface`)
   scales every touch and mouse position from the screen to that buffer before SDL reads it, so a tap lands where it
   is drawn at every scale.
+- The launcher's renderer selection, at the bottom of its page (the game's choice, then XOpenGL and Software; Null
+  for debugging), adds that render device's `-*RENDERER` switch after any command line the launcher was started
+  with. The game keeps the device it last started with, also under "The game's choice": a device whose GPU draws the
+  default wrong is switched once.
 
 Controls: a pad through NSDLDrv's game-controller path (`UseJoystick`, the pad layout of `DefUser.ini`); touch
 as the mouse in the menus (the book, the cut-scene console and the vendor bar: tap to click, the cursor at the
