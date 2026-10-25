@@ -9,8 +9,10 @@ import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
+import android.graphics.Point;
 import android.graphics.Rect;
 import android.graphics.RectF;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.SystemClock;
 import android.util.Log;
@@ -137,8 +139,8 @@ public class GameActivity extends SDLActivity {
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);
         getWindow().setStatusBarColor(Color.TRANSPARENT);
         getWindow().setNavigationBarColor(Color.TRANSPARENT);
-        getWindow().setNavigationBarContrastEnforced(false);
-        getWindow().setDecorFitsSystemWindows(false);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) getWindow().setNavigationBarContrastEnforced(false);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) getWindow().setDecorFitsSystemWindows(false);
 
         try {
             addContentView(new Hp2TouchOverlayView(this), new FrameLayout.LayoutParams(
@@ -171,7 +173,7 @@ public class GameActivity extends SDLActivity {
 
     /** The whole screen's size in landscape, the way the game holds it: the long side first. */
     static int[] landscapeScreen(Activity a) {
-        Rect b = a.getWindowManager().getMaximumWindowMetrics().getBounds();
+        Rect b = maximumWindowBounds(a);
         return new int[] { Math.max(b.width(), b.height()), Math.min(b.width(), b.height()) };
     }
 
@@ -484,5 +486,13 @@ public class GameActivity extends SDLActivity {
             if (jump) { jump = false; nativeTouchButton(BTN_JUMP, false); }
             if (menu) { menu = false; nativeTouchButton(BTN_MENU, false); }
         }
+    }
+
+    /** The largest window's bounds: WindowMetrics from Android 11, the display's real size before. */
+    static Rect maximumWindowBounds(Activity a) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) return a.getWindowManager().getMaximumWindowMetrics().getBounds();
+        Point p = new Point();
+        a.getWindowManager().getDefaultDisplay().getRealSize(p);
+        return new Rect(0, 0, p.x, p.y);
     }
 }

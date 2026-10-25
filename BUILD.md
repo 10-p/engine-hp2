@@ -186,7 +186,7 @@ oracle compares the decoded amplitude with the lip-sync tables shipped in `AllDi
 `Android/` is a Gradle/NDK project (Android Gradle plugin 9.4.0, Gradle 9.6.0 through the wrapper, its daemon on
 an installed JDK 17) whose `externalNativeBuild` points at `Source/CMakeLists.txt` (targets `Game`, the game as
 `libHP2.so`, and `hp2_android_bridge`), built for `armeabi-v7a`, `arm64-v8a` and `x86_64` in one APK (x86
-Chromebooks and the emulator run the last). It needs platform 36 (`compileSdk`; `targetSdk` 34, `minSdk` 30), build-tools
+Chromebooks and the emulator run the last). It needs platform 36 (`compileSdk`; `targetSdk` 34, `minSdk` 24), build-tools
 36.0.0, NDK 28.2.13676358 and CMake 4.1.2 or newer. Ubuntu's packages install the SDK into `/usr/lib/android-sdk`;
 `local.properties` names it and the distribution's CMake:
 
@@ -234,9 +234,10 @@ working directory before SDL starts `SDL_main`, and the launcher (`MainActivity`
   it opens the picker first. "Copy settings and saves" writes the internal copy's `System/Game.ini`,
   `System/User.ini` and `Save/` back to the chosen folder.
 - A game folder in place: `Android/data/<applicationId>/files/<folder>` on shared storage or an SD card needs no
-  permission; `/sdcard/<folder>` or `<folder>` at the top of an SD card needs All files access, which the launcher
-  asks for, with the copy as the alternative, only when the game is started from there. Shared storage is a FUSE
-  mount and the engine's case-insensitive file lookup is slow there; the internal copy is the fast choice.
+  permission; `/sdcard/<folder>` or `<folder>` at the top of an SD card needs All files access (the storage
+  permission before Android 11), which the launcher asks for, with the copy as the alternative, only when the game
+  is started from there. Shared storage is a FUSE mount and the engine's case-insensitive file lookup is slow
+  there; the internal copy is the fast choice.
 - The launcher's resolution scale (0.1 to 1) sizes SDL's surface buffer (`SurfaceHolder.setFixedSize`), which
   Android scales to the screen; the engine sees the scaled size as its window. SDL's surface view (`FrameSurface`)
   scales every touch and mouse position from the screen to that buffer before SDL reads it, so a tap lands where it
