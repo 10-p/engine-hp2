@@ -55,6 +55,9 @@ typedef void (AL_APIENTRY *LPALAUXILIARYEFFECTSLOTI)( ALuint, ALenum, ALint );
 #define ALC_STEREO_HRTF_SOFT 0x19B2
 #endif
 
+#if defined(__ANDROID__)
+#include "SDL2/SDL.h"		// before the engine's headers, whose macros (clock) its system headers would meet
+#endif
 #include "Engine.h"
 #include "UnRender.h"
 
@@ -119,6 +122,50 @@ static UBOOL ResolveEfx( ALCdevice* InDevice )
 		&& Efx.GenAuxiliaryEffectSlots && Efx.DeleteAuxiliaryEffectSlots && Efx.AuxiliaryEffectSloti;
 	return Efx.Present;
 }
+
+/*-----------------------------------------------------------------------------
+	The app in the background.
+-----------------------------------------------------------------------------*/
+
+#if defined(__ANDROID__)
+// SDL's event pump blocks the game thread until the app returns, and the output device is paused
+// (ALC_SOFT_pause_device), so nothing plays and openal-soft's mixer thread stops. SDL sends both events from that
+// pump, on the game thread: the first just before it blocks, the second right after it wakes.
+static LPALCDEVICEPAUSESOFT  AlcDevicePause  = NULL;
+static LPALCDEVICERESUMESOFT AlcDeviceResume = NULL;
+
+static int SDLCALL PauseInBackground( void* Device, SDL_Event* Event )
+{
+	if( Event->type == SDL_APP_DIDENTERBACKGROUND )
+	{
+		AlcDevicePause( (ALCdevice*)Device );
+		debugf( TEXT("NOpenALDrv: output paused (the app is in the background)") );
+	}
+	else if( Event->type == SDL_APP_WILLENTERFOREGROUND )
+	{
+		AlcDeviceResume( (ALCdevice*)Device );
+		debugf( TEXT("NOpenALDrv: output resumed") );
+	}
+	return 1;
+}
+
+static void WatchAppBackground( ALCdevice* InDevice, UBOOL On )
+{
+	if( !On )
+	{
+		SDL_DelEventWatch( PauseInBackground, InDevice );
+		return;
+	}
+	AlcDevicePause  = alcIsExtensionPresent( InDevice, "ALC_SOFT_pause_device" ) ? (LPALCDEVICEPAUSESOFT)alcGetProcAddress( InDevice, "alcDevicePauseSOFT" ) : NULL;
+	AlcDeviceResume = AlcDevicePause ? (LPALCDEVICERESUMESOFT)alcGetProcAddress( InDevice, "alcDeviceResumeSOFT" ) : NULL;
+	if( AlcDevicePause && AlcDeviceResume )
+		SDL_AddEventWatch( PauseInBackground, InDevice );
+	else
+		debugf( NAME_Warning, TEXT("NOpenALDrv: this OpenAL cannot pause its device (no ALC_SOFT_pause_device): sound plays on in the background") );
+}
+#else
+static void WatchAppBackground( ALCdevice* InDevice, UBOOL On ) {}
+#endif
 
 /*-----------------------------------------------------------------------------
 	Helpers.
@@ -297,6 +344,7 @@ void UNOpenALAudioSubsystem::Destroy()
 	}
 	if( SoundDevice )
 	{
+		WatchAppBackground( SoundDevice, 0 );
 		alcCloseDevice( SoundDevice );
 		SoundDevice = NULL;
 	}
@@ -315,6 +363,8 @@ void UNOpenALAudioSubsystem::ShutdownAfterError()
 			alSourceStop( Sources(i).Source );
 		debugf( NAME_Exit, TEXT("UNOpenALAudioSubsystem::ShutdownAfterError") );
 	}
+	if( SoundDevice )
+		WatchAppBackground( SoundDevice, 0 );
 	Super::ShutdownAfterError();
 	unguard;
 }
@@ -381,6 +431,7 @@ UBOOL UNOpenALAudioSubsystem::Init()
 		debugf( NAME_Init, TEXT("NOpenALDrv: makecurrent failed.") );
 		return 0;
 	}
+	WatchAppBackground( SoundDevice, 1 );
 
 	// Reverb: EFX's EAX reverb when the OpenAL library has EFX, otherwise none. UseReverb defaults off:
 	// ALAudio's EAX path is compiled out and no map carries I3DL2 data; with it on, the two bReverbZone maps

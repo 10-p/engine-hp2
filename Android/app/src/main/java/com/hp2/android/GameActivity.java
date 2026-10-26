@@ -291,13 +291,18 @@ public class GameActivity extends SDLActivity {
             iconCast = loadIcon("touch_overlay/fire.png");
             iconJump = loadIcon("touch_overlay/jump.png");
             iconMenu = loadIcon("touch_overlay/menu.png");
-            postDelayed(redrawRunnable, 66L);
         }
 
-        // Redraws every 66 ms, so the controls show and hide as a menu closes and opens.
+        // Redraws every 66 ms while the controls can be seen, so they show and hide as a menu closes and opens.
         private final Runnable redrawRunnable = new Runnable() {
             @Override public void run() { invalidate(); postDelayed(this, 66L); }
         };
+
+        @Override public void onVisibilityAggregated(boolean isVisible) {
+            super.onVisibilityAggregated(isVisible);
+            removeCallbacks(redrawRunnable);
+            if (isVisible) postDelayed(redrawRunnable, 66L);
+        }
 
         private Bitmap loadIcon(String assetPath) {
             try {
