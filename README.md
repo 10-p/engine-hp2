@@ -35,8 +35,9 @@ The baseline is the restructured prototype drop (`/home/ion/WorkUnreal/epic-sour
 - **OpenAL Soft audio** — NOpenALDrv, HP2's retail ALAudio ported to openal-soft, with an in-tree EA-XA ADPCM decoder
   and Ogg Vorbis music, natively and on the web.
 - **Android build** — a Gradle/NDK project for Android 7.0 and later builds the game as `libHP2.so` with SDL2, a launcher picks the game
-  folder, touch is the mouse in the menus and an on-screen overlay drives play, game pads take the shared path;
-  one app per branch (prototype and retail) that install side by side.
+  folder, touch is the mouse in the menus and an on-screen overlay drives play (hidden while a real pad is used,
+  back on a touch), game pads take the shared path; the game is suspended in the background (no tick, the OpenAL
+  device paused); one app per branch (prototype and retail) that install side by side.
 - **Windows build (MinGW-w64)** — one self-contained `Game.exe` (32- and 64-bit) with `OpenAL32.dll` beside it.
 - **UCC on every desktop build** — `ucc-bin` (Linux) and `ucc.exe` (Windows), 32- and 64-bit, beside the game: the
   commandlets (HP2 is single-player: there is no dedicated server).
