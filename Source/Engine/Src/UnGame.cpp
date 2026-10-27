@@ -237,6 +237,7 @@ void UGameEngine::Init()
 
 		// Create console.
 		UClass* ConsoleClass = StaticLoadClass( UConsole::StaticClass(), NULL, TEXT("ini:Engine.Engine.Console"), NULL, LOAD_NoFail, NULL );
+		UConsole::BoxMenuBook( ConsoleClass );
 		Viewport->Console = ConstructObject<UConsole>( ConsoleClass );
 		Viewport->Console->_Init( Viewport );
 

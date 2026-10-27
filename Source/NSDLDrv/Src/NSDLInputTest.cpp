@@ -59,9 +59,11 @@ void FNSDLInputTest::Tick( UNSDLViewport* Viewport )
 		const FVector& L = Actor ? Actor->Location : Zero;
 		const FVector& V = Actor ? Actor->Velocity : Zero;
 		const FVector& A = Actor ? Actor->Acceleration : Zero;
-		debugf( NAME_Log, TEXT("NSDLInputTest: watch %s %i %.4f %i %i %.1f %.1f %.1f %.1f %.1f %.1f %.1f %i"), *WatchTag, WatchIndex++,
+		// The view: the view target's rotation (a third-person camera), else the player's own view rotation.
+		const FRotator View = !Actor ? FRotator(0,0,0) : Actor->ViewTarget ? Actor->ViewTarget->Rotation : Actor->ViewRotation;
+		debugf( NAME_Log, TEXT("NSDLInputTest: watch %s %i %.4f %i %i %.1f %.1f %.1f %.1f %.1f %.1f %.1f %i %i %i"), *WatchTag, WatchIndex++,
 			appSeconds().GetFloat(), Actor ? Actor->Rotation.Yaw : 0, Actor ? Actor->Rotation.Pitch : 0, V.Size2D(),
-			L.X, L.Y, V.X, V.Y, A.X, A.Y, Actor ? (INT)Actor->bIsWalking : 0 );
+			L.X, L.Y, V.X, V.Y, A.X, A.Y, Actor ? (INT)Actor->bIsWalking : 0, View.Yaw, View.Pitch );
 		WatchLeft--;
 	}
 	for( ;; )
@@ -174,6 +176,24 @@ UBOOL FNSDLInputTest::Execute( UNSDLViewport* Viewport, const TCHAR* Line )
 		}
 		debugf( NAME_Log, TEXT("NSDLInputTest: virtual pad: unknown command") );
 		return 0;
+	}
+	else if( ParseCommand(&Cmd,TEXT("KEY")) )
+	{
+		ParseToken( Cmd, Name, 0 );
+		EInputKey Key;
+		if( !Viewport->Input || !Viewport->Input->FindKeyName( *Name, Key ) )
+		{
+			debugf( NAME_Log, TEXT("NSDLInputTest: unknown key") );
+			return 0;
+		}
+		Viewport->CauseInputEvent( Key, appAtoi( Cmd ) ? IST_Press : IST_Release );
+		return 1;
+	}
+	else if( ParseCommand(&Cmd,TEXT("MOUSE")) )
+	{
+		ParseToken( Cmd, Name, 0 );
+		Viewport->Client->Engine->MousePosition( Viewport, 0, appAtof( *Name ), appAtof( Cmd ) );
+		return 1;
 	}
 	else if( ParseCommand(&Cmd,TEXT("EXEC")) )
 	{

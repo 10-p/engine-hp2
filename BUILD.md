@@ -74,10 +74,11 @@ and messages on. `ucc-bin` uses its own `HP.ini`: `./ucc-bin Core.SimpleCommandl
 second one is ignored); before the main loop the process ends at once.
 
 `-INPUTTEST=<file>` opens the input test channel (`Source/NSDLDrv/Src/NSDLInputTest.h`): commands appended to the file
-drive a virtual SDL game controller that takes the pad's place, run console commands and watch Harry once per input
-tick. `tools/dev/inputtest/run.sh <run-tree> <scenario> <out-dir> [<args>]` runs the native build under Xvfb with it
-and feeds it a scenario (`move.scen`: the move stick's speed against tilt, its turn and the Walking button, on
-`GreatHall_G` with `-NULLRENDERER`); `rate.py` reads the watch lines.
+drive a virtual SDL game controller that takes the pad's place, press keys, place the pointer, run console commands
+and watch Harry and the camera once per input tick. `tools/dev/inputtest/run.sh <run-tree> <scenario> <out-dir>
+[<args>]` runs the native build under Xvfb with it and feeds it a scenario (`move.scen`: the move stick's speed against
+tilt, its turn and the Walking button, on `GreatHall_G` with `-NULLRENDERER`; `turn.scen`: the camera's turn rate
+from each stick's X at full and half tilt and from the Right arrow key); `rate.py` reads the watch lines.
 
 ## Checks before a commit that touches engine code
 
@@ -142,6 +143,10 @@ sweep check the layout. The UTGLR fork rounds its pointers through the engine's 
   (frames, fps, frame ms avg/min/max/p99, the 1% low, the viewport size). `Source/Engine/Src/UnFpsLog.cpp`.
 - **`Init: Language: <ext>`** at start-up: the language this run took (`[Engine.Engine] Language`, read after the
   `-ini:` overrides).
+- **The menu book on a screen that is not 4:3:** while HGame's book is open, the UWindow menus are drawn in the largest
+  4:3 box of the screen, centred, and the rest of the screen is black; the pointer is mapped into the box. HPConsole's
+  `RenderUWindow` is wrapped natively when the console class loads (`Source/Engine/Src/UnMenuBox.cpp`; the script
+  is unchanged). Log line: `Menu book: drawn in the largest 4:3 box of the screen`.
 - **`-UFRONTLOG`** also logs the port's diagnostic and repeated lines (`GUfrontLog`): the `[AutoFOV]` lines, the
   `[mouse]` capture hand-overs, NOpenALDrv's `first EA-XA stream` / `first PCM sound` / `first lip-synced line` and
   first reverb zone, the `[WebRTC-LAN]` discovery rounds, and the device information of every render device after
@@ -247,7 +252,8 @@ working directory before SDL starts `SDL_main`, and the launcher (`MainActivity`
   with. The game keeps the device it last started with, also under "The game's choice": a device whose GPU draws the
   default wrong is switched once.
 
-Controls: a pad through NSDLDrv's game-controller path (`UseJoystick`, the pad layout of `DefUser.ini`); touch
+Controls: a pad through NSDLDrv's game-controller path (`UseJoystick`, the pad layout of `DefUser.ini`: the look
+stick turns and tilts the camera as the mouse does, the move stick's X turns it as the arrow keys do); touch
 as the mouse in the menus (the book, the cut-scene console and the vendor bar: tap to click, the cursor at the
 finger); in play an on-screen overlay (a move stick on the left half, drag to look on the right, CAST, JUMP and
 MENU buttons) that drives the engine through `Source/NSDLDrv/Src/NSDLAndroid.cpp` on the mouse and pad keys

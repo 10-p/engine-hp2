@@ -9,12 +9,16 @@
 	                                        rightshoulder dpup dpdown dpleft dpright
 	  pad axis <sdl axis name> <value>      leftx lefty rightx righty: -32768..32767 (y down is +);
 	                                        lefttrigger righttrigger: 0..32767
+	  key <key name> <0|1>                  a key's press or release (the input system's names: Escape, Enter,
+	                                        LeftMouse, ...)
+	  mouse <x> <y>                         the absolute pointer position, in viewport pixels
 	  exec <console command>                run on the viewport
 	  watch <ticks> <tag>                   one "NSDLInputTest: watch <tag> <i> <seconds> <yaw> <pitch> <speed>
-	                                        <x> <y> <vx> <vy> <ax> <ay> <walking>" line per input tick, for <ticks>
-	                                        ticks (yaw, pitch: the pawn's rotation, which Harry moves along; speed:
-	                                        the horizontal one; x, y: the location; v, a: the velocity and the
-	                                        acceleration; walking: bIsWalking)
+	                                        <x> <y> <vx> <vy> <ax> <ay> <walking> <viewyaw> <viewpitch>" line per
+	                                        input tick, for <ticks> ticks (yaw, pitch: the pawn's rotation, which
+	                                        Harry moves along; speed: the horizontal one; x, y: the location; v, a:
+	                                        the velocity and the acceleration; walking: bIsWalking; view: the view
+	                                        target's rotation, HP2's camera, else the player's view rotation)
 	  log <text>                            a marker line
 	Without the switch nothing here runs.
 =============================================================================*/
