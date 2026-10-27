@@ -50,6 +50,10 @@ class ENGINE_API UConsole : public UObject, public FOutputDevice
 	DECLARE_FUNCTION(execSaveTimeDemo);
 	DECLARE_FUNCTION(execCreateNativeFont);
 
+	// HGame's menu book in the largest 4:3 box of the screen (UnMenuBox.cpp): wraps HPConsole.RenderUWindow.
+	static void BoxMenuBook( UClass* ConsoleClass );
+	DECLARE_FUNCTION(execRenderUWindowBoxed);
+
 	// Script events.
     void eventMessage(class APlayerReplicationInfo* PRI, const FString& S, class AZoneInfo* PZone, FName Name)
     {

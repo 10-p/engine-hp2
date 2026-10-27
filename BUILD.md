@@ -142,6 +142,10 @@ sweep check the layout. The UTGLR fork rounds its pointers through the engine's 
   (frames, fps, frame ms avg/min/max/p99, the 1% low, the viewport size). `Source/Engine/Src/UnFpsLog.cpp`.
 - **`Init: Language: <ext>`** at start-up: the language this run took (`[Engine.Engine] Language`, read after the
   `-ini:` overrides).
+- **The menu book on a screen that is not 4:3:** while HGame's book is open, the UWindow menus are drawn in the largest
+  4:3 box of the screen, centred, and the rest of the screen is black; the pointer is mapped into the box. HPConsole's
+  `RenderUWindow` is wrapped natively when the console class loads (`Source/Engine/Src/UnMenuBox.cpp`; the script
+  is unchanged). Log line: `Menu book: drawn in the largest 4:3 box of the screen`.
 - **`-UFRONTLOG`** also logs the port's diagnostic and repeated lines (`GUfrontLog`): the `[AutoFOV]` lines, the
   `[mouse]` capture hand-overs, NOpenALDrv's `first EA-XA stream` / `first PCM sound` / `first lip-synced line` and
   first reverb zone, the `[WebRTC-LAN]` discovery rounds, and the device information of every render device after

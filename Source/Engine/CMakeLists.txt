@@ -38,6 +38,7 @@ set(SRC_FILES
   "Src/UnIn.cpp"
   "Src/UnLevAct.cpp"
   "Src/UnLevel.cpp"
+  "Src/UnMenuBox.cpp"
   "Src/UnLevTic.cpp"
   "Src/UnMesh.cpp"
   "Src/UnModel.cpp"
