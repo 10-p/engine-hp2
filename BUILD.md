@@ -251,7 +251,8 @@ working directory before SDL starts `SDL_main`, and the launcher (`MainActivity`
   with. The game keeps the device it last started with, also under "The game's choice": a device whose GPU draws the
   default wrong is switched once.
 
-Controls: a pad through NSDLDrv's game-controller path (`UseJoystick`, the pad layout of `DefUser.ini`); touch
+Controls: a pad through NSDLDrv's game-controller path (`UseJoystick`, the pad layout of `DefUser.ini`: the look
+stick turns and tilts the camera as the mouse does, the move stick's X turns it as the arrow keys do); touch
 as the mouse in the menus (the book, the cut-scene console and the vendor bar: tap to click, the cursor at the
 finger); in play an on-screen overlay (a move stick on the left half, drag to look on the right, CAST, JUMP and
 MENU buttons) that drives the engine through `Source/NSDLDrv/Src/NSDLAndroid.cpp` on the mouse and pad keys
