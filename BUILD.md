@@ -172,7 +172,9 @@ sweep check the layout. The UTGLR fork rounds its pointers through the engine's 
 - **Game pads** (`Source/NSDLDrv`; one pad, the first connected): `[NSDLDrv.NSDLClient] UseJoystick` (on by default) is
   read every tick, so `set ini:Engine.Engine.ViewportManager UseJoystick False` closes the pad (every key released) and
   `True` opens the first one present; a pad connected later opens on `SDL_CONTROLLERDEVICEADDED`. Sticks and triggers
-  are read from the pad's state each tick; on the web the press that made the browser list the pad is read from
+  are read from the pad's state each tick, and the sticks (the touch move stick on Android too) are given to the
+  player once a frame for the frame's own length (`UNSDLViewport::ReadInput`), so a held stick has the same value
+  every frame, as a held key does; on the web the press that made the browser list the pad is read from
   `navigator.getGamepads()` and given to the game as a tap. The left stick tilted out of its dead zone (radially;
   each axis keeps its own dead zone, so a push ahead does not turn Harry) but below `[NSDLDrv.NSDLClient] PadWalkTilt`
   (0.5 of the stick's travel; 0 never) walks, as the Walking button does: the stick keeps a bit of its own set in the player's

@@ -8,8 +8,8 @@
 	which turns them into mouse events, and the viewport takes their absolute positions for the menu's cursor.
 
 	The overlay runs on Android's UI thread, so it writes its intent here through JNI and
-	UNSDLViewport::TickAndroidTouch (the engine thread) turns it into the CauseInputEvent calls a mouse and a
-	pad would make, on keys DefUser.ini binds:
+	UNSDLViewport::TickAndroidTouch (the engine thread; the move stick in ReadAndroidStick, once a frame) turns it
+	into the CauseInputEvent calls a mouse and a pad would make, on keys DefUser.ini binds:
 	  move stick    -> IK_JoyX / IK_JoyY       (aStrafe sideways / aBaseY forward, the pad's left stick)
 	  drag-look     -> IK_MouseX / IK_MouseY   (the mouse's own axes)
 	  CAST          -> IK_LeftMouse            (AltFire: the spell, the vendor reply)
@@ -290,26 +290,6 @@ void UNSDLViewport::TickAndroidTouch()
 			CauseInputEvent( IK_MouseY, IST_Axis, -LookY );
 	}
 
-	// The move stick as the pad's left stick: the value every tick while it is held, and one 0 when it is
-	// released. The scale and signs are the pad path's (TickInput: ScaleXYZ, JoyAxisDefaultScale, InvertY,
-	// per second); the overlay's Y is SDL's, down positive, as a pad's.
-	{
-		const FTime CurTime = appSeconds();
-		const FLOAT DeltaTime = Clamp( (FLOAT)(CurTime - InputUpdateTime), 0.f, 0.25f );
-		const FLOAT MoveX = GAndroidMoveX.load( std::memory_order_relaxed );
-		const FLOAT MoveY = GAndroidMoveY.load( std::memory_order_relaxed );
-		const FLOAT ScaleX = Client->ScaleXYZ * JoyAxisDefaultScale[SDL_CONTROLLER_AXIS_LEFTX] * DeltaTime;
-		FLOAT ScaleY = Client->ScaleXYZ * JoyAxisDefaultScale[SDL_CONTROLLER_AXIS_LEFTY] * DeltaTime;
-		if( Client->InvertY )
-			ScaleY = -ScaleY;
-		if( MoveX != 0.f || GAndroidLastMoveX != 0.f )
-			CauseInputEvent( IK_JoyX, IST_Axis, MoveX * ScaleX );
-		if( MoveY != 0.f || GAndroidLastMoveY != 0.f )
-			CauseInputEvent( IK_JoyY, IST_Axis, MoveY * ScaleY );
-		GAndroidLastMoveX = MoveX;
-		GAndroidLastMoveY = MoveY;
-	}
-
 	// Gyro aiming, in play (no menu, the game ticking): whole rotation units of the camera as the mouse's axes, past the
 	// mouse's sensitivity and inversion, times the field of view's scale the mouse's turn has (DesiredFOV / DefaultFOV).
 	// The camera turns SmoothMouseX * DeltaTime * fRotSpeed units a tick, and SmoothMouseX is the mouse's axis after
@@ -337,6 +317,31 @@ void UNSDLViewport::TickAndroidTouch()
 			GAndroidGyroCarry[0] = GAndroidGyroCarry[1] = 0.f;
 		AndroidGyroNote( InPlay ? Yaw : 0.f, InPlay ? Pitch : 0.f, YawUnits, PitchUnits, Zoom );
 	}
+
+	unguard;
+}
+
+//
+// The overlay's move stick as the pad's left stick, once a frame for the frame's DeltaSeconds (ReadInput): the value
+// every frame while it is held, and one 0 when it is released. The scale and signs are the pad path's (ScaleXYZ,
+// JoyAxisDefaultScale, InvertY, per second); the overlay's Y is SDL's, down positive, as a pad's.
+//
+void UNSDLViewport::ReadAndroidStick( FLOAT DeltaSeconds )
+{
+	guard(UNSDLViewport::ReadAndroidStick);
+
+	const FLOAT MoveX = GAndroidMoveX.load( std::memory_order_relaxed );
+	const FLOAT MoveY = GAndroidMoveY.load( std::memory_order_relaxed );
+	const FLOAT ScaleX = Client->ScaleXYZ * JoyAxisDefaultScale[SDL_CONTROLLER_AXIS_LEFTX] * DeltaSeconds;
+	FLOAT ScaleY = Client->ScaleXYZ * JoyAxisDefaultScale[SDL_CONTROLLER_AXIS_LEFTY] * DeltaSeconds;
+	if( Client->InvertY )
+		ScaleY = -ScaleY;
+	if( MoveX != 0.f || GAndroidLastMoveX != 0.f )
+		CauseInputEvent( IK_JoyX, IST_Axis, MoveX * ScaleX );
+	if( MoveY != 0.f || GAndroidLastMoveY != 0.f )
+		CauseInputEvent( IK_JoyY, IST_Axis, MoveY * ScaleY );
+	GAndroidLastMoveX = MoveX;
+	GAndroidLastMoveY = MoveY;
 
 	unguard;
 }
