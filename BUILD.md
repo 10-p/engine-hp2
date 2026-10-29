@@ -278,10 +278,13 @@ the device's own turn and twist. HP2's camera turns only with the mouse's axes, 
 turn to `aMouseX` and `aMouseY` in whole rotation units of the camera (65536 a turn, the rest carried to the next
 tick), past ReadInput's 20 / DeltaTime, PlayerInput's `MouseSensitivity` and field of view and the camera's
 `CurrentSet.fRotSpeed` (none where the camera takes no mouse input), and against `bInvertMouse`: the mouse's settings
-do not change it. PlayerInput's two-tick average of the mouse keeps the total. While a menu is up, or over a load (the
-game not ticking for half a second), the turn is dropped. There is no smoothing, acceleration or dead zone of the
-gyro's own. With `-UFRONTLOG` the log has the totals once the gyro rests (`Gyro: <yaw> degrees right and <pitch> up in
-play in all, <n> yaw and <n> pitch units`).
+do not change it. A narrower field of view slows it as it slows the mouse: the turn is times `DesiredFOV / DefaultFOV`
+(the duel camera's 50 degrees, a level's FOV change; 1 at the player's own field of view, at any aspect ratio, since
+AutoFOV widens only the drawn view). PlayerInput's two-tick average of the mouse keeps the total. While a menu is up,
+or over a load (the game not ticking for half a second), the turn is dropped. There is no smoothing, acceleration or
+dead zone of the gyro's own. With `-UFRONTLOG` the log has the totals once the gyro rests (`Gyro: <yaw> degrees right
+and <pitch> up in play in all, <n> yaw and <n> pitch units (zoom <z>)`: the degrees before the zoom, the units after
+it, the zoom of the last turn).
 
 In the background (the home screen, the recent apps, another app on top) the game is suspended. SDL's activity
 pauses on `onStop`, and its event pump then blocks the game thread until the app returns, so nothing ticks;
