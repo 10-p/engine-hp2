@@ -1204,7 +1204,7 @@ UBOOL UNSDLViewport::CauseInputEvent( INT iKey, EInputAction Action, FLOAT Delta
 
 //
 // One stick or trigger value (SDL's -32768..32767; a trigger 0..32767). A trigger is a button with a threshold, a
-// stick has its dead zone applied and is sent every tick while it is off centre (TickInput).
+// stick has its dead zone applied and is sent every frame while it is off centre (ReadInput).
 //
 void UNSDLViewport::UpdatePadAxis( INT Axis, INT NewValue )
 {
@@ -1248,7 +1248,7 @@ static INT GPadsOn = -1;	// UseJoystick as last seen (-1: not yet; the client's 
 
 //
 // Nothing stays held when the pad goes (removed, or UseJoystick off): every pad key is released and the axes
-// TickInput re-sends are zeroed.
+// ReadInput re-sends are zeroed.
 //
 void UNSDLViewport::ReleasePad()
 {
@@ -1305,8 +1305,6 @@ UBOOL UNSDLViewport::TickInput()
 
 	SDL_Event Ev;
 	INT Tmp;
-	const FTime CurTime = appSeconds();
-	const FLOAT DeltaTime = CurTime - InputUpdateTime; // HP2 433: FTime - FTime -> FLOAT seconds
 	for( INT k = 0; k < GHeldTapNum; k++ )
 		CauseInputEvent( GHeldTap[k], IST_Release );
 	GHeldTapNum = 0;
@@ -1549,32 +1547,49 @@ UBOOL UNSDLViewport::TickInput()
 		for( INT a = 0; a < SDL_CONTROLLER_AXIS_MAX; a++ )
 			UpdatePadAxis( a, SDL_GameControllerGetAxis( GC, (SDL_GameControllerAxis)a ) );
 
-	// Constantly hammer the input system with axis events for axes that are not zero; the left stick is TickMoveStick's.
-	TickMoveStick( DeltaTime );
-	for ( INT i = 0; i < SDL_CONTROLLER_AXIS_MAX; ++i )
-	{
-		const BYTE Key = JoyAxisMap[i];
-		const SWORD Value = JoyAxis[i];
-		if ( i == SDL_CONTROLLER_AXIS_LEFTX || i == SDL_CONTROLLER_AXIS_LEFTY )
-			continue;
-		if ( Value && Key && Key >= IK_JoyX )
-		{
-			const FLOAT FltValue = Clamp( Value / 32767.f, -1.f, 1.f );
-			FLOAT Scale = ( Key >= IK_JoyX && Key <= IK_JoyZ ) ? Client->ScaleXYZ : Client->ScaleRUV;
-			Scale *= JoyAxisDefaultScale[i] * DeltaTime;
-			if ( ( Client->InvertV && Key == IK_JoyV ) || ( Client->InvertY && Key == IK_JoyY ) )
-				Scale = -Scale;
-			CauseInputEvent( Key, IST_Axis, FltValue * Scale );
-		}
-	}
-
 #if defined(__ANDROID__)
 	TickAndroidTouch();
 #endif
 
-	InputUpdateTime = CurTime;
-
 	return QuitRequested;
+
+	unguard;
+}
+
+//
+// The player's input for a frame of DeltaSeconds (-1 clears it after the frame). The sticks are given here, once a
+// frame and for the frame's own length, so ReadInput's 20 / DeltaSeconds gives a held stick the same value every
+// frame, as it gives a held key; the pad's state is read in TickInput.
+//
+void UNSDLViewport::ReadInput( FLOAT DeltaSeconds )
+{
+	guard(UNSDLViewport::ReadInput);
+
+	if( DeltaSeconds > 0.f )
+	{
+		// Constantly hammer the input system with axis events for axes that are not zero; the left stick is TickMoveStick's.
+		TickMoveStick( DeltaSeconds );
+		for ( INT i = 0; i < SDL_CONTROLLER_AXIS_MAX; ++i )
+		{
+			const BYTE Key = JoyAxisMap[i];
+			const SWORD Value = JoyAxis[i];
+			if ( i == SDL_CONTROLLER_AXIS_LEFTX || i == SDL_CONTROLLER_AXIS_LEFTY )
+				continue;
+			if ( Value && Key && Key >= IK_JoyX )
+			{
+				const FLOAT FltValue = Clamp( Value / 32767.f, -1.f, 1.f );
+				FLOAT Scale = ( Key >= IK_JoyX && Key <= IK_JoyZ ) ? Client->ScaleXYZ : Client->ScaleRUV;
+				Scale *= JoyAxisDefaultScale[i] * DeltaSeconds;
+				if ( ( Client->InvertV && Key == IK_JoyV ) || ( Client->InvertY && Key == IK_JoyY ) )
+					Scale = -Scale;
+				CauseInputEvent( Key, IST_Axis, FltValue * Scale );
+			}
+		}
+#if defined(__ANDROID__)
+		ReadAndroidStick( DeltaSeconds );
+#endif
+	}
+	UViewport::ReadInput( DeltaSeconds );
 
 	unguard;
 }
