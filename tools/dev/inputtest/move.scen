@@ -1,9 +1,10 @@
 # The move stick: the speed at five tilts straight ahead, the player's Walking button held at full tilt and the stick
-# after that button's release, then the turn rate and the move direction at stick angles between the axes at full and
-# at 0.4 tilt (the shipped layout turns Harry with the stick's X: Axis aBaseX). Every sample starts at one spot of
-# GreatHall_G with 500 units free ahead while Harry faces yaw 0; the hall's camera keeps the yaw a turn left, so the
-# turning samples come last and their acceleration's direction, not their speed, is the measure. A small tilt is
-# given the time it takes to reach full speed:
+# after that button's release, then the move direction at stick angles between the axes at full and at 0.4 tilt and
+# straight right and left (the shipped layout strafes with the stick's X: Axis aStrafe, at the speed of its Y), where
+# the acceleration's direction is the stick's angle and Harry's yaw does not turn with the stick. Every sample starts
+# at one spot of GreatHall_G with 500 units free ahead and room to the right while Harry faces yaw 0 (the left
+# strafe starts 250 units to the right, for room on its side). A small tilt is given the time it takes to reach full
+# speed:
 #   tools/dev/inputtest/run.sh <run-tree> move.scen <out-dir> GreatHall_G -NULLRENDERER
 #   tools/dev/inputtest/rate.py <out-dir>/game.log 0
 # The tags name the tilt and the stick's angle in degrees clockwise from straight ahead (speed-0.4: 0.4 ahead;
@@ -165,4 +166,28 @@ watch 20 dir-0.4-80
 sleep 0.8
 pad axis leftx 0
 pad axis lefty 0
+sleep 0.8
+exec TELEPORT 1110 -899 -275 0
+sleep 0.3
+pad axis leftx 32767
+sleep 0.8
+watch 20 dir-1.0-90
+sleep 0.8
+pad axis leftx 0
+sleep 0.8
+exec TELEPORT 1110 -650 -275 0
+sleep 0.3
+pad axis leftx -32767
+sleep 0.8
+watch 20 dir-1.0-270
+sleep 0.8
+pad axis leftx 0
+sleep 0.8
+exec TELEPORT 1110 -899 -275 0
+sleep 0.3
+pad axis leftx 13107
+sleep 1.7
+watch 20 dir-0.4-90
+sleep 0.8
+pad axis leftx 0
 sleep 0.8

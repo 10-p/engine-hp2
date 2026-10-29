@@ -1189,15 +1189,24 @@ void UNSDLViewport::ReleasePad()
 static const BYTE PadWalkBit = 0x40;
 
 //
-// The left stick tilted out of its dead zone (radially) but less than PadWalkTilt walks. Its axes keep their dead
-// zone per axis: the stick's X turns Harry, and the cross-shaped zone keeps a push ahead from turning him.
+// The left stick, the move stick. Its dead zone is radial, so a direction between the axes keeps both parts; out of
+// it, X and Y go to their bindings, and a tilt below PadWalkTilt walks.
 //
-void UNSDLViewport::TickMoveStickWalk()
+void UNSDLViewport::TickMoveStick( FLOAT DeltaTime )
 {
-	guard(UNSDLViewport::TickMoveStickWalk);
+	guard(UNSDLViewport::TickMoveStick);
 	const FLOAT X = MoveStick[0] / 32767.f, Y = MoveStick[1] / 32767.f;
 	const FLOAT Tilt = Min( (FLOAT)appSqrt( X*X + Y*Y ), 1.f );
-	const UBOOL Walk = Tilt > 0.f && Tilt >= Client->DeadZoneXYZ && Tilt < Client->PadWalkTilt;
+	UBOOL Walk = 0;
+	if( Tilt > 0.f && Tilt >= Client->DeadZoneXYZ )
+	{
+		const FLOAT Scale = Client->ScaleXYZ * DeltaTime;
+		if( X != 0.f )
+			CauseInputEvent( IK_JoyX, IST_Axis, X * Scale * JoyAxisDefaultScale[SDL_CONTROLLER_AXIS_LEFTX] );
+		if( Y != 0.f )
+			CauseInputEvent( IK_JoyY, IST_Axis, Y * Scale * JoyAxisDefaultScale[SDL_CONTROLLER_AXIS_LEFTY] * ( Client->InvertY ? -1.f : 1.f ) );
+		Walk = Tilt < Client->PadWalkTilt;
+	}
 	if( Actor )
 	{
 		if( Walk )
@@ -1449,11 +1458,14 @@ UBOOL UNSDLViewport::TickInput()
 		for( INT a = 0; a < SDL_CONTROLLER_AXIS_MAX; a++ )
 			UpdatePadAxis( a, SDL_GameControllerGetAxis( GC, (SDL_GameControllerAxis)a ) );
 
-	// Constantly hammer the input system with axis events for axes that are not zero.
+	// Constantly hammer the input system with axis events for axes that are not zero; the left stick is TickMoveStick's.
+	TickMoveStick( DeltaTime );
 	for ( INT i = 0; i < SDL_CONTROLLER_AXIS_MAX; ++i )
 	{
 		const BYTE Key = JoyAxisMap[i];
 		const SWORD Value = JoyAxis[i];
+		if ( i == SDL_CONTROLLER_AXIS_LEFTX || i == SDL_CONTROLLER_AXIS_LEFTY )
+			continue;
 		if ( Value && Key && Key >= IK_JoyX )
 		{
 			const FLOAT FltValue = Clamp( Value / 32767.f, -1.f, 1.f );
@@ -1464,7 +1476,6 @@ UBOOL UNSDLViewport::TickInput()
 			CauseInputEvent( Key, IST_Axis, FltValue * Scale );
 		}
 	}
-	TickMoveStickWalk();
 
 #if defined(__ANDROID__)
 	TickAndroidTouch();
