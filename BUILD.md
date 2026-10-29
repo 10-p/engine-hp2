@@ -157,6 +157,15 @@ sweep check the layout. The UTGLR fork rounds its pointers through the engine's 
   whole, with a warning once the log is up.
 - **`ucc make` saves are deterministic**: stable sorts in `SavePackage`, the `.int` files in Windows' order in
   `CacheDrivers`.
+- **Fullscreen** (native desktop, `Source/NSDLDrv`). Alt+Enter and `ToggleFullscreen` switch between the window and
+  fullscreen (the Enter press does not reach the game), and `[NSDLDrv.NSDLClient] StartupFullscreen` starts in
+  fullscreen. With `BorderlessFullscreen` (True, also in `Config/System/Default.ini`) fullscreen is SDL's desktop
+  fullscreen: the window covers its display at the display's own resolution, the game renders at that size
+  (`NSDLViewport: borderless fullscreen at <w>x<h>`), `FullscreenViewportX/Y` are left as they are, and `SetRes` (the
+  video page's resolution) is not applied there (`SetRes <w>x<h> not applied: borderless fullscreen stays at
+  <w>x<h>`). With `False` fullscreen is exclusive: the display changes to the mode nearest `FullscreenViewportX/Y`,
+  and `SetRes` changes the mode and keeps its size there. Leaving fullscreen gives the window back its size. The web
+  and Android builds do not read the key.
 - **Game pads** (`Source/NSDLDrv`; one pad, the first connected): `[NSDLDrv.NSDLClient] UseJoystick` (on by default) is
   read every tick, so `set ini:Engine.Engine.ViewportManager UseJoystick False` closes the pad (every key released) and
   `True` opens the first one present; a pad connected later opens on `SDL_CONTROLLERDEVICEADDED`. Sticks and triggers
