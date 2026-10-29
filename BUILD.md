@@ -184,8 +184,12 @@ sweep check the layout. The UTGLR fork rounds its pointers through the engine's 
   Without a switch the persisted `GameRenderDevice` is kept when it is a hardware default or the user's marked pick
   (`[Engine.Engine] ufrontUserRenderDevice`); else XOpenGL, then UTGLR; SoftDrv when the build has neither. A switch
   whose device is still the game device after `Engine->Init` is persisted with the marker. The launcher writes the
-  choice to `GameRenderDevice`, `WindowedRenderDevice` and `RenderDevice`; a device whose Init fails is tried again as
-  `WindowedRenderDevice`, and the start then stops with an error.
+  choice to `GameRenderDevice`, `WindowedRenderDevice` and `RenderDevice`.
+- **Software fallback** (`Source/NSDLDrv/Src/NSDLViewport.cpp`). A render device that cannot start (a window or GL
+  context the driver cannot give, no WebGL context in the browser, or a failed Init) gives way to SoftDrv for the rest
+  of the run, in a window without GL: `Render device <device> cannot start: falling back to
+  SoftDrv.SoftwareRenderDevice for this run`, once. `ToggleFullscreen` keeps SoftDrv. Nothing is written to the ini, so
+  the next start tries the chosen device again.
 - **NOpenGLESDrv** (`Source/NOpenGLESDrv`, `-NOPENGLESRENDERER`, never a default): the GLES2 device on WebGL 2 (WebGL 1
   with `-WEBGL=1` or without WebGL 2), on Android's GLES 2 context and natively on the desktop GL context, with HP2's
   render face: `DrawTriangles` (indexed lists, fans, plain lists; `MaxVertices()` 256), the 5-argument
