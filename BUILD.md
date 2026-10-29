@@ -76,7 +76,7 @@ second one is ignored); before the main loop the process ends at once.
 drive a virtual SDL game controller that takes the pad's place, press keys, place the pointer, run console commands
 and watch Harry and the camera once per input tick. `tools/dev/inputtest/run.sh <run-tree> <scenario> <out-dir>
 [<args>]` runs the native build under Xvfb with it and feeds it a scenario (`move.scen`: the move stick's speed against
-tilt, its turn and the Walking button, on `GreatHall_G` with `-NULLRENDERER`; `turn.scen`: the camera's turn rate
+tilt, its direction and the Walking button, on `GreatHall_G` with `-NULLRENDERER`; `turn.scen`: the camera's turn rate
 from each stick's X at full and half tilt and from the Right arrow key); `rate.py` reads the watch lines.
 
 ## Checks before a commit that touches engine code
@@ -252,13 +252,13 @@ working directory before SDL starts `SDL_main`, and the launcher (`MainActivity`
   default wrong is switched once.
 
 Controls: a pad through NSDLDrv's game-controller path (`UseJoystick`, the pad layout of `DefUser.ini`: the look
-stick turns and tilts the camera as the mouse does, the move stick's X turns it as the arrow keys do); touch
+stick turns and tilts the camera as the mouse does, the move stick moves Harry and its X strafes); touch
 as the mouse in the menus (the book, the cut-scene console and the vendor bar: tap to click, the cursor at the
 finger); in play an on-screen overlay (a move stick on the left half, drag to look on the right, CAST, JUMP and
 MENU buttons) that drives the engine through `Source/NSDLDrv/Src/NSDLAndroid.cpp` on the mouse and pad keys
 `DefUser.ini` binds. The move stick tilts fully as the launcher's "Touch move stick" settings say: full speed at a
 drag of 12 dp from where the finger is held (4 to 60), a dead zone of 3 dp for a resting finger and one of 3 dp for
-each axis, as its X turns Harry (each 0 to 10, always below full speed), saved with the launcher's other settings and
+each axis, so a push ahead does not strafe (each 0 to 10, always below full speed), saved with the launcher's other settings and
 handed to the game when it starts (`GameActivity.EXTRA_MOVE_FULL_TILT_DP`, `EXTRA_MOVE_DEAD_ZONE_DP`,
 `EXTRA_MOVE_AXIS_DEAD_ZONE_DP`); past full tilt the held point follows the finger. It never walks. A real pad's
 button, or a stick, trigger or hat pushed half way (Android's input events,

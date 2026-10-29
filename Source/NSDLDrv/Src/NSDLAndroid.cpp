@@ -10,7 +10,7 @@
 	The overlay runs on Android's UI thread, so it writes its intent here through JNI and
 	UNSDLViewport::TickAndroidTouch (the engine thread) turns it into the CauseInputEvent calls a mouse and a
 	pad would make, on keys DefUser.ini binds:
-	  move stick    -> IK_JoyX / IK_JoyY       (aBaseX turn / aBaseY forward, the pad's left stick)
+	  move stick    -> IK_JoyX / IK_JoyY       (aStrafe sideways / aBaseY forward, the pad's left stick)
 	  drag-look     -> IK_MouseX / IK_MouseY   (the mouse's own axes)
 	  CAST          -> IK_LeftMouse            (AltFire: the spell, the vendor reply)
 	  JUMP          -> IK_RightMouse           (jump, the broom boost, the duel spell cycle)
@@ -75,7 +75,7 @@ Java_com_hp2_android_GameActivity_nativeIsMenuVisible( JNIEnv*, jclass )
 JNIEXPORT void JNICALL
 Java_com_hp2_android_GameActivity_nativeTouchAxis( JNIEnv*, jclass, jint Axis, jfloat Value )
 {
-	// Axis 0 is sideways (turn), 1 forward.
+	// Axis 0 is sideways, 1 forward.
 	if( Axis == 0 )
 		GAndroidMoveX.store( Value, std::memory_order_relaxed );
 	else if( Axis == 1 )
