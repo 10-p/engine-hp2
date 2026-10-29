@@ -14,14 +14,24 @@ data), or an existing profile keeps its old copy.
 (`tools/dev/mkrun-hp2.sh` copies them); the launcher replaces the Win32 driver names they carry
 (`WinDrv.WindowsClient`, `ALAudio.ALAudioSubsystem`, `D3DDrv.D3DRenderDevice`) with drivers this build contains.
 `DefUser.ini` here is the same retail file (player class `HGame.harry`, the spell, broom and duel bindings) but for
-two pad speeds. Both `DefUser.ini` files set `[Engine.PlayerPawn] bMaxMouseSmoothing=False`: the view and the camera
+the pad's speeds. Both `DefUser.ini` files set `[Engine.PlayerPawn] bMaxMouseSmoothing=False`: the view and the camera
 stop on the frame the mouse stops (the script's default keeps turning for up to `MouseSmoothThreshold` after it).
-The pad's look stick (`JoyU`, `JoyV`) is bound to the mouse's axes, `aMouseX` and `aMouseY`, which the camera turns
-and tilts with (it reads no other look axis), so the mouse sensitivity scales it too. Those speeds here are for the
-`ScaleRUV` of 100 in `Default.ini`; `../DefUser.ini` has a fifth of them for the native build's compiled 500, so
-every build turns at the same rate. The move stick strafes with its X (`JoyX`: `aStrafe`, as the strafe keys) and
-moves ahead and back with its Y (`JoyY`: `aBaseY`, as the arrow keys), both at the same speed, so Harry moves in the
-stick's direction; on the broom its X yaws (`aJoyBroomYaw`) and in a spell lesson it traces (`aSpellLessonX`).
+
+The driver sends a stick axis as its tilt times `ScaleXYZ` (the move stick) or `ScaleRUV` (the look stick) times 60
+per second, so at full tilt an `Axis` binding reads 12 × scale × `Speed`, whatever the frame rate; a key's `Axis`
+alias reads 20 × `Speed` (6000 for `MoveForward` and the strafes). The stick speeds here are for the scales of 100 in
+`Default.ini`; `../DefUser.ini` has half the `JoyX`/`JoyY` ones for the native build's compiled `ScaleXYZ` of 200 and
+a fifth of the `JoyU`/`JoyV` ones for its `ScaleRUV` of 500, so every build moves and turns at the same rate.
+
+The look stick (`JoyU`, `JoyV`) is bound to the mouse's axes, `aMouseX` and `aMouseY`, which the camera turns and
+tilts with (it reads no other look axis), so the mouse sensitivity scales it too. The move stick strafes with its X
+(`JoyX`: `aStrafe`, as the strafe keys) and moves ahead and back with its Y (`JoyY`: `aBaseY`, as the arrow keys),
+both at the keys' 6000 at full tilt, so Harry moves in the stick's direction as briskly as with the keys. On the broom
+its X yaws and its Y pitches (`aJoyBroomYaw`, `aJoyBroomPitch`, the pitch at the yaw's speed as in this game's own
+`DefUser.ini`). This game's broom divides them by 13312, which they read at full tilt: in free flight it turns at the
+arrow keys' rate, and while Harry follows the Snitch, in the lesson and in every match, they move his offset from it
+at the arrow keys' 350 units per second at any frame rate. Its follow code reads them itself, so the mouse's broom
+axes stay off the stick. In a spell lesson the stick traces (`aSpellLessonX`, `aSpellLessonY`).
 
 ## Rules for `Default.ini`
 

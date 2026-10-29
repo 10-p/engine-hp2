@@ -1,0 +1,92 @@
+# The move stick on foot in the retail game, against the keys: the speed at 0.4 and full tilt straight ahead and from
+# the Up key, the strafe at full and 0.4 tilt right and full left and from the D key, and the stick at 45 degrees.
+# Retail's GreatHall_G holds Harry in a cut-scene from a cold start, so this runs on Entryhall_hub, whose start plays
+# cut-scenes too: the stick is held ahead until Harry runs on his own. Every sample then starts at one spot of the hall
+# (the left strafe 70 units to its right, for room on that side; Harry faces the camera's way, -X), waits until Harry
+# runs (189 units/s or more) or walks (56 or more), and watches 20 ticks; every wait is on a watch line:
+#   tools/dev/inputtest/run.sh <run-tree> move-retail.scen <out-dir> Entryhall_hub -NULLRENDERER
+#   tools/dev/inputtest/rate.py <out-dir>/game.log 0
+# The tags are move.scen's (dir-0.4-90: 0.4 at 90 degrees clockwise from ahead) and key-up, key-d; the _ tags are the
+# probe, the settling and the resting ticks. Harry runs at 0.5 tilt and more, walks below, and does not turn.
+waitlog Bringing Level Entryhall_hub\.MyLevel up for play
+pad attach
+pad axis lefty -32767
+watch 100000 _probe
+waitlog watch _probe [0-9]+ [0-9.]+ -?[0-9]+ -?[0-9]+ (1[5-9][0-9]|[2-9][0-9][0-9])\.[0-9]
+pad axis lefty 0
+watch 36 _rest
+waitlog watch _rest 35 
+exec TELEPORT 450 -1930 -19.5 16384 0
+pad axis lefty -13107
+watch 100000 _settle-speed-0.4
+waitlog watch _settle-speed-0.4 [0-9]+ [0-9.]+ -?[0-9]+ -?[0-9]+ (5[6-9]|[6-9][0-9]|[1-9][0-9][0-9])\.[0-9]
+watch 20 speed-0.4
+waitlog watch speed-0.4 19 
+pad axis lefty 0
+watch 36 _rest-speed-0.4
+waitlog watch _rest-speed-0.4 35 
+exec TELEPORT 450 -1930 -19.5 16384 0
+pad axis lefty -32767
+watch 100000 _settle-speed-1.0
+waitlog watch _settle-speed-1.0 [0-9]+ [0-9.]+ -?[0-9]+ -?[0-9]+ (189|19[0-9]|2[0-9][0-9])\.[0-9]
+watch 20 speed-1.0
+waitlog watch speed-1.0 19 
+pad axis lefty 0
+watch 36 _rest-speed-1.0
+waitlog watch _rest-speed-1.0 35 
+exec TELEPORT 450 -1930 -19.5 16384 0
+key Up 1
+watch 100000 _settle-key-up
+waitlog watch _settle-key-up [0-9]+ [0-9.]+ -?[0-9]+ -?[0-9]+ (189|19[0-9]|2[0-9][0-9])\.[0-9]
+watch 20 key-up
+waitlog watch key-up 19 
+key Up 0
+watch 36 _rest-key-up
+waitlog watch _rest-key-up 35 
+exec TELEPORT 450 -1930 -19.5 16384 0
+pad axis leftx 32767
+watch 100000 _settle-dir-1.0-90
+waitlog watch _settle-dir-1.0-90 [0-9]+ [0-9.]+ -?[0-9]+ -?[0-9]+ (189|19[0-9]|2[0-9][0-9])\.[0-9]
+watch 20 dir-1.0-90
+waitlog watch dir-1.0-90 19 
+pad axis leftx 0
+watch 36 _rest-dir-1.0-90
+waitlog watch _rest-dir-1.0-90 35 
+exec TELEPORT 450 -2000 -19.5 16384 0
+pad axis leftx -32767
+watch 100000 _settle-dir-1.0-270
+waitlog watch _settle-dir-1.0-270 [0-9]+ [0-9.]+ -?[0-9]+ -?[0-9]+ (189|19[0-9]|2[0-9][0-9])\.[0-9]
+watch 20 dir-1.0-270
+waitlog watch dir-1.0-270 19 
+pad axis leftx 0
+watch 36 _rest-dir-1.0-270
+waitlog watch _rest-dir-1.0-270 35 
+exec TELEPORT 450 -1930 -19.5 16384 0
+pad axis leftx 13107
+watch 100000 _settle-dir-0.4-90
+waitlog watch _settle-dir-0.4-90 [0-9]+ [0-9.]+ -?[0-9]+ -?[0-9]+ (5[6-9]|[6-9][0-9]|[1-9][0-9][0-9])\.[0-9]
+watch 20 dir-0.4-90
+waitlog watch dir-0.4-90 19 
+pad axis leftx 0
+watch 36 _rest-dir-0.4-90
+waitlog watch _rest-dir-0.4-90 35 
+exec TELEPORT 450 -1930 -19.5 16384 0
+key D 1
+watch 100000 _settle-key-d
+waitlog watch _settle-key-d [0-9]+ [0-9.]+ -?[0-9]+ -?[0-9]+ (189|19[0-9]|2[0-9][0-9])\.[0-9]
+watch 20 key-d
+waitlog watch key-d 19 
+key D 0
+watch 36 _rest-key-d
+waitlog watch _rest-key-d 35 
+exec TELEPORT 450 -1930 -19.5 16384 0
+pad axis leftx 23170
+pad axis lefty -23170
+watch 100000 _settle-dir-1.0-45
+waitlog watch _settle-dir-1.0-45 [0-9]+ [0-9.]+ -?[0-9]+ -?[0-9]+ (189|19[0-9]|2[0-9][0-9])\.[0-9]
+watch 20 dir-1.0-45
+waitlog watch dir-1.0-45 19 
+pad axis leftx 0
+pad axis lefty 0
+watch 36 _rest-dir-1.0-45
+waitlog watch _rest-dir-1.0-45 35 
