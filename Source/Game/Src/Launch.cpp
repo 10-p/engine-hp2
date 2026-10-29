@@ -282,6 +282,8 @@ static const FRenderSwitch GRenderSwitches[] =
 {
 	{ TEXT("XOPENGLRENDERER"),   TEXT("XOpenGLDrv.XOpenGLRenderDevice") },
 	{ TEXT("UTGLRRENDERER"),     TEXT("OpenGLDrv.OpenGLRenderDevice") },
+	// NOpenGLESDrv: the GLES2 device. Opt-in only (not in GRenderPreference).
+	{ TEXT("NOPENGLESRENDERER"), TEXT("NOpenGLESDrv.NOpenGLESRenderDevice") },
 	// SoftDrv: the CPU rasterizer. Opt-in only (not in GRenderPreference).
 	{ TEXT("SOFTWARERENDERER"),  TEXT("SoftDrv.SoftwareRenderDevice") },
 	// NullDrv: a no-op render device with no GL context, for headless runs. Opt-in only.
