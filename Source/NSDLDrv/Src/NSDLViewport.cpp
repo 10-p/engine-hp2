@@ -34,6 +34,14 @@ static UBOOL ufrontCanvasDevicePixelSize( INT& OutW, INT& OutH )
 }
 #endif
 
+#if !defined(__EMSCRIPTEN__) && !defined(__ANDROID__)
+// Whether the window is in SDL's desktop fullscreen: borderless, over its display at the display's own mode.
+static UBOOL DesktopFullscreen( SDL_Window* Window )
+{
+	return Window && ( SDL_GetWindowFlags( Window ) & SDL_WINDOW_FULLSCREEN_DESKTOP ) == SDL_WINDOW_FULLSCREEN_DESKTOP;
+}
+#endif
+
 IMPLEMENT_CLASS( UNSDLViewport );
 
 /*-----------------------------------------------------------------------------
@@ -959,6 +967,11 @@ void UNSDLViewport::SetClientSize( INT NewX, INT NewY, UBOOL UpdateProfile )
 
 	if( hWnd )
 	{
+#if !defined(__EMSCRIPTEN__) && !defined(__ANDROID__)
+		// A borderless fullscreen window keeps the display's size; SDL would keep a size given now as the one the
+		// window returns to.
+		if( !DesktopFullscreen( hWnd ) )
+#endif
 		SDL_SetWindowSize( hWnd, NewX, NewY );
 #if defined(__ANDROID__)
 		// The window is the screen (or the launcher's fixed-size surface) and keeps its size whatever is asked;
@@ -1008,6 +1021,27 @@ void UNSDLViewport::MakeFullscreen( INT NewX, INT NewY, UBOOL UpdateProfile )
 {
 	guard(UNSDLViewport::MakeFullscreen);
 
+#if !defined(__EMSCRIPTEN__) && !defined(__ANDROID__)
+	if( Client->BorderlessFullscreen )
+	{
+		// SDL's desktop fullscreen: the display keeps its mode and the viewport takes the window's size. The size
+		// asked for and the profile's fullscreen size are left as they are.
+		if( !DesktopFullscreen( hWnd ) )
+		{
+			Client->EndFullscreen();
+			SavedX = SizeX;
+			SavedY = SizeY;
+			SDL_SetWindowFullscreen( hWnd, SDL_WINDOW_FULLSCREEN_DESKTOP );
+		}
+		INT W = 0, H = 0;
+		SDL_GetWindowSize( hWnd, &W, &H );
+		if( W > 0 && H > 0 )
+			SetClientSize( Align( W, 4 ), H, false );
+		debugf( NAME_Log, TEXT("NSDLViewport: borderless fullscreen at %ix%i"), SizeX, SizeY );
+		return;
+	}
+#endif
+
 	// If someone else is fullscreen, stop them.
 	// Note: FullscreenViewport tracking removed - Unreal 1 specific
 	Client->EndFullscreen();
@@ -1021,7 +1055,7 @@ void UNSDLViewport::MakeFullscreen( INT NewX, INT NewY, UBOOL UpdateProfile )
 	SDL_SetWindowFullscreen( hWnd, SDL_WINDOW_FULLSCREEN_DESKTOP );
 	(void)NewX; (void)NewY;
 #else
-	// Fullscreen rendering. For now no borderless.
+	// Exclusive fullscreen: the display changes to the mode nearest the window's size.
 	// Note: FullscreenViewport tracking removed - Unreal 1 specific
 	SetClientSize( NewX, NewY, false );
 	SDL_SetWindowFullscreen( hWnd, SDL_WINDOW_FULLSCREEN );
@@ -1189,15 +1223,24 @@ void UNSDLViewport::ReleasePad()
 static const BYTE PadWalkBit = 0x40;
 
 //
-// The left stick tilted out of its dead zone (radially) but less than PadWalkTilt walks. Its axes keep their dead
-// zone per axis: the stick's X turns Harry, and the cross-shaped zone keeps a push ahead from turning him.
+// The left stick, the move stick. Its dead zone is radial, so a direction between the axes keeps both parts; out of
+// it, X and Y go to their bindings, and a tilt below PadWalkTilt walks.
 //
-void UNSDLViewport::TickMoveStickWalk()
+void UNSDLViewport::TickMoveStick( FLOAT DeltaTime )
 {
-	guard(UNSDLViewport::TickMoveStickWalk);
+	guard(UNSDLViewport::TickMoveStick);
 	const FLOAT X = MoveStick[0] / 32767.f, Y = MoveStick[1] / 32767.f;
 	const FLOAT Tilt = Min( (FLOAT)appSqrt( X*X + Y*Y ), 1.f );
-	const UBOOL Walk = Tilt > 0.f && Tilt >= Client->DeadZoneXYZ && Tilt < Client->PadWalkTilt;
+	UBOOL Walk = 0;
+	if( Tilt > 0.f && Tilt >= Client->DeadZoneXYZ )
+	{
+		const FLOAT Scale = Client->ScaleXYZ * DeltaTime;
+		if( X != 0.f )
+			CauseInputEvent( IK_JoyX, IST_Axis, X * Scale * JoyAxisDefaultScale[SDL_CONTROLLER_AXIS_LEFTX] );
+		if( Y != 0.f )
+			CauseInputEvent( IK_JoyY, IST_Axis, Y * Scale * JoyAxisDefaultScale[SDL_CONTROLLER_AXIS_LEFTY] * ( Client->InvertY ? -1.f : 1.f ) );
+		Walk = Tilt < Client->PadWalkTilt;
+	}
 	if( Actor )
 	{
 		if( Walk )
@@ -1277,6 +1320,15 @@ UBOOL UNSDLViewport::TickInput()
 				break;
 			case SDL_KEYDOWN:
 			case SDL_KEYUP:
+#if !defined(__EMSCRIPTEN__) && !defined(__ANDROID__)
+				// Alt+Enter toggles fullscreen, once per press; its Enter press does not reach the game.
+				if( Ev.type == SDL_KEYDOWN && Ev.key.keysym.sym == SDLK_RETURN && ( Ev.key.keysym.mod & KMOD_ALT ) )
+				{
+					if( !Ev.key.repeat )
+						Exec( TEXT("ToggleFullscreen"), *GLog );
+					break;
+				}
+#endif
 				CauseInputEvent( KeyMap[Ev.key.keysym.scancode], ( Ev.type == SDL_KEYDOWN ) ? IST_Press : IST_Release );
 				break;
 			case SDL_MOUSEBUTTONDOWN:
@@ -1449,11 +1501,14 @@ UBOOL UNSDLViewport::TickInput()
 		for( INT a = 0; a < SDL_CONTROLLER_AXIS_MAX; a++ )
 			UpdatePadAxis( a, SDL_GameControllerGetAxis( GC, (SDL_GameControllerAxis)a ) );
 
-	// Constantly hammer the input system with axis events for axes that are not zero.
+	// Constantly hammer the input system with axis events for axes that are not zero; the left stick is TickMoveStick's.
+	TickMoveStick( DeltaTime );
 	for ( INT i = 0; i < SDL_CONTROLLER_AXIS_MAX; ++i )
 	{
 		const BYTE Key = JoyAxisMap[i];
 		const SWORD Value = JoyAxis[i];
+		if ( i == SDL_CONTROLLER_AXIS_LEFTX || i == SDL_CONTROLLER_AXIS_LEFTY )
+			continue;
 		if ( Value && Key && Key >= IK_JoyX )
 		{
 			const FLOAT FltValue = Clamp( Value / 32767.f, -1.f, 1.f );
@@ -1464,7 +1519,6 @@ UBOOL UNSDLViewport::TickInput()
 			CauseInputEvent( Key, IST_Axis, FltValue * Scale );
 		}
 	}
-	TickMoveStickWalk();
 
 #if defined(__ANDROID__)
 	TickAndroidTouch();
@@ -1543,7 +1597,10 @@ UBOOL UNSDLViewport::Exec( const TCHAR* Cmd, FOutputDevice& Ar )
 			debugf( NAME_Log, TEXT("SetRes %ix%i ignored: the page sizes the canvas"), X, Y );
 #elif !defined(__ANDROID__)
 			// The render device takes the size in the current mode, windowed or fullscreen; if it cannot, fullscreen ends.
-			if( RenDev && !RenDev->SetRes( X, Y, ColorBytes, IsFullscreen() ) )
+			// Borderless fullscreen keeps the display's size.
+			if( Client->BorderlessFullscreen && DesktopFullscreen( hWnd ) )
+				debugf( NAME_Log, TEXT("SetRes %ix%i not applied: borderless fullscreen stays at %ix%i"), X, Y, SizeX, SizeY );
+			else if( RenDev && !RenDev->SetRes( X, Y, ColorBytes, IsFullscreen() ) )
 				EndFullscreen();
 #else
 			// Note: FullscreenViewport tracking removed - Unreal 1 specific

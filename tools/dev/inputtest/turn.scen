@@ -1,7 +1,8 @@
-# The turn rate of each stick's X at full and at half tilt, Harry standing still: the stick held for 2.5 s and watched
-# from 0.5 s in until 0.5 s before its release, whatever the frame rate. The level is any but Entry where Harry is free
-# from the start: GreatHall_G of the prototype, Grounds_hub of the retail game. rate.py's "view" is the camera's yaw
-# (the player's view target), the rotation the sticks drive, and its "yaw" Harry's, which follows the camera.
+# The turn rate of each stick's X at full and at half tilt, from Harry standing still (the move stick's X strafes, so
+# its samples turn nothing): the stick held for 2.5 s and watched from 0.5 s in until 0.5 s before its release,
+# whatever the frame rate. The level is any but Entry where Harry is free from the start: GreatHall_G of the
+# prototype, Grounds_hub of the retail game. rate.py's "view" is the camera's yaw (the player's view target), the
+# rotation the look stick drives, and its "yaw" Harry's, which follows the camera.
 #   tools/dev/inputtest/run.sh <run-tree> turn.scen <out-dir> GreatHall_G -NULLRENDERER
 #   tools/dev/inputtest/rate.py <out-dir>/game.log 0
 # The tags name the stick and the tilt (look-0.5: the look stick's X at half tilt); key-right is the Right arrow key.

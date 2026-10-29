@@ -83,9 +83,9 @@ private:
 	INT DisplayIndex;
 	SDL_Rect DisplaySize;
 	SWORD JoyAxis[SDL_CONTROLLER_AXIS_MAX];
-	SWORD MoveStick[2];	// the left stick's X and Y before any dead zone: the move stick (TickMoveStickWalk)
+	SWORD MoveStick[2];	// the left stick's X and Y before any dead zone: the move stick (TickMoveStick)
 	void UpdatePadAxis( INT Axis, INT NewValue );	// one stick or trigger value, read from the pad's state
-	void TickMoveStickWalk();
+	void TickMoveStick( FLOAT DeltaTime );
 	void ReleasePad();	// every pad key up and the axes zeroed (the pad went, or UseJoystick went off)
 	FNSDLInputTest* InputTest;	// the input test channel (-INPUTTEST=), NULL without it
 	friend class FNSDLInputTest;
@@ -121,6 +121,7 @@ class NSDLDRV_API UNSDLClient : public UClient, public FNotifyHook
 	// Configuration.
 	INT DefaultDisplay;
 	UBOOL StartupFullscreen;
+	UBOOL BorderlessFullscreen;	// fullscreen is the display's own mode at its size; off: a mode change to FullscreenViewportX/Y
 	UBOOL UseJoystick;
 	UBOOL InvertY;
 	UBOOL InvertV;

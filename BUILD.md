@@ -77,7 +77,7 @@ second one is ignored); before the main loop the process ends at once.
 drive a virtual SDL game controller that takes the pad's place, press keys, place the pointer, run console commands
 and watch Harry and the camera once per input tick. `tools/dev/inputtest/run.sh <run-tree> <scenario> <out-dir>
 [<args>]` runs the native build under Xvfb with it and feeds it a scenario (`move.scen`: the move stick's speed against
-tilt, its turn and the Walking button, on `GreatHall_G` with `-NULLRENDERER`; `turn.scen`: the camera's turn rate
+tilt, its direction and the Walking button, on `GreatHall_G` with `-NULLRENDERER`; `turn.scen`: the camera's turn rate
 from each stick's X at full and half tilt and from the Right arrow key); `rate.py` reads the watch lines.
 
 ## Checks before a commit that touches engine code
@@ -158,6 +158,15 @@ sweep check the layout. The UTGLR fork rounds its pointers through the engine's 
   whole, with a warning once the log is up.
 - **`ucc make` saves are deterministic**: stable sorts in `SavePackage`, the `.int` files in Windows' order in
   `CacheDrivers`.
+- **Fullscreen** (native desktop, `Source/NSDLDrv`). Alt+Enter and `ToggleFullscreen` switch between the window and
+  fullscreen (the Enter press does not reach the game), and `[NSDLDrv.NSDLClient] StartupFullscreen` starts in
+  fullscreen. With `BorderlessFullscreen` (True, also in `Config/System/Default.ini`) fullscreen is SDL's desktop
+  fullscreen: the window covers its display at the display's own resolution, the game renders at that size
+  (`NSDLViewport: borderless fullscreen at <w>x<h>`), `FullscreenViewportX/Y` are left as they are, and `SetRes` (the
+  video page's resolution) is not applied there (`SetRes <w>x<h> not applied: borderless fullscreen stays at
+  <w>x<h>`). With `False` fullscreen is exclusive: the display changes to the mode nearest `FullscreenViewportX/Y`,
+  and `SetRes` changes the mode and keeps its size there. Leaving fullscreen gives the window back its size. The web
+  and Android builds do not read the key.
 - **Game pads** (`Source/NSDLDrv`; one pad, the first connected): `[NSDLDrv.NSDLClient] UseJoystick` (on by default) is
   read every tick, so `set ini:Engine.Engine.ViewportManager UseJoystick False` closes the pad (every key released) and
   `True` opens the first one present; a pad connected later opens on `SDL_CONTROLLERDEVICEADDED`. Sticks and triggers
@@ -253,13 +262,13 @@ working directory before SDL starts `SDL_main`, and the launcher (`MainActivity`
   default wrong is switched once.
 
 Controls: a pad through NSDLDrv's game-controller path (`UseJoystick`, the pad layout of `DefUser.ini`: the look
-stick turns and tilts the camera as the mouse does, the move stick's X turns it as the arrow keys do); touch
+stick turns and tilts the camera as the mouse does, the move stick moves Harry and its X strafes); touch
 as the mouse in the menus (the book, the cut-scene console and the vendor bar: tap to click, the cursor at the
 finger); in play an on-screen overlay (a move stick on the left half, drag to look on the right, CAST, JUMP and
 MENU buttons) that drives the engine through `Source/NSDLDrv/Src/NSDLAndroid.cpp` on the mouse and pad keys
 `DefUser.ini` binds. The move stick tilts fully as the launcher's "Touch move stick" settings say: full speed at a
 drag of 12 dp from where the finger is held (4 to 60), a dead zone of 3 dp for a resting finger and one of 3 dp for
-each axis, as its X turns Harry (each 0 to 10, always below full speed), saved with the launcher's other settings and
+each axis, so a push ahead does not strafe (each 0 to 10, always below full speed), saved with the launcher's other settings and
 handed to the game when it starts (`GameActivity.EXTRA_MOVE_FULL_TILT_DP`, `EXTRA_MOVE_DEAD_ZONE_DP`,
 `EXTRA_MOVE_AXIS_DEAD_ZONE_DP`); past full tilt the held point follows the finger. It never walks. A real pad's
 button, or a stick, trigger or hat pushed half way (Android's input events,
@@ -268,6 +277,24 @@ button, or a stick, trigger or hat pushed half way (Android's input events,
 key is Escape (it opens and closes the book). The prototype's title level
 is play, not a menu: its Start is the spell cursor's target (drag on the right half moves the cursor, CAST
 clicks), as with a mouse. XOpenGLDrv draws without clip planes on the ES profile, as on the web.
+
+Gyro aiming is the launcher's "Gyro aiming" switch (off by default) and its horizontal and vertical sensitivities (0.1
+to 5, 1 by default), saved with the other settings and handed to the game when it starts (`GyroAim.EXTRA_GYRO_AIM`,
+`EXTRA_GYRO_YAW_SCALE`, `EXTRA_GYRO_PITCH_SCALE`). A sensitivity is view degrees per device degree: at 1 the camera
+turns as far as the device. `GyroAim.java` reads the gyroscope and gravity while the game is in front, in either
+landscape: tilting the device's top edge towards the player looks up; left and right is the turn about the world's
+vertical ("player space": turning the device, and twisting it like a wheel once it is tilted back), never more than
+the device's own turn and twist. HP2's camera turns only with the mouse's axes, so in play `NSDLAndroid.cpp` adds the
+turn to `aMouseX` and `aMouseY` in whole rotation units of the camera (65536 a turn, the rest carried to the next
+tick), past ReadInput's 20 / DeltaTime, PlayerInput's `MouseSensitivity` and field of view and the camera's
+`CurrentSet.fRotSpeed` (none where the camera takes no mouse input), and against `bInvertMouse`: the mouse's settings
+do not change it. A narrower field of view slows it as it slows the mouse: the turn is times `DesiredFOV / DefaultFOV`
+(the duel camera's 50 degrees, a level's FOV change; 1 at the player's own field of view, at any aspect ratio, since
+AutoFOV widens only the drawn view). PlayerInput's two-tick average of the mouse keeps the total. While a menu is up,
+or over a load (the game not ticking for half a second), the turn is dropped. There is no smoothing, acceleration or
+dead zone of the gyro's own. With `-UFRONTLOG` the log has the totals once the gyro rests (`Gyro: <yaw> degrees right
+and <pitch> up in play in all, <n> yaw and <n> pitch units (zoom <z>)`: the degrees before the zoom, the units after
+it, the zoom of the last turn).
 
 In the background (the home screen, the recent apps, another app on top) the game is suspended. SDL's activity
 pauses on `onStop`, and its event pump then blocks the game thread until the app returns, so nothing ticks;

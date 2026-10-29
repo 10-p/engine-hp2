@@ -72,7 +72,7 @@ public class GameActivity extends SDLActivity {
 
     /**
      * The touch move stick (the launcher's settings), in dp: full tilt at this drag from where the finger is held,
-     * 4 to 60; the dead zone for a resting finger, and the one each axis also keeps (the stick's X turns Harry),
+     * 4 to 60; the dead zone for a resting finger, and the one each axis also keeps (a push ahead does not strafe),
      * each 0 to 10 and below full tilt. Absent: the defaults.
      */
     static final String EXTRA_MOVE_FULL_TILT_DP = "com.hp2.android.MOVE_FULL_TILT_DP";
@@ -107,17 +107,20 @@ public class GameActivity extends SDLActivity {
     // android_bridge.cpp.
     private static native boolean nativePrepareProcess(String dataRoot, String homeDir);
 
-    // The touch controls' input, in libHP2.so. Axis 0 is sideways (turn) and 1 forward, each -1 to 1 and held
+    // The touch controls' input, in libHP2.so. Axis 0 is sideways (strafe) and 1 forward, each -1 to 1 and held
     // until the next call; look takes the drag's pixel deltas, which the engine accumulates.
     static native boolean nativeIsMenuVisible();
     static native void nativeTouchAxis(int axis, float value);
     static native void nativeTouchLook(float dx, float dy);
     static native void nativeTouchButton(int button, boolean down);
+    // Gyro aiming (GyroAim): the view's turn in degrees, to the right and up, which the engine adds up and applies in play.
+    static native void nativeGyroLook(float yawDegrees, float pitchDegrees);
 
     // The button ids of nativeTouchButton (NSDLAndroid.cpp).
     private static final int BTN_CAST = 0, BTN_JUMP = 1, BTN_MENU = 2;
 
     private Hp2TouchOverlayView touchControls;
+    private GyroAim gyro;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -153,6 +156,20 @@ public class GameActivity extends SDLActivity {
         } catch (Throwable t) {
             Log.e(TAG, "could not add the touch controls", t);
         }
+        gyro = GyroAim.fromIntent(this);
+    }
+
+    // The gyro is read while the game is in front.
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (gyro != null) gyro.start();
+    }
+
+    @Override
+    protected void onPause() {
+        if (gyro != null) gyro.stop();
+        super.onPause();
     }
 
     // A real pad's input hides the touch controls (Hp2TouchOverlayView.onRealPadInput); SDL still gets every event.
@@ -457,7 +474,7 @@ public class GameActivity extends SDLActivity {
             float m = down && len > dead ? (len - dead) / (full - dead) : 0f;
             lx = m > 0f ? dx / len * m : 0f;
             ly = m > 0f ? dy / len * m : 0f;
-            // Each axis also keeps a dead zone: the stick's X turns Harry, and a push ahead does not turn him.
+            // Each axis also keeps a dead zone: a push ahead does not strafe, and a push sideways does not move ahead.
             if (Math.abs(dx) <= axisDead) lx = 0f;
             if (Math.abs(dy) <= axisDead) ly = 0f;
             nativeTouchAxis(0, lx);
