@@ -902,6 +902,7 @@ public class MainActivity extends Activity {
     private static final String[][] RENDERERS = {
             { "", "The game's choice" },
             { "-XOPENGLRENDERER", "XOpenGL (OpenGL ES 3)" },
+            { "-UTGLRRENDERER", "UTGLR (OpenGL through gl4es, OpenGL ES 2)" },
             { "-SOFTWARERENDERER", "Software (drawn by the CPU)" },
             { "-NULLRENDERER", "Null (draws nothing: for debugging)" }
     };
