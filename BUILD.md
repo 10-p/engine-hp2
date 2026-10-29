@@ -50,7 +50,7 @@ The options this repository defines (`Source/CMakeLists.txt`; the presets set th
 | `SOFTDRV_MAX_SCREEN` | 4096 (8192 on the web) | SoftDrv's largest viewport dimension |
 
 The Android client (`if(ANDROID AND USE_SDL)` in `Source/CMakeLists.txt`) forces its own set: static, Editor,
-XOpenGLDrv, NOpenGLESDrv, SoftDrv, NullDrv, NOpenALDrv and the silent audio subsystem, no UTGLR (desktop GL) and no `ucc-bin`,
+XOpenGLDrv, UTGLR through gl4es, NOpenGLESDrv, SoftDrv, NullDrv, NOpenALDrv and the silent audio subsystem, no `ucc-bin`,
 `UE_ALLOW_64BIT` (the x86_64 ABI), `ASM=0`, `-fno-delete-null-pointer-checks` and clang's non-POD-varargs leniency;
 it defines `UE_ANDROID_APP` for the app's own platform paths.
 
@@ -277,10 +277,10 @@ working directory before SDL starts `SDL_main`, and the launcher (`MainActivity`
   Android scales to the screen; the engine sees the scaled size as its window. SDL's surface view (`FrameSurface`)
   scales every touch and mouse position from the screen to that buffer before SDL reads it, so a tap lands where it
   is drawn at every scale.
-- The launcher's renderer selection, at the bottom of its page (the game's choice, then XOpenGL, NOpenGLES and
+- The launcher's renderer selection, at the bottom of its page (the game's choice, then XOpenGL, UTGLR, NOpenGLES and
   Software; Null for debugging), adds that render device's `-*RENDERER` switch after any command line the launcher was started
   with. The game keeps the device it last started with, also under "The game's choice": a device whose GPU draws the
-  default wrong is switched once.
+  default wrong is switched once. UTGLR draws through gl4es on an OpenGL ES 2 context.
 
 Controls: a pad through NSDLDrv's game-controller path (`UseJoystick`, the pad layout of `DefUser.ini`: the look
 stick turns and tilts the camera as the mouse does, the move stick moves Harry and its X strafes); touch

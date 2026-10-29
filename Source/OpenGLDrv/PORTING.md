@@ -25,9 +25,9 @@ repository and branch in the web artifact's `meta.json`.
 
 | Option | Default | Effect |
 |---|---|---|
-| `BUILD_UTGLR` | `OFF` | builds the package; set by the `native`, `native64`, `windows` and `windows64` presets, forced on under Emscripten |
-| `USE_GL4ES` | `OFF` native, forced `ON` under Emscripten | links gl4es (desktop GL to GLES 2) instead of resolving GL from the context; turns `BUILD_UTGLR` on; the `windows` presets set it `OFF` |
-| `GL4ES_SOURCE_DIR` | empty | a local gl4es checkout instead of the fetch of `GL4ES_GIT_REPOSITORY` (`https://github.com/10-p/gl4es.git`) at `GL4ES_GIT_TAG` (`fix/cubemap-bind-active-unit`) |
+| `BUILD_UTGLR` | `OFF` | builds the package; set by the `native`, `native64`, `windows` and `windows64` presets, forced on under Emscripten and on Android |
+| `USE_GL4ES` | `OFF` native, forced `ON` under Emscripten and on Android | links gl4es (desktop GL to GLES 2) instead of resolving GL from the context; turns `BUILD_UTGLR` on; the `windows` presets set it `OFF` |
+| `GL4ES_SOURCE_DIR` | empty | a local gl4es checkout instead of the fetch of `GL4ES_GIT_REPOSITORY` (`https://github.com/10-p/gl4es.git`) at `GL4ES_GIT_TAG` (`ufront`) |
 
 gl4es is fetched only when `BUILD_UTGLR` and (`USE_GL4ES` or Emscripten), and is configured `NOX11 NOEGL STATICLIB
 DEFAULT_ES=2 NO_INIT_CONSTRUCTOR`: a static library, a GLES 2 target, no window-system code (NSDLDrv owns the
@@ -47,7 +47,8 @@ The two backends:
   `LIBGL_ES=2`, `LIBGL_NOBANNER=1` and `LIBGL_USEVBO=0` (UTGLR feeds client-side vertex arrays), hands gl4es a
   resolver (`emscripten_webgl_get_proc_address` on the threaded web build, `SDL_GL_GetProcAddress` elsewhere) and
   calls `initialize_gl4es()`; entry points then resolve through `gl4es_GetProcAddress`, so every call goes through
-  gl4es' translation. Natively this runs gl4es' GLES 2 path on the desktop compatibility context.
+  gl4es' translation. On the desktop this runs gl4es' GLES 2 path on the desktop compatibility context, on Android
+  on an OpenGL ES 2 context.
 
 ## Selection and the GL context
 
@@ -61,7 +62,8 @@ The launcher (`Source/Game/Src/Launch.cpp`, `SelectRenderDevice`) picks the devi
 The chosen class is written to `GameRenderDevice`, `WindowedRenderDevice` and `RenderDevice` of `[Engine.Engine]`.
 
 `UNSDLViewport::OpenWindow` gives a window a GL context only when the render device's name contains `OPENGL`
-(case-insensitive). Native gets a desktop compatibility-profile context; the web gets a WebGL context (see
+(case-insensitive). The desktop gets a desktop compatibility-profile context, Android an OpenGL ES 2 context; the web
+gets a WebGL context (see
 [`WEB-INTEGRATION.md`](WEB-INTEGRATION.md)). The context is NSDLDrv's: `Init` loads no GL library (no
 `SDL_GL_LoadLibrary`), and the viewport presents the frame. A rename of the package or class must keep `OpenGL` in
 the name.
