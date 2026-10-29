@@ -268,6 +268,21 @@ key is Escape (it opens and closes the book). The prototype's title level
 is play, not a menu: its Start is the spell cursor's target (drag on the right half moves the cursor, CAST
 clicks), as with a mouse. XOpenGLDrv draws without clip planes on the ES profile, as on the web.
 
+Gyro aiming is the launcher's "Gyro aiming" switch (off by default) and its horizontal and vertical sensitivities (0.1
+to 5, 1 by default), saved with the other settings and handed to the game when it starts (`GyroAim.EXTRA_GYRO_AIM`,
+`EXTRA_GYRO_YAW_SCALE`, `EXTRA_GYRO_PITCH_SCALE`). A sensitivity is view degrees per device degree: at 1 the camera
+turns as far as the device. `GyroAim.java` reads the gyroscope and gravity while the game is in front, in either
+landscape: tilting the device's top edge towards the player looks up; left and right is the turn about the world's
+vertical ("player space": turning the device, and twisting it like a wheel once it is tilted back), never more than
+the device's own turn and twist. HP2's camera turns only with the mouse's axes, so in play `NSDLAndroid.cpp` adds the
+turn to `aMouseX` and `aMouseY` in whole rotation units of the camera (65536 a turn, the rest carried to the next
+tick), past ReadInput's 20 / DeltaTime, PlayerInput's `MouseSensitivity` and field of view and the camera's
+`CurrentSet.fRotSpeed` (none where the camera takes no mouse input), and against `bInvertMouse`: the mouse's settings
+do not change it. PlayerInput's two-tick average of the mouse keeps the total. While a menu is up, or over a load (the
+game not ticking for half a second), the turn is dropped. There is no smoothing, acceleration or dead zone of the
+gyro's own. With `-UFRONTLOG` the log has the totals once the gyro rests (`Gyro: <yaw> degrees right and <pitch> up in
+play in all, <n> yaw and <n> pitch units`).
+
 In the background (the home screen, the recent apps, another app on top) the game is suspended. SDL's activity
 pauses on `onStop`, and its event pump then blocks the game thread until the app returns, so nothing ticks;
 NOpenALDrv pauses its OpenAL device (`alcDevicePauseSOFT`, ALC_SOFT_pause_device) on SDL's
