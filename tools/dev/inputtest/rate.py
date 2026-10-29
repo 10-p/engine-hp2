@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """rate.py <game.log> [<skip>]: for each watch tag of the input test channel's log, over the watch lines after the
 first <skip> (default 20): the pawn's yaw rate (a least-squares fit of yaw on time, in yaw units and degrees per
-second), the view's yaw rate (the camera's in HP2: its total turn over the lines divided by their time span), the mean
-horizontal speed, the direction of the velocity and of the acceleration relative to the pawn's yaw (degrees, 0 ahead,
-positive to the right; the mean of the per-tick vectors in the pawn's frame) and the share of ticks walking. Yaws are
-unwrapped (65536 is a full turn)."""
+second), its pitch rate (the same fit of the signed pitch: the broom's), the view's yaw rate (the camera's in HP2: its
+total turn over the lines divided by their time span), the mean horizontal speed, the direction of the velocity and of
+the acceleration relative to the pawn's yaw (degrees, 0 ahead, positive to the right; the mean of the per-tick vectors
+in the pawn's frame) and the share of ticks walking. Yaws are unwrapped (65536 is a full turn)."""
 import math
 import re
 import sys
@@ -44,8 +44,9 @@ def main():
             seen.add((m.group(1), m.group(2)))
             g = m.groups()
             view = int(g[13]) if g[13] is not None else 0
+            pitch = ((int(g[4]) + 32768) % 65536) - 32768
             tags.setdefault(g[0], []).append(
-                [float(g[2]), int(g[3]), float(g[5])] + [float(v) for v in g[8:12]] + [int(g[12]), view])
+                [float(g[2]), int(g[3]), float(g[5])] + [float(v) for v in g[8:12]] + [int(g[12]), view, pitch])
     for tag, pts in tags.items():
         pts = pts[skip:]
         n = len(pts)
@@ -58,11 +59,14 @@ def main():
         my = sum(yaws) / n
         sxx = sum((p[0] - mt) ** 2 for p in pts)
         rate = sum((p[0] - mt) * (y - my) for p, y in zip(pts, yaws)) / sxx
+        mp = sum(p[9] for p in pts) / n
+        prate = sum((p[0] - mt) * (p[9] - mp) for p in pts) / sxx
         span = pts[-1][0] - pts[0][0]
         view = (views[-1] - views[0]) / span if span > 0 else float("nan")
         speed = sum(p[2] for p in pts) / n
         walking = sum(p[7] for p in pts) / n
-        print(f"{tag}: {rate:.0f} yaw/s ({rate * 360 / 65536:.1f} deg/s), view {view:.0f} yaw/s "
+        print(f"{tag}: {rate:.0f} yaw/s ({rate * 360 / 65536:.1f} deg/s), pitch {prate:.0f}/s "
+              f"({prate * 360 / 65536:.1f} deg/s), view {view:.0f} yaw/s "
               f"({view * 360 / 65536:.1f} deg/s), speed {speed:.0f}, "
               f"move {direction(pts, 3):.1f} deg (accel {direction(pts, 5):.1f} deg), walking {walking:.2f}, "
               f"{n} ticks over {span:.2f} s")

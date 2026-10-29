@@ -77,8 +77,10 @@ second one is ignored); before the main loop the process ends at once.
 drive a virtual SDL game controller that takes the pad's place, press keys, place the pointer, run console commands
 and watch Harry and the camera once per input tick. `tools/dev/inputtest/run.sh <run-tree> <scenario> <out-dir>
 [<args>]` runs the native build under Xvfb with it and feeds it a scenario (`move.scen`: the move stick's speed against
-tilt, its direction and the Walking button, on `GreatHall_G` with `-NULLRENDERER`; `turn.scen`: the camera's turn rate
-from each stick's X at full and half tilt and from the Right arrow key); `rate.py` reads the watch lines.
+tilt, its direction and the Walking button, on `GreatHall_G` with `-NULLRENDERER`; `move-retail.scen`: the move stick
+and the keys on the retail game's `Entryhall_hub`; `turn.scen`: the camera's turn rate from each stick's X at full and
+half tilt and from the Right arrow key; `broom.scen`: the prototype broom's yaw and pitch from the move stick and the
+arrow keys in free flight); `rate.py` reads the watch lines.
 
 ## Checks before a commit that touches engine code
 
