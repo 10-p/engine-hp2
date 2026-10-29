@@ -1,14 +1,14 @@
 # OpenGLDrv — UTGLR (Chris Dohnal's legacy-OpenGL UE1 render device), built for HP2 (UE1 build 433).
 #
 # Package/class name is OpenGLDrv.OpenGLRenderDevice, the upstream name, which also makes NSDLDrv create the
-# right context (its GL-window test keys on the substring "OPENGL"; "GLES" is absent, so native gets a
-# desktop-GL compatibility context).
+# right context (its GL-window test keys on the substring "OPENGL"; "GLES" is absent, so the desktop gets a
+# desktop-GL compatibility context and Android a GLES 2 one).
 #
 # Backends:
 #   default        -> resolves GL entry points at runtime via SDL_GL_GetProcAddress against the
 #                     desktop-GL context NSDLDrv creates (the native "compat oracle"). No -lGL:
 #                     every gl* call goes through UTGLR's own function-pointer table.
-#   USE_GL4ES=ON   -> link the gl4es static lib (desktop GL -> GLES2) for the WebGL path. The
+#   USE_GL4ES=ON   -> link the gl4es static lib (desktop GL -> GLES2) for the web and Android. The
 #                     gl4es::GL alias + FetchContent live in the top-level Source/CMakeLists.txt.
 
 project(OpenGLDrv C CXX)
@@ -45,7 +45,7 @@ target_compile_definitions(${PROJECT_NAME} PRIVATE
   __UNIX__
 )
 
-# gl4es backend (the WebGL path). Inert unless USE_GL4ES is ON and the gl4es::GL target exists
+# gl4es backend (the web and Android). Inert unless USE_GL4ES is ON and the gl4es::GL target exists
 # (created by the top-level FetchContent block). When active, gl4es supplies <GL/gl.h> and the GL
 # symbols instead of the system OpenGL (never also link the system -lGL).
 if(USE_GL4ES)
