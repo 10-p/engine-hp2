@@ -157,6 +157,9 @@ sweep check the layout. The UTGLR fork rounds its pointers through the engine's 
   whole, with a warning once the log is up.
 - **`ucc make` saves are deterministic**: stable sorts in `SavePackage`, the `.int` files in Windows' order in
   `CacheDrivers`.
+- **Fullscreen** (native desktop, `Source/NSDLDrv`). Alt+Enter and `ToggleFullscreen` switch between the window and
+  fullscreen (the Enter press does not reach the game), and `[NSDLDrv.NSDLClient] StartupFullscreen` starts in
+  fullscreen.
 - **Game pads** (`Source/NSDLDrv`; one pad, the first connected): `[NSDLDrv.NSDLClient] UseJoystick` (on by default) is
   read every tick, so `set ini:Engine.Engine.ViewportManager UseJoystick False` closes the pad (every key released) and
   `True` opens the first one present; a pad connected later opens on `SDL_CONTROLLERDEVICEADDED`. Sticks and triggers
