@@ -27,12 +27,11 @@ The look stick (`JoyU`, `JoyV`) is bound to the mouse's axes, `aMouseX` and `aMo
 tilts with (it reads no other look axis), so the mouse sensitivity scales it too. The move stick strafes with its X
 (`JoyX`: `aStrafe`, as the strafe keys) and moves ahead and back with its Y (`JoyY`: `aBaseY`, as the arrow keys),
 both at the keys' 6000 at full tilt, so Harry moves in the stick's direction as briskly as with the keys. On the broom
-its X yaws and its Y pitches (`aJoyBroomYaw`, `aJoyBroomPitch`): in free flight the broom turns at the arrow keys'
-rate when they read 16384, which they do at full tilt, and takes them before the mouse's broom axes. While Harry
-follows the Snitch in a match he reads only the mouse's broom axes and the arrow keys, so the stick drives those axes
-too (`aBroomYaw`, `aBroomPitch`): the follow code adds them to his offset from the Snitch once per frame, and their
-speeds give the arrow keys' 350 units per second at 60 frames per second (proportionally more above, less below). In
-a spell lesson the stick traces (`aSpellLessonX`, `aSpellLessonY`).
+its X yaws and its Y pitches (`aJoyBroomYaw`, `aJoyBroomPitch`, the pitch at the yaw's speed as in this game's own
+`DefUser.ini`). This game's broom divides them by 13312, which they read at full tilt: in free flight it turns at the
+arrow keys' rate, and while Harry follows the Snitch, in the lesson and in every match, they move his offset from it
+at the arrow keys' 350 units per second at any frame rate. Its follow code reads them itself, so the mouse's broom
+axes stay off the stick. In a spell lesson the stick traces (`aSpellLessonX`, `aSpellLessonY`).
 
 ## Rules for `Default.ini`
 
