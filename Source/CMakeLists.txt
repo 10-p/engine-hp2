@@ -42,7 +42,8 @@ option(BUILD_STATIC "Link everything into a single binary" OFF)
 option(UE_ALLOW_64BIT "Build x86_64 as a 64-bit engine instead of demoting to -m32" OFF)
 
 # Hardware render devices: orthogonal per-renderer toggles. XOpenGLDrv (OldUnreal, WebGL 2/GLES3) is the web
-# default; OpenGLDrv/UTGLR runs on the web through gl4es (WebGL 2, or WebGL 1 where that is all there is).
+# default; OpenGLDrv/UTGLR runs on the web through gl4es (WebGL 2, or WebGL 1 where that is all there is);
+# NOpenGLESDrv (GLES2) is on by default and off in the Windows presets, which have no GLES layer.
 if(EMSCRIPTEN)
   set(_HP2_DEF_XOPENGL ON)
   set(_HP2_DEF_GL4ES ON)
@@ -50,6 +51,7 @@ else()
   set(_HP2_DEF_XOPENGL OFF)
   set(_HP2_DEF_GL4ES OFF)
 endif()
+option(BUILD_NOPENGLESDRV "Build NOpenGLESDrv (GLES2 -> WebGL 2, GLES 2 on Android; -NOPENGLESRENDERER)" ON)
 option(BUILD_XOPENGLDRV "Build XOpenGLDrv (OldUnreal GL -> WebGL2/GLES3)" ${_HP2_DEF_XOPENGL})
 option(BUILD_SOFTDRV "Build SoftDrv (the v400 software renderer with HP2's render face; -SOFTWARERENDERER)" ON)
 option(BUILD_NULLDRV "Build NullDrv (GPU-free no-op render device; -NULLRENDERER)" ON)
@@ -68,6 +70,7 @@ if(EMSCRIPTEN)
   set(BUILD_XOPENGLDRV ON)        # forced with set(): option() only supplies a default, and an old build
   set(USE_GL4ES ON)               # tree keeps its cached value
   set(BUILD_UTGLR ON)
+  set(BUILD_NOPENGLESDRV ON)
   set(BUILD_NULLSOUNDDRV ON)
   set(BUILD_NOPENALDRV ON)        # HP2's ALAudio on openal-soft (web audio backend) + EA-XA + Ogg Vorbis
                                   # music; the launcher sets AudioDevice=NOpenALDrv.NOpenALAudioSubsystem.
@@ -94,11 +97,12 @@ endif()
 # Android: the playable client as one shared library, libHP2.so, loaded by the Gradle project's SDLActivity
 # (Android/). SDL2 is fetched and built shared beside it (the Dependencies section), openal-soft, libogg and
 # libvorbis link in statically, and the render devices are those that run on a GLES context: XOpenGLDrv
-# (GLES 3), SoftDrv and NullDrv; OpenGLDrv/UTGLR needs desktop GL.
+# (GLES 3), NOpenGLESDrv (GLES 2), SoftDrv and NullDrv; OpenGLDrv/UTGLR needs desktop GL.
 if(ANDROID AND USE_SDL)
   set(BUILD_STATIC ON)
   set(BUILD_EDITOR ON)            # a runtime dependency (see the option)
   set(BUILD_XOPENGLDRV ON)
+  set(BUILD_NOPENGLESDRV ON)
   set(BUILD_UTGLR OFF)
   set(USE_GL4ES OFF)
   set(BUILD_SOFTDRV ON)
@@ -414,6 +418,14 @@ endif()
 if(BUILD_XOPENGLDRV)
   add_subdirectory(XOpenGLDrv)
   list(APPEND INSTALL_TARGETS XOpenGLDrv)
+endif()
+
+# NOpenGLESDrv and XOpenGLDrv each carry a glad: on the web NOpenGLESDrv compiles none (Emscripten links the GLES2
+# entry points), and natively Thirdparty/glad_es gives its externals a private prefix (glad_symbol_prefix.h), so
+# the two link into one static binary.
+if(BUILD_NOPENGLESDRV)
+  add_subdirectory(NOpenGLESDrv)
+  list(APPEND INSTALL_TARGETS NOpenGLESDrv)
 endif()
 
 if(BUILD_SOFTDRV)

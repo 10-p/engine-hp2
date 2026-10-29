@@ -85,10 +85,11 @@ if(EMSCRIPTEN)
     # emscripten_sleep is WebRTCDrv's handshake wait; __syscall_openat is listed for FetchFS's on-demand open; the
     # frame wait (an EM_ASYNC_JS import) is in Asyncify's default import list.
     "-sASYNCIFY_IMPORTS=['emscripten_sleep','emscripten_set_main_loop','__syscall_openat']"
-    # WebGL 1 and 2: NSDLViewport asks for WebGL 2 for every GL device and lets UTGLR fall back to WebGL 1.
-    # GL_ENABLE_GET_PROC_ADDRESS lets glad (XOpenGL) and gl4es (UTGLR) resolve entry points. FULL_ES2 is
-    # required for UTGLR: gl4es emits client-side vertex arrays, which WebGL rejects ("no ARRAY_BUFFER
-    # bound"), and FULL_ES2 emulates them with temporary VBOs (XOpenGL uses real VBOs and is unaffected).
+    # WebGL 1 and 2: NSDLViewport asks for WebGL 2 for every GL device and lets NOpenGLESDrv and UTGLR fall back
+    # to WebGL 1. GL_ENABLE_GET_PROC_ADDRESS lets glad (XOpenGL) and gl4es (UTGLR) resolve entry points. FULL_ES2
+    # is required for UTGLR and NOpenGLESDrv: gl4es and NOpenGLESDrv (UseVAO=False) emit client-side vertex
+    # arrays, which WebGL rejects ("no ARRAY_BUFFER bound"), and FULL_ES2 emulates them with temporary VBOs
+    # (XOpenGL uses real VBOs and is unaffected).
     -sMAX_WEBGL_VERSION=2
     -sMIN_WEBGL_VERSION=1
     -sGL_ENABLE_GET_PROC_ADDRESS=1
@@ -140,8 +141,8 @@ if(EMSCRIPTEN)
     # Module.UE.net.*), wasmfs-shim.js the WasmFS backend and its worker bootstrap.
     "SHELL:--js-library ${CMAKE_SOURCE_DIR}/../vendor/glue/net-shim.js"
     "SHELL:--js-library ${CMAKE_SOURCE_DIR}/../vendor/glue/wasmfs-shim.js"
-    # ufront_backbuffer_samples: a multisampled emulated back buffer for OpenGLDrv/UTGLR, which draws into
-    # framebuffer 0.
+    # ufront_backbuffer_samples: a multisampled emulated back buffer for the render devices that draw into
+    # framebuffer 0 (NOpenGLESDrv, OpenGLDrv/UTGLR).
     "SHELL:--js-library ${CMAKE_CURRENT_SOURCE_DIR}/msaa-backbuffer.js"
   )
   if(UE_WEB_PERF)

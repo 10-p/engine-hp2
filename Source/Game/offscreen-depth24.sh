@@ -5,8 +5,8 @@
 # Under -sOFFSCREEN_FRAMEBUFFER the engine draws into a framebuffer Emscripten creates itself (libwebgl.js
 # createOffscreenFramebuffer / resizeOffscreenFramebuffer), which allocates the depth attachment as
 # GL_DEPTH_COMPONENT16 whatever the context's depth/stencil attributes say. A render device that draws into
-# framebuffer 0 (UTGLR; not XOpenGL, which owns its FBO) then gets 16 bits of depth, which over the drivers'
-# 1..65k frustum is whole units of z at mid distance: surfaces z-fight in bands. The rewrite makes the
+# framebuffer 0 (NOpenGLESDrv, UTGLR; not XOpenGL, which owns its FBO) then gets 16 bits of depth, which over the
+# drivers' 1..65k frustum is whole units of z at mid distance: surfaces z-fight in bands. The rewrite makes the
 # renderbuffer DEPTH_STENCIL (D24S8 on desktop implementations; valid on WebGL 1 and 2) on the
 # DEPTH_STENCIL_ATTACHMENT. The literals are Emscripten's GL enums in decimal, as -O2 emits them (the minified
 # and the -g loader spell them the same, up to a space); the counts are asserted, so a toolchain change fails

@@ -5,7 +5,7 @@
     {
       "name": "native",
       "displayName": "Native Linux x86 (32-bit), one binary",
-      "description": "32-bit native Linux build (needs libsdl2-dev:i386). BUILD_STATIC links every package into one Game binary; appGetDllHandle resolves through the UNREAL_STATIC registry. Renderers: XOpenGLDrv and OpenGLDrv/UTGLR (system GL), SoftDrv, NullDrv. The renderer forks are fetched by branch; point FETCHCONTENT_SOURCE_DIR_XOPENGLDRV / FETCHCONTENT_SOURCE_DIR_UTGLR / GL4ES_SOURCE_DIR at a local clone to build an unpushed change. Builds in build-native/.",
+      "description": "32-bit native Linux build (needs libsdl2-dev:i386). BUILD_STATIC links every package into one Game binary; appGetDllHandle resolves through the UNREAL_STATIC registry. Renderers: XOpenGLDrv and OpenGLDrv/UTGLR (system GL), NOpenGLESDrv, SoftDrv, NullDrv; NOpenGLESDrv and XOpenGLDrv co-link because Thirdparty/glad_es carries a private symbol prefix. The renderer forks are fetched by branch; point FETCHCONTENT_SOURCE_DIR_XOPENGLDRV / FETCHCONTENT_SOURCE_DIR_UTGLR / GL4ES_SOURCE_DIR at a local clone to build an unpushed change. Builds in build-native/.",
       "generator": "Unix Makefiles",
       "binaryDir": "${sourceDir}/../build-native",
       "cacheVariables": {
@@ -38,7 +38,7 @@
     {
       "name": "android-arm64",
       "displayName": "Android arm64 -- the game as libHP2.so",
-      "description": "The playable client as one shared library for arm64-v8a (SDL2 fetched and built shared beside it, openal-soft, libogg and libvorbis static, XOpenGLDrv on GLES 3, SoftDrv, NullDrv): the same configure the Gradle project in Android/ runs, for a build without the APK. Needs ANDROID_NDK_HOME. Builds in build-android-arm64/.",
+      "description": "The playable client as one shared library for arm64-v8a (SDL2 fetched and built shared beside it, openal-soft, libogg and libvorbis static, XOpenGLDrv on GLES 3, NOpenGLESDrv on GLES 2, SoftDrv, NullDrv): the same configure the Gradle project in Android/ runs, for a build without the APK. Needs ANDROID_NDK_HOME. Builds in build-android-arm64/.",
       "generator": "Unix Makefiles",
       "binaryDir": "${sourceDir}/../build-android-arm64",
       "toolchainFile": "$env{ANDROID_NDK_HOME}/build/cmake/android.toolchain.cmake",
@@ -86,7 +86,7 @@
     {
       "name": "windows",
       "displayName": "Windows x86 (MinGW-w64), one Game.exe",
-      "description": "32-bit Windows build, cross-compiled from Linux with the toolchain file (i686-w64-mingw32 and a fetched SDL2); the same preset works from an MSYS2 MINGW32 prompt. BUILD_STATIC links every package into the exe. Renderers: UTGLR (OpenGLDrv) and XOpenGLDrv through the system opengl32, SoftDrv, NullDrv. Audio: NOpenALDrv with OpenAL Soft's OpenAL32.dll copied beside the exe. Builds in build-windows/.",
+      "description": "32-bit Windows build, cross-compiled from Linux with the toolchain file (i686-w64-mingw32 and a fetched SDL2); the same preset works from an MSYS2 MINGW32 prompt. BUILD_STATIC links every package into the exe. Renderers: UTGLR (OpenGLDrv) and XOpenGLDrv through the system opengl32, SoftDrv, NullDrv; no NOpenGLESDrv (Windows has no OpenGL ES layer). Audio: NOpenALDrv with OpenAL Soft's OpenAL32.dll copied beside the exe. Builds in build-windows/.",
       "generator": "Unix Makefiles",
       "binaryDir": "${sourceDir}/../build-windows",
       "toolchainFile": "${sourceDir}/cmake/toolchain-mingw-w64.cmake",
@@ -96,6 +96,7 @@
         "BUILD_EDITOR": "ON",
         "BUILD_SOFTDRV": "ON",
         "BUILD_NULLDRV": "ON",
+        "BUILD_NOPENGLESDRV": "OFF",
         "BUILD_XOPENGLDRV": "ON",
         "BUILD_UTGLR": "ON",
         "USE_GL4ES": "OFF",

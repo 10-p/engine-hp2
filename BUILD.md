@@ -14,7 +14,7 @@ Everything is built and run inside the workspace `/home/ion/WorkUnreal` (`$W` be
 | `wasm` | `build-wasm/SDLLaunch/SDLLaunch.{js,wasm,data}`, `meta.json` | web, `-O2` with DWARF and assertions |
 | `wasm-debug` | `build-wasm-debug/SDLLaunch/…` | web at `-O0` |
 | `wasm-perf` | `build-wasm-perf/SDLLaunch/…`, `SDLLaunch.js.symbols` | web shipping build (linked `-O3 -g0`, no assertions); what the frontend publishes |
-| `windows` | `build-windows/Game/Game.exe`, `OpenAL32.dll`, `build-windows/UCC/ucc.exe` | Windows x86 (MinGW-w64 cross), one self-contained exe |
+| `windows` | `build-windows/Game/Game.exe`, `OpenAL32.dll`, `build-windows/UCC/ucc.exe` | Windows x86 (MinGW-w64 cross), one self-contained exe, every renderer but NOpenGLESDrv |
 | `android-arm64` | `build-android-arm64/Game/libHP2.so`, `_deps/sdl2-build/libSDL2.so`, `libhp2_android_bridge.so` | the game as one shared library for Android arm64 (API 30, shared libc++; needs `ANDROID_NDK_HOME`): the configuration the Gradle project in `Android/` builds into the APK |
 | `windows64` | `build-windows64/…` (the same files) | the same for x86_64 |
 
@@ -44,24 +44,25 @@ The options this repository defines (`Source/CMakeLists.txt`; the presets set th
 | `UE_WEB_PERF`, `UE_WEB_DEBUG` | OFF | the web build mode (see the table above) |
 | `UE_BUNDLED_OPENAL` | ON | native Linux: build openal-soft and ship `libopenal.so.1` beside the binary |
 | `BUILD_XOPENGLDRV`, `BUILD_UTGLR`, `BUILD_SOFTDRV`, `BUILD_NULLDRV` | per preset | the render devices |
+| `BUILD_NOPENGLESDRV` | ON (OFF in `windows` and `windows64`) | NOpenGLESDrv, the GLES2 device: native Linux, the web and Android; Windows has no OpenGL ES layer |
 | `BUILD_NOPENALDRV`, `BUILD_NULLSOUNDDRV` | per preset | the audio subsystems |
 | `BUILD_EDITOR`, `BUILD_STATIC`, `USE_GL4ES` | per preset | the Editor package, one static binary, UTGLR on gl4es |
 | `SOFTDRV_MAX_SCREEN` | 4096 (8192 on the web) | SoftDrv's largest viewport dimension |
 
 The Android client (`if(ANDROID AND USE_SDL)` in `Source/CMakeLists.txt`) forces its own set: static, Editor,
-XOpenGLDrv, SoftDrv, NullDrv, NOpenALDrv and the silent audio subsystem, no UTGLR (desktop GL) and no `ucc-bin`,
+XOpenGLDrv, NOpenGLESDrv, SoftDrv, NullDrv, NOpenALDrv and the silent audio subsystem, no UTGLR (desktop GL) and no `ucc-bin`,
 `UE_ALLOW_64BIT` (the x86_64 ABI), `ASM=0`, `-fno-delete-null-pointer-checks` and clang's non-POD-varargs leniency;
 it defines `UE_ANDROID_APP` for the app's own platform paths.
 
 A software-only native tree (no GL devices) for parallel work:
-`cmake --preset native -B ../build-native-soft -DBUILD_XOPENGLDRV=OFF -DBUILD_UTGLR=OFF`.
+`cmake --preset native -B ../build-native-soft -DBUILD_XOPENGLDRV=OFF -DBUILD_UTGLR=OFF -DBUILD_NOPENGLESDRV=OFF`.
 
 ## Running the native build
 
 ```bash
 UE_ASSETS_DIR=$W/assets/hp2-proto-assets tools/dev/mkrun-hp2.sh build-native $W/run/hp2-native
 cd $W/run/hp2-native && ./run.sh            # SoftDrv, the title level
-./run.sh gl Ch1Rictusempra                  # XOpenGLDrv, straight into a level (null, utglr, soft)
+./run.sh gl Ch1Rictusempra                  # XOpenGLDrv, straight into a level (null, utglr, gles, soft)
 SDL_VIDEODRIVER=dummy System/Game -NULLRENDERER -NOMSGBOX -log    # headless
 ```
 
@@ -178,12 +179,31 @@ sweep check the layout. The UTGLR fork rounds its pointers through the engine's 
   `bRun` (the Walking key writes the whole byte; the stick sets its bit again the next tick). The compiled defaults
   (Scale, dead zones) are in `UNSDLClient::StaticConstructor`. Log lines: `NSDLClient: game pad connected: <name>`, `disconnected`, `buttons held
   at the connect given to the game: 0x<mask>`, `game pads on|off (UseJoystick)`.
-- **Antialiasing on the web** (`UseAA`, `NumAASamples` of XOpenGL and UTGLR; the launcher's Advanced switch): every GL
-  device draws on WebGL 2. XOpenGLDrv multisamples in framebuffers of its own; UTGLR draws into framebuffer 0, which
-  `Source/Game/msaa-backbuffer.js` (`ufront_backbuffer_samples(n)`) replaces with a multisampled RGBA8 +
-  DEPTH24_STENCIL8 one, resolved at the present and before any read of framebuffer 0 (`SHOT`, save thumbnails). Log
-  lines: `AA: 4x multisampled back buffer` / `AA: off`. `-WEBGL=1`, or a browser without WebGL 2, gives UTGLR WebGL 1
-  without antialiasing.
+- **Render device** (`Source/Game/Src/Launch.cpp`). `-XOPENGLRENDERER`, `-UTGLRRENDERER`, `-NOPENGLESRENDERER`,
+  `-SOFTWARERENDERER` and `-NULLRENDERER` select a device this build contains (an absent one is logged and ignored).
+  Without a switch the persisted `GameRenderDevice` is kept when it is a hardware default or the user's marked pick
+  (`[Engine.Engine] ufrontUserRenderDevice`); else XOpenGL, then UTGLR; SoftDrv when the build has neither. A switch
+  whose device is still the game device after `Engine->Init` is persisted with the marker. The launcher writes the
+  choice to `GameRenderDevice`, `WindowedRenderDevice` and `RenderDevice`; a device whose Init fails is tried again as
+  `WindowedRenderDevice`, and the start then stops with an error.
+- **NOpenGLESDrv** (`Source/NOpenGLESDrv`, `-NOPENGLESRENDERER`, never a default): the GLES2 device on WebGL 2 (WebGL 1
+  with `-WEBGL=1` or without WebGL 2), on Android's GLES 2 context and natively on the desktop GL context, with HP2's
+  render face: `DrawTriangles` (indexed lists, fans, plain lists; `MaxVertices()` 256), the 5-argument
+  `DrawComplexSurface` (a Lumos surface is straight alpha at opacity 1 - cAlpha/255, with the depth writes Render
+  chose), `PF_Highlighted|PF_Translucent` as straight alpha with the vertex alpha, alpha-palette tiles premultiplied,
+  palette alpha kept, `PF_NoSmooth` taken per draw. Options in `[NOpenGLESDrv.NOpenGLESRenderDevice]` (`NoFiltering`,
+  `Overbright`, `UseVAO`, `UseBGRA`, `MaxAnisotropy`, `NumAASamples`, `SwapInterval`, and URenderDevice's
+  `DetailTextures`, `HighDetailActors`, `VolumetricLighting`, `ShinySurfaces`, `Coronas`), with compiled defaults
+  for an ini without the section. Log lines: `Got OpenGL <version>`, `NOpenGLES: default framebuffer depth <n> bits`,
+  `GLES2: anisotropic filtering <n>x`.
+- **Antialiasing on the web** (`UseAA` and `NumAASamples` of XOpenGL and UTGLR, NOpenGLES's `NumAASamples`; the
+  launcher's Advanced switch): every GL device draws on WebGL 2. XOpenGLDrv multisamples in framebuffers of its own;
+  NOpenGLESDrv and UTGLR draw into framebuffer 0, which `Source/Game/msaa-backbuffer.js` (`ufront_backbuffer_samples(n)`)
+  replaces with a multisampled RGBA8 + DEPTH24_STENCIL8 one, resolved at the present and before any read of
+  framebuffer 0 (`SHOT`, save thumbnails). Log lines: `AA: 4x multisampled back buffer` / `AA: off`, and NOpenGLES's
+  `GLES2: antialiasing 4x (multisampled back buffer)` / `GLES2: antialiasing off`. `-WEBGL=1`, or a browser without
+  WebGL 2, gives NOpenGLESDrv and UTGLR WebGL 1 without antialiasing. Natively and on Android the context is made
+  before the device starts, and NOpenGLES only logs `NumAASamples`.
 
 ## Audio (NOpenALDrv)
 
@@ -257,8 +277,8 @@ working directory before SDL starts `SDL_main`, and the launcher (`MainActivity`
   Android scales to the screen; the engine sees the scaled size as its window. SDL's surface view (`FrameSurface`)
   scales every touch and mouse position from the screen to that buffer before SDL reads it, so a tap lands where it
   is drawn at every scale.
-- The launcher's renderer selection, at the bottom of its page (the game's choice, then XOpenGL and Software; Null
-  for debugging), adds that render device's `-*RENDERER` switch after any command line the launcher was started
+- The launcher's renderer selection, at the bottom of its page (the game's choice, then XOpenGL, NOpenGLES and
+  Software; Null for debugging), adds that render device's `-*RENDERER` switch after any command line the launcher was started
   with. The game keeps the device it last started with, also under "The game's choice": a device whose GPU draws the
   default wrong is switched once.
 

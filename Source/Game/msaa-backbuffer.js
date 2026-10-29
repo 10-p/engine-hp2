@@ -1,10 +1,11 @@
-// msaa-backbuffer.js — a multisampled emulated back buffer for the render device that draws into framebuffer 0
-// (OpenGLDrv/UTGLR). An Emscripten JS library, linked with --js-library by Source/Game/CMakeLists.txt.
+// msaa-backbuffer.js — a multisampled emulated back buffer for the render devices that draw into framebuffer 0
+// (NOpenGLESDrv, OpenGLDrv/UTGLR). An Emscripten JS library, linked with --js-library by Source/Game/CMakeLists.txt.
 //
 // Under -sOFFSCREEN_FRAMEBUFFER Emscripten draws "framebuffer 0" into a framebuffer of its own (libwebgl.js
 // createOffscreenFramebuffer: a single-sample RGBA texture + a depth renderbuffer) and copies it to the canvas at
 // emscripten_webgl_commit_frame. The context's `antialias` attribute reaches only the canvas, never that
-// framebuffer, so UTGLR cannot antialias without this; XOpenGLDrv draws into multisampled framebuffers of its own.
+// framebuffer, so NOpenGLESDrv and UTGLR cannot antialias without this; XOpenGLDrv draws into multisampled
+// framebuffers of its own.
 //
 // ufront_backbuffer_samples(n), called by a render device on its own context: n > 1 on WebGL 2 swaps the emulated
 // framebuffer for a multisampled one (n samples, clamped to MAX_SAMPLES; RGBA8 + DEPTH24_STENCIL8, the depth

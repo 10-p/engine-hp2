@@ -57,8 +57,9 @@ a spell lesson the stick traces (`aSpellLessonX`, `aSpellLessonY`).
   500 compiled).
 - No Windows sections (`WinDrv`, `D3DDrv`, `Galaxy`, `IpServer`, `UWeb`, `UBrowser`, the GPU-quirk list).
 - The renderer sections (`[XOpenGLDrv.XOpenGLRenderDevice]`, `[OpenGLDrv.OpenGLRenderDevice]`,
-  `[SoftDrv.SoftwareRenderDevice]`, `[NullDrv.NullRenderDevice]`) are described with their drivers:
-  `Source/XOpenGLDrv/WEB_INTEGRATION.md`, `Source/OpenGLDrv/WEB-INTEGRATION.md`.
+  `[NOpenGLESDrv.NOpenGLESRenderDevice]`, `[SoftDrv.SoftwareRenderDevice]`, `[NullDrv.NullRenderDevice]`) are
+  described with their drivers: `Source/XOpenGLDrv/WEB_INTEGRATION.md`, `Source/OpenGLDrv/WEB-INTEGRATION.md`, and
+  `BUILD.md` (NOpenGLESDrv).
 
 There are no native Asian or Thai fonts: `UViewport::CreateNativeFont` returns NULL and NSDLDrv, the viewport driver
 of every build here, does not override it.

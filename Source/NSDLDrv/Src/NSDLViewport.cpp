@@ -367,9 +367,9 @@ void UNSDLViewport::OpenWindow( PTRINT InParentWindow, UBOOL Temporary, INT NewX
 		if( DoOpenGL && Temp.InStr(TEXT("XOPENGL")) != INDEX_NONE )
 			WebGLESMajor = 3;
 #ifdef __EMSCRIPTEN__
-		// WebGL 2 for every GL device: gl4es (OpenGLDrv/UTGLR) runs on it unchanged, and UTGLR's antialiasing needs its
-		// multisampled renderbuffers (msaa-backbuffer.js). -WEBGL=1 gives OpenGLDrv/UTGLR WebGL 1, as does a browser
-		// without WebGL 2 (the context code below); XOpenGLDrv always needs WebGL 2.
+		// WebGL 2 for every GL device: NOpenGLESDrv's and gl4es's (OpenGLDrv/UTGLR) GLES2 calls run on it unchanged, and
+		// their antialiasing needs its multisampled renderbuffers (msaa-backbuffer.js). -WEBGL=1 gives those two WebGL 1,
+		// as does a browser without WebGL 2 (the context code below); XOpenGLDrv always needs WebGL 2.
 		INT AskWebGL = 2;
 		XOpenGLDevice = DoOpenGL && Temp.InStr(TEXT("XOPENGL")) != INDEX_NONE;
 		if( DoOpenGL )
@@ -442,7 +442,8 @@ void UNSDLViewport::OpenWindow( PTRINT InParentWindow, UBOOL Temporary, INT NewX
 			SDL_GL_SetAttribute( SDL_GL_DEPTH_SIZE, 24 );
 			SDL_GL_SetAttribute( SDL_GL_STENCIL_SIZE, 8 );
 #else
-			// Every GL device here (XOpenGLDrv, OpenGLDrv/UTGLR) draws on a desktop compatibility context.
+			// Every GL device here (XOpenGLDrv, OpenGLDrv/UTGLR, NOpenGLESDrv's GLES2 calls) draws on a desktop
+			// compatibility context.
 			SDL_GL_SetAttribute( SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_COMPATIBILITY );
 #endif
 		}
@@ -518,7 +519,7 @@ void UNSDLViewport::OpenWindow( PTRINT InParentWindow, UBOOL Temporary, INT NewX
 				EMSCRIPTEN_WEBGL_CONTEXT_HANDLE WebGLCtx = emscripten_webgl_create_context( "#canvas", &Attrs );
 				if( WebGLCtx <= 0 && Attrs.majorVersion == 2 && !XOpenGLDevice )
 				{
-					// A browser without WebGL 2 runs OpenGLDrv/UTGLR on WebGL 1, without antialiasing.
+					// A browser without WebGL 2 runs NOpenGLESDrv and OpenGLDrv/UTGLR on WebGL 1, without antialiasing.
 					debugf( NAME_Init, "No WebGL 2 context (handle %i): WebGL 1, without antialiasing", (INT)WebGLCtx );
 					Attrs.majorVersion = 1;
 					WebGLESMajor = 2;
