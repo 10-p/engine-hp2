@@ -1,0 +1,64 @@
+# The prototype's broom in free flight against the arrow keys: the yaw from the move stick's X at full and half tilt
+# and from the Right key, the pitch from its Y and from the Up key. In Quidditch_Intro's mock game Harry flies freely
+# (he follows no Snitch), so the stick turns him directly; every sample starts from one spot in the air at pitch 0.
+# A yaw sample settles 30 ticks and is watched 150; a pitch sample is watched 40 ticks from the input, below the
+# broom's pitch limit. The waits are on watch lines (tick counts at the default 120 fps cap):
+#   tools/dev/inputtest/run.sh <run-tree> broom.scen <out-dir> Quidditch_Intro -NULLRENDERER
+#   tools/dev/inputtest/rate.py <out-dir>/game.log 0
+# The tags name the axis, the input and the tilt (yaw-stick-0.5: the stick's X at half tilt); the _ tags are the
+# settling and resting ticks between samples. The stick at full tilt turns and pitches at the keys' rate.
+waitlog Bringing Level Quidditch_Intro\.MyLevel up for play
+pad attach
+waitlog Entered GameMockGame State
+watch 2 _attached
+waitlog watch _attached 1
+exec TELEPORT -337 -13417 -527 3988 0
+pad axis leftx 32767
+watch 30 _settle-yaw-stick-1.0
+waitlog watch _settle-yaw-stick-1.0 29
+watch 150 yaw-stick-1.0
+waitlog watch yaw-stick-1.0 149
+pad axis leftx 0
+watch 12 _rest-yaw-stick-1.0
+waitlog watch _rest-yaw-stick-1.0 11
+exec TELEPORT -337 -13417 -527 3988 0
+pad axis leftx 16384
+watch 30 _settle-yaw-stick-0.5
+waitlog watch _settle-yaw-stick-0.5 29
+watch 150 yaw-stick-0.5
+waitlog watch yaw-stick-0.5 149
+pad axis leftx 0
+watch 12 _rest-yaw-stick-0.5
+waitlog watch _rest-yaw-stick-0.5 11
+exec TELEPORT -337 -13417 -527 3988 0
+key Right 1
+watch 30 _settle-yaw-key
+waitlog watch _settle-yaw-key 29
+watch 150 yaw-key
+waitlog watch yaw-key 149
+key Right 0
+watch 12 _rest-yaw-key
+waitlog watch _rest-yaw-key 11
+exec TELEPORT -337 -13417 -527 3988 0
+watch 12 _pre-pitch-stick-1.0
+waitlog watch _pre-pitch-stick-1.0 11
+pad axis lefty -32767
+watch 40 pitch-stick-1.0
+waitlog watch pitch-stick-1.0 39
+pad axis lefty 0
+exec TELEPORT -337 -13417 -527 3988 0
+watch 12 _pre-pitch-stick-0.5
+waitlog watch _pre-pitch-stick-0.5 11
+pad axis lefty -16384
+watch 40 pitch-stick-0.5
+waitlog watch pitch-stick-0.5 39
+pad axis lefty 0
+exec TELEPORT -337 -13417 -527 3988 0
+watch 12 _pre-pitch-key
+waitlog watch _pre-pitch-key 11
+key Up 1
+watch 40 pitch-key
+waitlog watch pitch-key 39
+key Up 0
+watch 12 _end
+waitlog watch _end 11
