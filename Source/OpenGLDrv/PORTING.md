@@ -48,7 +48,8 @@ The two backends:
   resolver (`emscripten_webgl_get_proc_address` on the threaded web build, `SDL_GL_GetProcAddress` elsewhere) and
   calls `initialize_gl4es()`; entry points then resolve through `gl4es_GetProcAddress`, so every call goes through
   gl4es' translation. On the desktop this runs gl4es' GLES 2 path on the desktop compatibility context, on Android
-  on an OpenGL ES 2 context.
+  on an OpenGL ES 2 context; there the launcher has also set `LIBGL_NOPSA`, and `LIBGL_NOBGRA` on the emulator
+  (BUILD.md, "Android").
 
 ## Selection and the GL context
 
