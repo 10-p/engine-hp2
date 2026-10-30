@@ -143,6 +143,9 @@ sweep check the layout. The UTGLR fork rounds its pointers through the engine's 
   `[Engine.GameEngine] AllowNetCheats`. `Source/Engine/Src/UnCheats.cpp`, handled first in `UGameEngine::Exec`.
 - **`[Engine.GameEngine] FpsLogSeconds=<s>`** (0 = off) / console **`FPSLOG <s>`**: an `FPS:` line every `<s>` seconds
   (frames, fps, frame ms avg/min/max/p99, the 1% low, the viewport size). `Source/Engine/Src/UnFpsLog.cpp`.
+- **`RELAUNCH <arguments>`** (Epic's console command): the game exits, and once it has, its running executable starts
+  again with the arguments (Linux and Windows); an Android app closes; on the web it is a fatal error, `Failed to
+  launch process. Relaunch: <arguments>`. `Source/Core/Src/UnUnix.cpp`.
 - **`Init: Language: <ext>`** at start-up: the language this run took (`[Engine.Engine] Language`, read after the
   `-ini:` overrides).
 - **The menu book on a screen that is not 4:3:** while HGame's book is open, the UWindow menus are drawn in the largest
