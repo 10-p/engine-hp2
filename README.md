@@ -31,8 +31,11 @@ The baseline is the restructured prototype drop (`/home/ion/WorkUnreal/epic-sour
   forced, and the package loaders fail soft because exception catching is off.
 - **SDL2 client driver** — NSDLDrv on HP2's 433 interfaces: window, input, game pads with hot-plug, the options-page
   commands; every GL device gets WebGL 2 on the web.
-- **OpenGL renderers** — XOpenGLDrv (WebGL 2) and UTGLR OpenGLDrv (WebGL 1/2 through gl4es), fetched from their forks,
-  which carry HP2's 433 render interface; this repository carries the build glue and the multisampled back buffer.
+- **OpenGL renderers** — XOpenGLDrv (WebGL 2, OpenGL ES 3) and UTGLR OpenGLDrv (WebGL 1/2 and OpenGL ES 2 through
+  gl4es), fetched from their forks, which carry HP2's 433 render interface; this repository carries the build glue and
+  the multisampled back buffer.
+- **OpenGL ES renderer** — NOpenGLESDrv, the GLES2 device with HP2's 433 render interface, on Linux, the web (WebGL 2,
+  antialiasing through the multisampled back buffer) and Android (GLES 2), not on Windows (`-NOPENGLESRENDERER`).
 - **Software renderer** — the v400 SoftDrv (portable C paths) with HP2's 433 render interface (`-SOFTWARERENDERER`).
 - **Null renderer** — NullDrv, a GPU-free render device for headless runs (`-NULLRENDERER`).
 - **WebRTC net driver** — WebRTCDrv over the glue's `ue_net_*` imports, the web's `NetworkDevice` (P2P is off for HP2).

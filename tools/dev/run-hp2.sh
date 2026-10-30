@@ -5,6 +5,7 @@
 #   ./run.sh null                  NullDrv (GPU-free)
 #   ./run.sh gl                    XOpenGLDrv
 #   ./run.sh utglr                 OpenGLDrv (UTGLR)
+#   ./run.sh gles                  NOpenGLESDrv
 #   ./run.sh soft Ch1Rictusempra   straight into a map (extra args go to the game)
 #
 #   RES=1920x1080   viewport size (written to Game.ini's [NSDLDrv.NSDLClient] once it exists)
@@ -21,6 +22,7 @@ case "${1:-}" in
     null)  ARGS="-NULLRENDERER"; shift ;;
     gl)    ARGS="-XOPENGLRENDERER"; shift ;;
     utglr) ARGS="-UTGLRRENDERER"; shift ;;
+    gles)  ARGS="-NOPENGLESRENDERER"; shift ;;
 esac
 
 if [ -n "${RES:-}" ] && [ -f "$INI" ]; then

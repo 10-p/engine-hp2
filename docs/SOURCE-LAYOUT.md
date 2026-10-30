@@ -19,8 +19,8 @@ tree, the baseline the engine's changes are compared with.
 | `Unreal.dsw`, `_FullBuild.dsp`, `forEA.bat` | the original MSVC 6 workspace and the EA drop script | no |
 
 Beside them sit the port's own folders: the CMake build (`CMakeLists.txt`, `CMakePresets.json`, `cmake/`), the SDL
-launcher `Game`, the drivers `NSDLDrv`, `NOpenALDrv`, `NullDrv`, `SoundDrv`, `IpDrv` and `WebRTCDrv`, and the build
-glue of the fetched renderers `XOpenGLDrv` and `OpenGLDrv`.
+launcher `Game`, the drivers `NSDLDrv`, `NOpenALDrv`, `NOpenGLESDrv`, `NullDrv`, `SoundDrv`, `IpDrv` and `WebRTCDrv`, and
+the build glue of the fetched renderers `XOpenGLDrv` and `OpenGLDrv`.
 
 The drop's `Unreal/Engine/Textures` and `Unreal/Editor/Textures` (the `.pcx` import sources of `Engine.u` and
 `Editor.u`) belong in `Assets/PackageSources/{Engine,Editor}/Textures`; the headers `Source/Engine/Inc/S3tc.h` and
@@ -38,7 +38,9 @@ The drop's `Unreal/Engine/Textures` and `Unreal/Editor/Textures` (the `.pcx` imp
 | `s3tc`, `ENCVAG` | `Unreal/Engine/Lib` | the S3 texture-compression library (editor encode path), the Sony VAG encoder (PS2) |
 | `MPeg` | `Unreal/Engine/MPeg` | `MpegLib.lib` + thin wrappers (`scompmpg.cpp`, `TbFile.cpp`, `SoundFile.cpp`): MP2 sound-compression tooling |
 
-No target of the CMake build links any of them.
+No target of the CMake build links any of them. Beside them sit two libraries the port vendors for NOpenGLESDrv:
+`glad_es` (the GLES2 loader it compiles natively; `glad_symbol_prefix.h` gives its externals a private prefix so it
+links beside XOpenGLDrv's glad) and `glm` (header-only maths).
 
 ## Config/System/ — the shipped inis
 

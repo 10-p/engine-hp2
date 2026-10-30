@@ -8,7 +8,7 @@ with the other games but unlisted) consumes the artifact and owns the host page,
 browser glue behind the thin ABI shims vendored in `vendor/glue/` (`UE_ABI_VERSION 2`).
 
 The build skeleton, folder layout, presets, renderers (XOpenGLDrv for WebGL 2, OpenGLDrv/UTGLR on gl4es, the in-tree
-SoftDrv), helper drivers (NSDLDrv, NOpenALDrv, NullDrv, SoundDrv, WebRTCDrv) and web inis follow `engine-ut99`
+NOpenGLESDrv and SoftDrv), helper drivers (NSDLDrv, NOpenALDrv, NullDrv, SoundDrv, WebRTCDrv) and web inis follow `engine-ut99`
 (`/home/ion/WorkUnreal/engine-ut99`); this file records where HP2 differs. Build and run: `BUILD.md`.
 
 ## The workspace and the two branches
@@ -59,7 +59,7 @@ docs/          SOURCE-LAYOUT.md (drop → repository mapping) and the porting re
 
 - **Build 433, 436-era interfaces.** `DECLARE_CLASS` takes the package name. `URenderDevice` (`Engine/Inc/UnRenDev.h`)
   has a 5-argument `DrawComplexSurface(…, DWORD PolyFlags, BYTE cAlpha)`, pure `MaxVertices()` and `DrawTriangles(…)`;
-  every render driver (the forks, NullDrv, SoftDrv) implements that face. `appSeconds()` returns an `FTime`
+  every render driver (the forks, NOpenGLESDrv, NullDrv, SoftDrv) implements that face. `appSeconds()` returns an `FTime`
   (32.32 fixed point): take differences, and pass `.GetFloat()` to a `%f`.
 - **`UAudioSubsystem` (`Engine/Inc/UnAudio.h`) is HP2's own:** flagged, faded and prioritised `PlaySound`,
   `PlayMusic(FString Song, FLOAT FadeIn)` opening Ogg Vorbis files from `Music/` by path (no `.umx`), lip-sync data.

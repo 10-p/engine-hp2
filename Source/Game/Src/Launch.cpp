@@ -18,6 +18,7 @@ Revision history:
 #if defined(__ANDROID__)
 #include <android/log.h>
 #include <pthread.h>
+#include <sys/system_properties.h>
 #include <unistd.h>
 
 // stdout and stderr on logcat (tag HP2-stdio): both are a pipe that a thread reads line by line. GLog's own
@@ -282,6 +283,8 @@ static const FRenderSwitch GRenderSwitches[] =
 {
 	{ TEXT("XOPENGLRENDERER"),   TEXT("XOpenGLDrv.XOpenGLRenderDevice") },
 	{ TEXT("UTGLRRENDERER"),     TEXT("OpenGLDrv.OpenGLRenderDevice") },
+	// NOpenGLESDrv: the GLES2 device. Opt-in only (not in GRenderPreference).
+	{ TEXT("NOPENGLESRENDERER"), TEXT("NOpenGLESDrv.NOpenGLESRenderDevice") },
 	// SoftDrv: the CPU rasterizer. Opt-in only (not in GRenderPreference).
 	{ TEXT("SOFTWARERENDERER"),  TEXT("SoftDrv.SoftwareRenderDevice") },
 	// NullDrv: a no-op render device with no GL context, for headless runs. Opt-in only.
@@ -507,6 +510,19 @@ static UEngine* InitEngine()
 		{
 			debugf( TEXT("[XOpenGLDrv.XOpenGLRenderDevice] OpenGLVersion=%s -> ES_WEBGL (GLES 3 context)"), *Profile );
 			GConfig->SetString( TEXT("XOpenGLDrv.XOpenGLRenderDevice"), TEXT("OpenGLVersion"), TEXT("ES_WEBGL") );
+		}
+	}
+	// gl4es, OpenGLDrv/UTGLR's GL layer, reads these when the device starts it: no precompiled-shader archive in the
+	// home folder, and on the emulator, whose GLES translator corrupts GL_BGRA uploads, BGRA swizzled by gl4es.
+	setenv( "LIBGL_NOPSA", "1", 1 );
+	{
+		char Qemu[PROP_VALUE_MAX] = {0}, Hardware[PROP_VALUE_MAX] = {0};
+		__system_property_get( "ro.kernel.qemu", Qemu );
+		__system_property_get( "ro.hardware", Hardware );
+		if( Qemu[0]=='1' || strstr( Hardware, "goldfish" ) || strstr( Hardware, "ranchu" ) )
+		{
+			debugf( TEXT("OpenGLDrv: Android emulator detected -> LIBGL_NOBGRA=1 (gl4es swizzles BGRA uploads)") );
+			setenv( "LIBGL_NOBGRA", "1", 1 );
 		}
 	}
 #endif

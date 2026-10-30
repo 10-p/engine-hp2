@@ -115,6 +115,8 @@ flattened varyings (`DrawTile_GLSL.cpp`, `DrawGouraud_GLSL.cpp`), S3TC under the
 both ES profiles and `IsWebGL()` for `ES_WEBGL` only; `SetOptionsForRendererConfig` sets `OPT_GLES` for both and
 `OPT_GLES_WEBGL` for the WebGL one, and the shader generators branch on those. The web forces `ES_WEBGL`; natively the
 ini decides (default `Core`), so `OpenGLVersion=ES_WEBGL` runs the WebGL shader path on a desktop context.
+Init fails, before its first GL 3 call, on a context it cannot use (none current, one the loader cannot read, or one
+below OpenGL 3.3, ES 3.0 on an ES profile), so NSDLViewport's SoftDrv fallback takes over.
 
 ## Antialiasing
 

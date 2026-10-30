@@ -51,6 +51,9 @@ class NSDLDRV_API UNSDLViewport : public UViewport
 	virtual UBOOL IsFullscreen();
 	virtual UBOOL ResizeViewport( DWORD BlitType, INT X=INDEX_NONE, INT Y=INDEX_NONE, INT ColorBytes=INDEX_NONE );
 
+	// UPlayer interface.
+	virtual void ReadInput( FLOAT DeltaSeconds );
+
 	// UNSDLViewport interface.
 	void SetClientSize( INT NewX, INT NewY, UBOOL UpdateProfile );
 	void EndFullscreen();
@@ -73,6 +76,10 @@ private:
 	SDL_Texture* SDLTex; // for use with the above renderer
 	DWORD SDLTexFormat;
 	SDL_GLContext GLCtx; // for OpenGLDrv
+	// The configured render device could not start (no GL window or context, or its Init failed): SoftDrv renders
+	// for the rest of the run, in a window without GL. The ini keeps the configured device.
+	UBOOL SoftwareFallback;
+	UBOOL FallBackToSoftware();
 #if defined(__EMSCRIPTEN__) && defined(__EMSCRIPTEN_PTHREADS__)
 	// No SDL renderer on the worker (SDL's is GLES-backed and its proxied eglCreateContext deadlocks the
 	// engine thread): SoftDrv renders into this buffer and Unlock blits it to the OffscreenCanvas in 2D.
@@ -90,7 +97,6 @@ private:
 	FNSDLInputTest* InputTest;	// the input test channel (-INPUTTEST=), NULL without it
 	friend class FNSDLInputTest;
 	UBOOL QuitRequested;
-	FTime InputUpdateTime; // HP2 433: appSeconds() returns FTime
 public:
 	INT HoldCount;
 private:
@@ -102,8 +108,10 @@ private:
 	static void InitKeyMap();
 	UBOOL CauseInputEvent( INT iKey, EInputAction Action, FLOAT Delta=0.0 );
 #if defined(__ANDROID__)
-	// The touch overlay's input, folded into the engine's once per tick (NSDLAndroid.cpp).
+	// The touch overlay's input, folded into the engine's once per tick (NSDLAndroid.cpp); its move stick once a frame,
+	// for the frame's length (ReadInput).
 	void TickAndroidTouch();
+	void ReadAndroidStick( FLOAT DeltaSeconds );
 #endif
 };
 

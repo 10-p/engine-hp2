@@ -231,6 +231,7 @@ UNSDLViewport::UNSDLViewport( ULevel* InLevel, UNSDLClient* InClient )
 	Destroyed = false;
 	QuitRequested = false;
 	HoldCount = 0;
+	SoftwareFallback = 0;
 	InputTest = NULL;
 	FString InputTestFile;
 	if( Parse( appCmdLine(), TEXT("INPUTTEST="), InputTestFile ) )
@@ -342,7 +343,7 @@ void UNSDLViewport::OpenWindow( PTRINT InParentWindow, UBOOL Temporary, INT NewX
 	NewX = Align(NewX,4);
 	debugf( NAME_Log, TEXT("OpenWindow: NewX=%d, NewY=%d"), NewX, NewY );
 
-	if( !Temporary && !GIsEditor && !NoHard )
+	if( !Temporary && !GIsEditor && !NoHard && !SoftwareFallback )
 	{
 		// HACK: Just check if we're about to load OpenGLDrv. Not sure how else you would know to add the GL flag.
 		FString Temp;
@@ -367,9 +368,9 @@ void UNSDLViewport::OpenWindow( PTRINT InParentWindow, UBOOL Temporary, INT NewX
 		if( DoOpenGL && Temp.InStr(TEXT("XOPENGL")) != INDEX_NONE )
 			WebGLESMajor = 3;
 #ifdef __EMSCRIPTEN__
-		// WebGL 2 for every GL device: gl4es (OpenGLDrv/UTGLR) runs on it unchanged, and UTGLR's antialiasing needs its
-		// multisampled renderbuffers (msaa-backbuffer.js). -WEBGL=1 gives OpenGLDrv/UTGLR WebGL 1, as does a browser
-		// without WebGL 2 (the context code below); XOpenGLDrv always needs WebGL 2.
+		// WebGL 2 for every GL device: NOpenGLESDrv's and gl4es's (OpenGLDrv/UTGLR) GLES2 calls run on it unchanged, and
+		// their antialiasing needs its multisampled renderbuffers (msaa-backbuffer.js). -WEBGL=1 gives those two WebGL 1,
+		// as does a browser without WebGL 2 (the context code below); XOpenGLDrv always needs WebGL 2.
 		INT AskWebGL = 2;
 		XOpenGLDevice = DoOpenGL && Temp.InStr(TEXT("XOPENGL")) != INDEX_NONE;
 		if( DoOpenGL )
@@ -434,15 +435,16 @@ void UNSDLViewport::OpenWindow( PTRINT InParentWindow, UBOOL Temporary, INT NewX
 			SDL_GL_SetAttribute( SDL_GL_CONTEXT_MINOR_VERSION, 0 );
 			SDL_GL_SetAttribute( SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES );
 #elif defined(__ANDROID__)
-			// Android has GLES only: GLES 3.0 for XOpenGLDrv (WebGLESMajor, from the device name above), with a
-			// 24-bit depth buffer (SDL's default asks for 16).
+			// Android has GLES only: GLES 3.0 for XOpenGLDrv, GLES 2.0 for every other GL device (WebGLESMajor, from
+			// the device name above), with a 24-bit depth buffer (SDL's default asks for 16).
 			SDL_GL_SetAttribute( SDL_GL_CONTEXT_MAJOR_VERSION, WebGLESMajor );
 			SDL_GL_SetAttribute( SDL_GL_CONTEXT_MINOR_VERSION, 0 );
 			SDL_GL_SetAttribute( SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES );
 			SDL_GL_SetAttribute( SDL_GL_DEPTH_SIZE, 24 );
 			SDL_GL_SetAttribute( SDL_GL_STENCIL_SIZE, 8 );
 #else
-			// Every GL device here (XOpenGLDrv, OpenGLDrv/UTGLR) draws on a desktop compatibility context.
+			// Every GL device here (XOpenGLDrv, OpenGLDrv/UTGLR, NOpenGLESDrv's GLES2 calls) draws on a desktop
+			// compatibility context.
 			SDL_GL_SetAttribute( SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_COMPATIBILITY );
 #endif
 		}
@@ -471,6 +473,8 @@ void UNSDLViewport::OpenWindow( PTRINT InParentWindow, UBOOL Temporary, INT NewX
 				Flags &= ~SDL_WINDOW_OPENGL;
 				DoOpenGL = 0;
 				hWnd = SDL_CreateWindow( "", OpenX, OpenY, NewX, NewY, Flags );
+				// The configured device needs GL, which this window does not have.
+				FallBackToSoftware();
 			}
 			if( !hWnd )
 			{
@@ -518,7 +522,7 @@ void UNSDLViewport::OpenWindow( PTRINT InParentWindow, UBOOL Temporary, INT NewX
 				EMSCRIPTEN_WEBGL_CONTEXT_HANDLE WebGLCtx = emscripten_webgl_create_context( "#canvas", &Attrs );
 				if( WebGLCtx <= 0 && Attrs.majorVersion == 2 && !XOpenGLDevice )
 				{
-					// A browser without WebGL 2 runs OpenGLDrv/UTGLR on WebGL 1, without antialiasing.
+					// A browser without WebGL 2 runs NOpenGLESDrv and OpenGLDrv/UTGLR on WebGL 1, without antialiasing.
 					debugf( NAME_Init, "No WebGL 2 context (handle %i): WebGL 1, without antialiasing", (INT)WebGLCtx );
 					Attrs.majorVersion = 1;
 					WebGLESMajor = 2;
@@ -526,7 +530,12 @@ void UNSDLViewport::OpenWindow( PTRINT InParentWindow, UBOOL Temporary, INT NewX
 				}
 				if( WebGLCtx <= 0 )
 				{
-					appErrorf( "Could not create WebGL context on the worker (handle %i)", (INT)WebGLCtx );
+					// No WebGL for the configured device: SoftDrv draws through the canvas's 2D context instead.
+					debugf( NAME_Warning, "Could not create WebGL context on the worker (handle %i)", (INT)WebGLCtx );
+					if( !FallBackToSoftware() )
+						appErrorf( "Could not create WebGL context on the worker (handle %i)", (INT)WebGLCtx );
+					OpenWindow( InParentWindow, Temporary, NewX, NewY, OpenX, OpenY );
+					return;
 				}
 				if( emscripten_webgl_make_context_current( WebGLCtx ) != EMSCRIPTEN_RESULT_SUCCESS )
 				{
@@ -540,7 +549,12 @@ void UNSDLViewport::OpenWindow( PTRINT InParentWindow, UBOOL Temporary, INT NewX
 				GLCtx = SDL_GL_CreateContext( hWnd );
 				if( !GLCtx )
 				{
-					appErrorf( "Could not create GL context: %s", SDL_GetError() );
+					// No GL context for the configured device: SoftDrv, in a window without GL.
+					debugf( NAME_Warning, "Could not create GL context: %s", SDL_GetError() );
+					if( !FallBackToSoftware() )
+						appErrorf( "Could not create GL context: %s", SDL_GetError() );
+					OpenWindow( InParentWindow, Temporary, NewX, NewY, OpenX, OpenY );
+					return;
 				}
 #endif
 			}
@@ -634,12 +648,18 @@ void UNSDLViewport::OpenWindow( PTRINT InParentWindow, UBOOL Temporary, INT NewX
 	SizeX = NewX;
 	SizeY = NewY;
 
-	if( !RenDev && Temporary )
+	if( !RenDev && ( Temporary || SoftwareFallback ) )
 		Client->TryRenderDevice( this, "SoftDrv.SoftwareRenderDevice", 0 );
-	if( !RenDev && !GIsEditor && !NoHard )
+	if( !RenDev && !SoftwareFallback && !GIsEditor && !NoHard )
 		Client->TryRenderDevice( this, "ini:Engine.Engine.GameRenderDevice", Client->StartupFullscreen );
-	if( !RenDev )
+	if( !RenDev && !SoftwareFallback )
 		Client->TryRenderDevice( this, "ini:Engine.Engine.WindowedRenderDevice", 0 );
+	// The configured device failed its Init in the window made for it: SoftDrv, in a window without GL.
+	if( !RenDev && !Temporary && FallBackToSoftware() )
+	{
+		OpenWindow( InParentWindow, Temporary, NewX, NewY, OpenX, OpenY );
+		return;
+	}
 	check(RenDev);
 
 	if( !Temporary )
@@ -685,6 +705,34 @@ void UNSDLViewport::CloseWindow()
 		SDL_DestroyWindow( hWnd );
 		hWnd = NULL;
 	}
+
+	unguard;
+}
+
+//
+// The configured render device cannot start: SoftDrv takes its place for the rest of the run, and OpenWindow then
+// gives it a window without GL. Nothing is written to the ini, so the next start tries the configured device again.
+// False when SoftDrv is not in this build or is already the fallback.
+//
+UBOOL UNSDLViewport::FallBackToSoftware()
+{
+	guard(UNSDLViewport::FallBackToSoftware);
+
+	if( SoftwareFallback || !UObject::StaticLoadClass( URenderDevice::StaticClass(), NULL, TEXT("SoftDrv.SoftwareRenderDevice"), NULL, LOAD_NoWarn, NULL ) )
+		return 0;
+	FString Device;
+	GConfig->GetString( TEXT("Engine.Engine"), TEXT("GameRenderDevice"), Device );
+	debugf( NAME_Warning, TEXT("Render device %s cannot start: falling back to SoftDrv.SoftwareRenderDevice for this run"), *Device );
+	SoftwareFallback = 1;
+#if defined(__EMSCRIPTEN__) && defined(__EMSCRIPTEN_PTHREADS__)
+	// The worker's window has no GL flag, so it stays; the WebGL context goes with the device.
+	if( GLCtx )
+	{
+		emscripten_webgl_destroy_context( (EMSCRIPTEN_WEBGL_CONTEXT_HANDLE)(intptr_t)GLCtx );
+		GLCtx = NULL;
+	}
+#endif
+	return 1;
 
 	unguard;
 }
@@ -1156,7 +1204,7 @@ UBOOL UNSDLViewport::CauseInputEvent( INT iKey, EInputAction Action, FLOAT Delta
 
 //
 // One stick or trigger value (SDL's -32768..32767; a trigger 0..32767). A trigger is a button with a threshold, a
-// stick has its dead zone applied and is sent every tick while it is off centre (TickInput).
+// stick has its dead zone applied and is sent every frame while it is off centre (ReadInput).
 //
 void UNSDLViewport::UpdatePadAxis( INT Axis, INT NewValue )
 {
@@ -1200,7 +1248,7 @@ static INT GPadsOn = -1;	// UseJoystick as last seen (-1: not yet; the client's 
 
 //
 // Nothing stays held when the pad goes (removed, or UseJoystick off): every pad key is released and the axes
-// TickInput re-sends are zeroed.
+// ReadInput re-sends are zeroed.
 //
 void UNSDLViewport::ReleasePad()
 {
@@ -1257,8 +1305,6 @@ UBOOL UNSDLViewport::TickInput()
 
 	SDL_Event Ev;
 	INT Tmp;
-	const FTime CurTime = appSeconds();
-	const FLOAT DeltaTime = CurTime - InputUpdateTime; // HP2 433: FTime - FTime -> FLOAT seconds
 	for( INT k = 0; k < GHeldTapNum; k++ )
 		CauseInputEvent( GHeldTap[k], IST_Release );
 	GHeldTapNum = 0;
@@ -1501,32 +1547,49 @@ UBOOL UNSDLViewport::TickInput()
 		for( INT a = 0; a < SDL_CONTROLLER_AXIS_MAX; a++ )
 			UpdatePadAxis( a, SDL_GameControllerGetAxis( GC, (SDL_GameControllerAxis)a ) );
 
-	// Constantly hammer the input system with axis events for axes that are not zero; the left stick is TickMoveStick's.
-	TickMoveStick( DeltaTime );
-	for ( INT i = 0; i < SDL_CONTROLLER_AXIS_MAX; ++i )
-	{
-		const BYTE Key = JoyAxisMap[i];
-		const SWORD Value = JoyAxis[i];
-		if ( i == SDL_CONTROLLER_AXIS_LEFTX || i == SDL_CONTROLLER_AXIS_LEFTY )
-			continue;
-		if ( Value && Key && Key >= IK_JoyX )
-		{
-			const FLOAT FltValue = Clamp( Value / 32767.f, -1.f, 1.f );
-			FLOAT Scale = ( Key >= IK_JoyX && Key <= IK_JoyZ ) ? Client->ScaleXYZ : Client->ScaleRUV;
-			Scale *= JoyAxisDefaultScale[i] * DeltaTime;
-			if ( ( Client->InvertV && Key == IK_JoyV ) || ( Client->InvertY && Key == IK_JoyY ) )
-				Scale = -Scale;
-			CauseInputEvent( Key, IST_Axis, FltValue * Scale );
-		}
-	}
-
 #if defined(__ANDROID__)
 	TickAndroidTouch();
 #endif
 
-	InputUpdateTime = CurTime;
-
 	return QuitRequested;
+
+	unguard;
+}
+
+//
+// The player's input for a frame of DeltaSeconds (-1 clears it after the frame). The sticks are given here, once a
+// frame and for the frame's own length, so ReadInput's 20 / DeltaSeconds gives a held stick the same value every
+// frame, as it gives a held key; the pad's state is read in TickInput.
+//
+void UNSDLViewport::ReadInput( FLOAT DeltaSeconds )
+{
+	guard(UNSDLViewport::ReadInput);
+
+	if( DeltaSeconds > 0.f )
+	{
+		// Constantly hammer the input system with axis events for axes that are not zero; the left stick is TickMoveStick's.
+		TickMoveStick( DeltaSeconds );
+		for ( INT i = 0; i < SDL_CONTROLLER_AXIS_MAX; ++i )
+		{
+			const BYTE Key = JoyAxisMap[i];
+			const SWORD Value = JoyAxis[i];
+			if ( i == SDL_CONTROLLER_AXIS_LEFTX || i == SDL_CONTROLLER_AXIS_LEFTY )
+				continue;
+			if ( Value && Key && Key >= IK_JoyX )
+			{
+				const FLOAT FltValue = Clamp( Value / 32767.f, -1.f, 1.f );
+				FLOAT Scale = ( Key >= IK_JoyX && Key <= IK_JoyZ ) ? Client->ScaleXYZ : Client->ScaleRUV;
+				Scale *= JoyAxisDefaultScale[i] * DeltaSeconds;
+				if ( ( Client->InvertV && Key == IK_JoyV ) || ( Client->InvertY && Key == IK_JoyY ) )
+					Scale = -Scale;
+				CauseInputEvent( Key, IST_Axis, FltValue * Scale );
+			}
+		}
+#if defined(__ANDROID__)
+		ReadAndroidStick( DeltaSeconds );
+#endif
+	}
+	UViewport::ReadInput( DeltaSeconds );
 
 	unguard;
 }
@@ -1546,21 +1609,24 @@ UBOOL UNSDLViewport::Exec( const TCHAR* Cmd, FOutputDevice& Ar )
 	{
 		// Toggle fullscreen.
 		// Note: FullscreenViewport tracking removed - Unreal 1 specific
+		// The software fallback keeps SoftDrv: the window has no GL for the configured devices.
+		const char* GameDevice = SoftwareFallback ? "SoftDrv.SoftwareRenderDevice" : "ini:Engine.Engine.GameRenderDevice";
 #if defined(__EMSCRIPTEN__) || defined(__ANDROID__)
 		Client->EndFullscreen();
 		if( !(Actor->ShowFlags & SHOW_ChildWindow) )
-			Client->TryRenderDevice( this, "ini:Engine.Engine.GameRenderDevice", 1 );
+			Client->TryRenderDevice( this, GameDevice, 1 );
 #else
 		if( IsFullscreen() )
 			Client->EndFullscreen();
 		else if( !(Actor->ShowFlags & SHOW_ChildWindow) )
 		{
-			Client->TryRenderDevice( this, "ini:Engine.Engine.GameRenderDevice", 1 );
+			const char* WindowedDevice = SoftwareFallback ? "SoftDrv.SoftwareRenderDevice" : "ini:Engine.Engine.WindowedRenderDevice";
+			Client->TryRenderDevice( this, GameDevice, 1 );
 			// A game device that fails falls back to the windowed device, fullscreen and then in a window.
 			if( !RenDev )
-				Client->TryRenderDevice( this, "ini:Engine.Engine.WindowedRenderDevice", 1 );
+				Client->TryRenderDevice( this, WindowedDevice, 1 );
 			if( !RenDev )
-				Client->TryRenderDevice( this, "ini:Engine.Engine.WindowedRenderDevice", 0 );
+				Client->TryRenderDevice( this, WindowedDevice, 0 );
 		}
 #endif
 		return 1;
