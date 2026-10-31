@@ -10,7 +10,7 @@ Two branches, one engine:
 
 - `main` (this checkout, `engine-hp2`) runs the September 2002 prototype content: frontend target `hp2-proto`.
 - `retail` (the second checkout, `engine-hp2-retail`) adds what the retail disc (build 021009) needs, recovered from
-  the retail DLLs: target `hp2-retail-exp`. It holds retail-specific commits only and is rebased on `main`.
+  the retail DLLs: target `hp2-retail-exp`. It holds retail-specific commits only and takes `main` by a merge.
 
 Building and running: [`BUILD.md`](./BUILD.md). Agent guide: [`CLAUDE.md`](./CLAUDE.md). The documents in `docs/`:
 [`docs/README.md`](./docs/README.md).
