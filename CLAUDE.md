@@ -23,8 +23,9 @@ NOpenGLESDrv and SoftDrv), helper drivers (NSDLDrv, NOpenALDrv, NullDrv, SoundDr
 | Game content | `/home/ion/WorkUnreal/assets/hp2-proto-assets`, `…/hp2-retail-exp-assets` | never in git; read-only images with a writable overlay (`assets/mount-assets.sh` after a reboot) |
 | The baseline | `/home/ion/WorkUnreal/epic-sources/hp2-ue1-433-proto` (and `ut99-v400`, the three-way merge base) | the drop this engine is a modification of; see `epic-sources/README.md` |
 
-**`retail` holds retail-specific changes only.** A general engine change goes to `main`, and `retail` is rebased on
-top (`git fetch origin && git rebase --onto origin/main <old-base>`); never commit a general change to `retail`. The
+**`retail` holds retail-specific changes only.** A general engine change goes to `main`, and `retail` then takes it
+by a merge (`git fetch origin && git merge origin/main` on `retail`), never by a rebase: it is a pushed branch. Never
+commit a general change to `retail`. The
 frontend's `publish-all` refuses a `retail` checkout that does not contain `origin/main` (`publish.engine.baseBranch`).
 Values that differ per branch: `HP2_TARGET_ID` (`Source/CMakeLists.txt`: `hp2-retail-exp` here, `hp2-proto` on `main`;
 meta.json's `targetId` and the WebRTC peer prefix) and the content the inis and `EngineLayoutAsserts.cpp` describe.
@@ -33,8 +34,8 @@ meta.json's `targetId` and the WebRTC peer prefix) and the content the inis and 
 the retail `Engine.u` layout and natives, save path and persistent-actor format, collision and movement, loading flow
 and ALAudio behaviour, each recovered from the retail DLLs (`tools/dev/retail/`, `docs/porting/retail*` as records).
 Both ini sets boot `LocalMap=PrivetDr.unr` (a plain start is a new game; `-LOAD=<n>` continues an existing save) with
-`Language=usa`. A change that is not about the retail content goes to `main` first and reaches this branch by the
-rebase.
+`Language=usa`. A change that is not about the retail content goes to `main` first and reaches this branch by a
+merge.
 
 Features are listed in the frontend's `/home/ion/WorkUnreal/unreal-frontend-arch-private/docs/14-change-inventory.md`;
 a new feature adds its line there. The baseline for "what we changed" is the Epic/KnowWonder drop in
