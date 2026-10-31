@@ -14,7 +14,7 @@ Two branches, one engine:
   boots straight into `PrivetDr`, the first level, as the retail front-end's new game does; `-LOAD=0` continues an
   existing save.
 
-General engine work goes to `main`; this branch holds retail-specific commits only and is rebased on `main`.
+General engine work goes to `main`; this branch holds retail-specific commits only and takes `main` by a merge.
 
 Building and running: [`BUILD.md`](./BUILD.md). Agent guide: [`CLAUDE.md`](./CLAUDE.md). The documents in `docs/`:
 [`docs/README.md`](./docs/README.md).
