@@ -213,7 +213,8 @@ sweep check the layout. The UTGLR fork rounds its pointers through the engine's 
   framebuffer 0 (`SHOT`, save thumbnails). Log lines: `AA: 4x multisampled back buffer` / `AA: off`, and NOpenGLES's
   `GLES2: antialiasing 4x (multisampled back buffer)` / `GLES2: antialiasing off`. `-WEBGL=1`, or a browser without
   WebGL 2, gives NOpenGLESDrv and UTGLR WebGL 1 without antialiasing. Natively and on Android the context is made
-  before the device starts, and NOpenGLES only logs `NumAASamples`.
+  before the device starts, and NOpenGLES only logs `NumAASamples`. The native `Config/System/Default.ini` turns
+  antialiasing off on all three (`UseAA=False`, NOpenGLES's `NumAASamples=0`).
 
 ## Audio (NOpenALDrv)
 

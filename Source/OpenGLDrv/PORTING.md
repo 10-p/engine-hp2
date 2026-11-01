@@ -137,4 +137,4 @@ here, MinGW included, takes UTGLR's C fallbacks; the Rune build's methods are co
 
 The web `[OpenGLDrv.OpenGLRenderDevice]` section (`Config/System/web/Default.ini`) sets `UseAA=True`,
 `NumAASamples=4`, `UseS3TC=True`, `UseFragmentProgram=False`, `UsePalette=False` and `OneXBlending=False`. The native
-run tree uses the retail `Config/System/Default.ini`, whose `[OpenGLDrv.OpenGLRenderDevice]` section applies as is.
+`Config/System/Default.ini` keeps the retail section's keys and adds `UseAA=False`.
