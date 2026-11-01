@@ -39,7 +39,7 @@ viewport commits the frame with `emscripten_webgl_commit_frame()`.
 ## Selection
 
 `-XOPENGLRENDERER` (`GRenderSwitches` in `Source/Game/Src/Launch.cpp`), or no switch at all: XOpenGL heads the
-launcher's preference order, and the web `Default.ini` names it as `GameRenderDevice`. The launcher writes the
+launcher's preference order on every build, and every `Default.ini` (web, native, Android) names it. The launcher writes the
 chosen device to `GameRenderDevice`, `WindowedRenderDevice` and `RenderDevice`.
 
 ## Profile and config
