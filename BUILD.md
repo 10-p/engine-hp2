@@ -373,7 +373,37 @@ natively or on the web. Stop a hung prefix with `wineserver -k`.
 arguments and its own `HP.ini` as `ucc-bin` does on Linux and writes `ucc.log` (`wine ucc.exe help`), and the console's
 Ctrl-C (a SIGINT to the wine process) asks it to exit cleanly. `mkrun-hp2.sh --windows` copies it beside `Game.exe`.
 
+## Release archives
+
+`vendor/release/package.py` makes the release archives, the same way in CI and for a versioned release. It is
+vendored from the frontend (`packages/build/engine-release/package.py`, written and checked by its
+`packages/build/bin/vendor-release.mjs`): re-vendor it, never edit it here. The game data is `release/release.json`,
+one file for `main` and `retail`: it lists both games and picks `hp2` or `hp2-retail` by `HP2_TARGET_ID`
+(`Source/CMakeLists.txt`), and it names each platform's files in its build tree, the default inis the archives ship
+and the text of their `README.txt`.
+
+```bash
+python3 vendor/release/package.py check                     # release.json names files that exist
+python3 vendor/release/package.py version                   # 1.2.0 at a release tag (v1.2.0, v1.2.0-retail), else git describe
+python3 vendor/release/package.py archive linux-x86_64 --version 1.2.0 --out <dir> --kind release
+python3 vendor/release/package.py notes --version 1.2.0 --kind release   # the release text's install part
+```
+
+`archive <platform>` writes `<game>-<version>-<platform>`: `linux-x86` and `linux-x86_64` (`.tar.gz`, from
+`build-native` and `build-native64`: `Game`, `libopenal.so.1` and `ucc-bin`), `windows-x86` and `windows-x86_64`
+(`.zip`, from `build-windows` and `build-windows64`: `Game.exe`, `OpenAL32.dll` and `ucc.exe`). Each holds `System/`
+with those files and `Config/System/Default.ini` and `DefUser.ini`, and a `README.txt` for its platform.
+`archive android` copies the APK Gradle's `assembleRelease` wrote as `<game>-<version>-android-test.apk`, or
+`-android-release.apk` with `--kind release`.
+
 ## CI
 
-`.github/workflows/build.yml` builds `native` and `native64` (Linux), `windows` and `windows64` (MinGW-w64) and `wasm`
-on every push and pull request and uploads the binaries; a push to `main` replaces the rolling `latest` release.
+`.github/workflows/build.yml` runs on every push and pull request. It checks the generated inis
+(`tools/dev/sync-android-ini.py --check`) and `release/release.json`; builds `native` and `native64` (Linux),
+`windows` and `windows64` (MinGW-w64), `wasm` and the Android APK; checks that each Linux build is one binary, that
+each Windows program imports only system DLLs (the game also `OpenAL32.dll`), that `meta.json` names the commit built
+and that the APK packages all three ABIs and is signed with the key the job made; and uploads each platform's release
+archive, the APK (`<game>-<version>-android-test.apk`, `assembleRelease` signed with that throwaway key: it cannot
+update an installed release) and the web build for 7 days. The version is `package.py version`'s. A push to `main` or
+`retail` also replaces the branch's rolling release (`latest`, `latest-retail`) with those files and the packer's
+notes. CI makes no versioned release.

@@ -1,0 +1,48 @@
+{
+  "variant": {
+    "file": "Source/CMakeLists.txt",
+    "pattern": "^set\\(HP2_TARGET_ID \"([a-z0-9-]+)\"\\)"
+  },
+  "tagSuffixes": ["retail"],
+  "common": {
+    "androidVersion": "7.0",
+    "linuxLibraries": "SDL2 and OpenGL",
+    "linuxPackages32": "libsdl2-2.0-0:i386 libgl1:i386",
+    "inis": ["Config/System/Default.ini", "Config/System/DefUser.ini"],
+    "liveInis": ["Game.ini", "User.ini"],
+    "uccInis": ["HP.ini"],
+    "apk": "Android/app/build/outputs/apk/release",
+    "platforms": {
+      "linux-x86": {"build": "build-native", "client": "Game/Game", "ucc": "UCC/ucc-bin", "files": ["Game/libopenal.so.1"]},
+      "linux-x86_64": {
+        "build": "build-native64",
+        "client": "Game/Game",
+        "ucc": "UCC/ucc-bin",
+        "files": ["Game/libopenal.so.1"]
+      },
+      "windows-x86": {"build": "build-windows", "client": "Game/Game.exe", "ucc": "UCC/ucc.exe", "files": ["Game/OpenAL32.dll"]},
+      "windows-x86_64": {
+        "build": "build-windows64",
+        "client": "Game/Game.exe",
+        "ucc": "UCC/ucc.exe",
+        "files": ["Game/OpenAL32.dll"]
+      }
+    }
+  },
+  "games": [
+    {
+      "id": "hp2",
+      "variant": "hp2-proto",
+      "title": "Harry Potter and the Chamber of Secrets (prototype)",
+      "gameFiles": "the prototype build's game folder (System, Maps, Textures, Sounds, Music)",
+      "androidFolder": "HP2"
+    },
+    {
+      "id": "hp2-retail",
+      "variant": "hp2-retail-exp",
+      "title": "Harry Potter and the Chamber of Secrets (retail)",
+      "gameFiles": "the retail PC game (System, Maps, Textures, Sounds, Music)",
+      "androidFolder": "HP2-Retail"
+    }
+  ]
+}
