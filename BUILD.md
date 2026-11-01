@@ -289,7 +289,7 @@ working directory before SDL starts `SDL_main`, and the launcher (`MainActivity`
   scales every touch and mouse position from the screen to that buffer before SDL reads it, so a tap lands where it
   is drawn at every scale.
 - The launcher's renderer selection, at the bottom of its page (the game's choice, then XOpenGL, UTGLR, NOpenGLES and
-  Software; Null for debugging), adds that render device's `-*RENDERER` switch after any command line the launcher was started
+  Software; Null for debugging; XOpenGL until the player picks another), adds that render device's `-*RENDERER` switch after any command line the launcher was started
   with. The game keeps the device it last started with, also under "The game's choice": a device whose GPU draws the
   default wrong is switched once. UTGLR draws through gl4es on an OpenGL ES 2 context.
 - gl4es, UTGLR's GL layer, starts without a precompiled-shader archive (`LIBGL_NOPSA`: nothing is written into the
