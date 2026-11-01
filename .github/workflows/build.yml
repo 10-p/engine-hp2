@@ -1,7 +1,13 @@
 name: build
 
-# Builds every preset on each push and pull request and uploads the binaries as workflow artifacts; the newest
-# build of main is also kept as the rolling "latest" release. Nothing here runs the game (no GPU, no assets).
+# Builds every release platform (Linux x86 and x86_64, Windows x86 and x86_64, Android) and the web artifact, and
+# checks the generated inis, on each push and pull request. Each desktop job packs its build into the release's own
+# archive with the vendored packer (vendor/release/package.py, the game's data in release/release.json, which picks
+# the prototype or the retail game by HP2_TARGET_ID): System/ with the game, the UCC, the bundled OpenAL library and
+# the default inis, and README.txt, named <game>-<version>-<platform>, exactly as the versioned releases name
+# theirs. The archives are workflow artifacts; the newest build of `main` and of `retail` is also kept as the
+# branch's rolling release (`latest`, `latest-retail`). The versioned releases are made outside CI. Nothing here runs
+# the game (no GPU, no assets).
 
 on:
   push:
@@ -12,8 +18,57 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # The version every archive of the run is named with: X.Y.Z on a release tag (v1.2.0, v1.2.0-retail), else
+  # `git describe` from the newest release tag (1.2.0-14-g54485b0). The describe needs the tags: the whole
+  # history, blobless.
+  version:
+    name: version
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      game: ${{ steps.v.outputs.game }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          filter: blob:none
+
+      - name: Version and game
+        id: v
+        run: |
+          set -euo pipefail
+          version=$(python3 vendor/release/package.py version)
+          game=$(python3 vendor/release/package.py game)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "game=$game" >> "$GITHUB_OUTPUT"
+          echo "$game $version"
+
+  # The generated inis are what their generators write, and the release data names files that exist.
+  inis:
+    name: inis and release data
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the generated inis
+        run: |
+          set -uo pipefail
+          shopt -s nullglob
+          rc=0; n=0
+          for s in tools/dev/sync-*ini.py; do
+            echo "== $s --check"
+            python3 "$s" --check || rc=1
+            n=$((n + 1))
+          done
+          [ "$n" -gt 0 ] || { echo "::error::no tools/dev/sync-*ini.py to run"; exit 1; }
+          exit $rc
+
+      - name: Check the release data
+        run: python3 vendor/release/package.py check
+
   linux:
     name: linux (${{ matrix.preset }})
+    needs: version
     runs-on: ubuntu-24.04
     # A stock ubuntu:24.04 container: the runner image's preinstalled amd64 -dev packages block libsdl2-dev:i386.
     container: ubuntu:24.04
@@ -26,8 +81,10 @@ jobs:
       matrix:
         include:
           - preset: native
+            platform: linux-x86
             packages: gcc-multilib g++-multilib libsdl2-dev:i386 libgl-dev:i386
           - preset: native64
+            platform: linux-x86_64
             packages: libsdl2-dev libgl-dev
     steps:
       - name: Base tools
@@ -67,27 +124,32 @@ jobs:
             echo "::error::engine .so modules were produced: BUILD_STATIC is not in effect"; exit 1
           fi
 
+      # The release archive: System/ (Game, ucc-bin, the libopenal.so.1 the game loads from its own directory,
+      # Default.ini and DefUser.ini) and README.txt.
+      - name: Pack the release archive
+        run: python3 vendor/release/package.py archive ${{ matrix.platform }} --version "${{ needs.version.outputs.version }}" --out out
+
       - uses: actions/upload-artifact@v4
         with:
-          name: hp2-${{ matrix.preset }}
-          path: |
-            build-${{ matrix.preset }}/Game/Game
-            build-${{ matrix.preset }}/Game/libopenal.so.1
-            build-${{ matrix.preset }}/UCC/ucc-bin
+          name: ${{ needs.version.outputs.game }}-${{ needs.version.outputs.version }}-${{ matrix.platform }}
+          path: out/
           if-no-files-found: error
           # Short retention keeps the artifact quota free; the `latest` job keeps the newest build.
           retention-days: 7
 
   windows:
     name: windows (${{ matrix.preset }})
+    needs: version
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
         include:
           - preset: windows
+            platform: windows-x86
             objdump: i686-w64-mingw32-objdump
           - preset: windows64
+            platform: windows-x86_64
             objdump: x86_64-w64-mingw32-objdump
     steps:
       - uses: actions/checkout@v4
@@ -130,18 +192,20 @@ jobs:
           bad=$(echo "$imports" | grep -viE '^(ADVAPI32|GDI32|IMM32|KERNEL32|msvcrt|ole32|OLEAUT32|SETUPAPI|SHELL32|USER32|VERSION|WINMM|WS2_32)\.dll$' || true)
           if [ -n "$bad" ]; then echo "::error::non-system DLL imports: $bad"; exit 1; fi
 
+      # The release archive: System/ (Game.exe, OpenAL32.dll, ucc.exe, Default.ini and DefUser.ini) and README.txt.
+      - name: Pack the release archive
+        run: python3 vendor/release/package.py archive ${{ matrix.platform }} --version "${{ needs.version.outputs.version }}" --out out
+
       - uses: actions/upload-artifact@v4
         with:
-          name: hp2-${{ matrix.preset }}
-          path: |
-            build-${{ matrix.preset }}/Game/Game.exe
-            build-${{ matrix.preset }}/Game/OpenAL32.dll
-            build-${{ matrix.preset }}/UCC/ucc.exe
+          name: ${{ needs.version.outputs.game }}-${{ needs.version.outputs.version }}-${{ matrix.platform }}
+          path: out/
           if-no-files-found: error
           retention-days: 7
 
   web:
     name: web (wasm)
+    needs: version
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -181,13 +245,14 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: hp2-web
+          name: ${{ needs.version.outputs.game }}-${{ needs.version.outputs.version }}-web
           path: build-wasm/SDLLaunch/
           if-no-files-found: error
           retention-days: 7
 
   android:
-    name: android (arm64 + arm32 APK)
+    name: android (release APK, test key)
+    needs: version
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -212,32 +277,55 @@ jobs:
           sdkmanager --install "ndk;28.2.13676358" "cmake;4.1.2" >/dev/null
           printf 'sdk.dir=%s\nndk.dir=%s/ndk/28.2.13676358\n' "$ANDROID_HOME" "$ANDROID_HOME" > Android/local.properties
 
-      # The Gradle project's default ABI set (armeabi-v7a and arm64-v8a). The app's identity
-      # follows HP2_TARGET_ID, so the retail branch builds its own app from the same project.
-      - name: Build the APK
-        run: ./gradlew assembleDebug --console=plain
-        working-directory: Android
-
-      - name: Assert both ABIs are packaged
+      # The release variant, signed with a key made here and dropped with the runner (UE_ANDROID_SIGNING, as
+      # app/build.gradle reads it): a test APK that cannot update an installed release, which our release key
+      # signs outside CI.
+      - name: Make a throwaway signing key
         run: |
           set -euo pipefail
-          apk=Android/app/build/outputs/apk/debug/app-debug.apk
-          unzip -l "$apk" | grep -q "lib/arm64-v8a/libHP2.so" || { echo "::error::missing arm64-v8a"; exit 1; }
-          unzip -l "$apk" | grep -q "lib/armeabi-v7a/libHP2.so" || { echo "::error::missing armeabi-v7a"; exit 1; }
+          pw=$(openssl rand -hex 16)
+          echo "::add-mask::$pw"
+          keytool -genkeypair -keystore "$RUNNER_TEMP/test.jks" -storepass "$pw" -keypass "$pw" -alias test \
+            -keyalg RSA -keysize 2048 -validity 3650 -dname "CN=Test build" >/dev/null
+          printf 'storeFile=%s\nstorePassword=%s\nkeyAlias=test\nkeyPassword=%s\n' "$RUNNER_TEMP/test.jks" "$pw" "$pw" \
+            > "$RUNNER_TEMP/test-signing.properties"
+          echo "UE_ANDROID_SIGNING=$RUNNER_TEMP/test-signing.properties" >> "$GITHUB_ENV"
+
+      # The Gradle project's ABI set (armeabi-v7a, arm64-v8a, x86_64). The app's identity follows HP2_TARGET_ID,
+      # so the retail branch builds its own app from the same project.
+      - name: Build the APK
+        run: ./gradlew assembleRelease --console=plain
+        working-directory: Android
+
+      # Every ABI must be in there, and the signature must be the test key's, not the debug key's.
+      - name: Assert every ABI is packaged and the test key signs it
+        run: |
+          set -euo pipefail
+          apk=$(ls Android/app/build/outputs/apk/release/*.apk)
+          for abi in armeabi-v7a arm64-v8a x86_64; do
+            unzip -l "$apk" | grep -q "lib/$abi/libHP2.so" || { echo "::error::missing $abi"; exit 1; }
+          done
+          apksigner=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
+          "$apksigner" verify --print-certs "$apk" | tee "$RUNNER_TEMP/certs.txt"
+          grep -q 'CN=Test build' "$RUNNER_TEMP/certs.txt" || { echo "::error::the APK is not signed with the test key"; exit 1; }
+
+      - name: Name the APK
+        run: python3 vendor/release/package.py archive android --version "${{ needs.version.outputs.version }}" --out out
 
       - uses: actions/upload-artifact@v4
         with:
-          name: hp2-android
-          path: Android/app/build/outputs/apk/debug/app-debug.apk
+          name: ${{ needs.version.outputs.game }}-${{ needs.version.outputs.version }}-android-test
+          path: out/
           if-no-files-found: error
           retention-days: 7
 
-  # The newest build of main as a release: release assets do not expire, workflow artifacts do. The release is
-  # deleted and recreated so its tag moves to the new commit and retired builds drop out.
+  # The newest build of a tracked branch as a release: release assets do not expire, workflow artifacts do. The
+  # release is deleted and recreated so its tag moves to the new commit and retired builds drop out. One rolling tag
+  # per branch: `latest` for main, `latest-retail` for retail.
   latest:
     name: rolling "latest" release
-    needs: [linux, windows, web, android]
-    if: github.event_name == 'push' && github.ref_name == 'main'
+    needs: [version, inis, linux, windows, web, android]
+    if: github.event_name == 'push' && (github.ref_name == 'main' || github.ref_name == 'retail')
     runs-on: ubuntu-24.04
     # The default workflow token is read-only.
     permissions:
@@ -245,36 +333,55 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # This run's archives, each artifact in its own directory named after it.
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
+          pattern: ${{ needs.version.outputs.game }}-${{ needs.version.outputs.version }}-*
 
-      - name: Pack one zip per build
+      # An archive artifact holds its one file, published as it is; the web artifact is a folder, published as
+      # <name>.zip.
+      - name: Collect the release assets
         run: |
           set -euo pipefail
           mkdir -p out
           shopt -s nullglob
-          n=0
           for d in artifacts/*/; do
             name=$(basename "$d")
-            ( cd "$d" && zip -qr "$GITHUB_WORKSPACE/out/$name.zip" . )
-            n=$((n + 1))
+            files=("$d"*)
+            if [ ${#files[@]} -eq 1 ] && [ -f "${files[0]}" ] && [[ $(basename "${files[0]}") == "$name".* ]]; then
+              mv "${files[0]}" out/
+            else
+              ( cd "$d" && zip -qr "$GITHUB_WORKSPACE/out/$name.zip" . )
+            fi
           done
-          [ "$n" -gt 0 ] || { echo "::error::no artifacts were downloaded: nothing to publish"; exit 1; }
+          [ -n "$(ls out)" ] || { echo "::error::no artifacts were downloaded: nothing to publish"; exit 1; }
           ls -la out/
 
       - name: Publish (replacing the previous one)
         env:
           GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.version.outputs.version }}
         run: |
           set -euo pipefail
-          gh release delete latest --yes --cleanup-tag || true
-          gh release create latest out/*.zip \
-            --target "$GITHUB_SHA" \
-            --prerelease \
-            --title "latest — $(git log -1 --format=%s | cut -c1-72)" \
-            --notes "$(printf '%s\n' \
-              "The newest HP2 engine build of \`main\`, replaced on every push." \
+          if [ "$GITHUB_REF_NAME" = "${{ github.event.repository.default_branch }}" ]; then
+            tag="latest"
+          else
+            tag="latest-$(echo "$GITHUB_REF_NAME" | tr '/' '-')"
+          fi
+          echo "tag: $tag"
+          {
+            printf '%s\n' \
+              "The newest build of \`$GITHUB_REF_NAME\`, $VERSION, replaced on every push: a development build, not a release." \
               "" \
               "Commit: \`$GITHUB_SHA\`" \
-              "Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID")"
+              "Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+              ""
+            python3 vendor/release/package.py notes --version "$VERSION" --glibc-from out/*.tar.gz
+          } > "$RUNNER_TEMP/notes.md"
+          gh release delete "$tag" --yes --cleanup-tag || true
+          gh release create "$tag" out/* \
+            --target "$GITHUB_SHA" \
+            --prerelease \
+            --title "$tag — $(git log -1 --format=%s | cut -c1-72)" \
+            --notes-file "$RUNNER_TEMP/notes.md"

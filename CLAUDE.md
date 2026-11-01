@@ -45,6 +45,9 @@ Config/System/ the shipped Default.ini and DefUser.ini; web/ is the web boot set
                android/ is generated from web/ by tools/dev/sync-android-ini.py (the APK installs it)
 Thirdparty/    the closed and vendored libraries the original build linked (no target links them)
 vendor/glue/   ue_abi.h, net-shim.js, wasmfs-shim.js from @ufront/glue (ABI version 2)
+vendor/release/ package.py, the release packer from the frontend's packages/build/engine-release/ (re-vendor, never
+               edit); release/release.json is its data for both branches, picked by HP2_TARGET_ID (BUILD.md,
+               "Release archives")
 tools/         developer tools (each script's header says how to run it; tools/dev/layout/README.md)
 docs/          SOURCE-LAYOUT.md (drop → repository mapping) and the porting records
 ```
