@@ -12,7 +12,7 @@ data), or an existing profile keeps its old copy.
 
 `../Default.ini` and `../DefUser.ini` are HP2's retail inis with this port's keys, which the native release archives
 ship in `System/` and the native run tree uses (`tools/dev/mkrun-hp2.sh` copies them); the launcher replaces the Win32
-driver names they carry (`WinDrv.WindowsClient`, `D3DDrv.D3DRenderDevice`) with drivers this build contains.
+driver name they carry (`WinDrv.WindowsClient`) with the client this build contains.
 `../Default.ini` names `NOpenALDrv.NOpenALAudioSubsystem` with its section, as here, turns antialiasing off
 (XOpenGL's and UTGLR's `UseAA=False`, NOpenGLES's `NumAASamples=0`) and sets the sticks' scales of 100.
 `DefUser.ini` here is the same file as `../DefUser.ini` (player class `HGame.harry`, the spell, broom and duel
@@ -44,9 +44,9 @@ a spell lesson the stick traces (`aSpellLessonX`, `aSpellLessonY`).
   `Paths=`. `appInit` also sets `GSys->Paths[5]` to a per-user save folder when `appUserDir()` is non-empty; on
   every target built here (`Source/Core/Src/UnUnix.cpp`) it returns an empty string, so saves stay under `../Save`.
 - On-disk file case (`LocalMap=startup.unr`); no `CdPath`.
-- `GameRenderDevice=XOpenGLDrv.XOpenGLRenderDevice`. On every boot the launcher writes its choice of device to
-  `GameRenderDevice`, `WindowedRenderDevice` and `RenderDevice` before the engine reads them, so the SoftDrv values
-  of the other two keys never take effect.
+- `GameRenderDevice`, `WindowedRenderDevice` and `RenderDevice` name `XOpenGLDrv.XOpenGLRenderDevice`, the default
+  device of every build (`../Default.ini` too). On every boot the launcher writes its choice of device to the three
+  keys before the engine reads them.
 - `AudioDevice=NOpenALDrv.NOpenALAudioSubsystem`, equal to the value the web launcher forces, with its
   `[NOpenALDrv.NOpenALAudioSubsystem]` section: ALAudio's key names and float volumes 0..1 (HGame's options page
   scales them by 100) plus `OutputRate`, `UseHRTF` and `UseReverb`. `[ALAudio.ALAudioSubsystem]` stays because
