@@ -90,7 +90,7 @@ public:
 				{
 #if defined(UE_ANDROID_APP)
 					// The app has no terminal: the line goes to logcat (tag HP2) instead of stdout.
-					__android_log_print( ANDROID_LOG_INFO, "HP2", "%s: %s", FName::SafeString(Event), Data );
+					WriteLogcat( FName::SafeString(Event), Data );
 #else
 					fputs( FName::SafeString(Event), stdout );
 					fputs( ": ", stdout );
@@ -123,6 +123,31 @@ private:
 	{
 		LogAr->Serialize( const_cast<TCHAR*>(C), appStrlen(C)*sizeof(TCHAR) );
 	}
+#if defined(UE_ANDROID_APP)
+	// Writes "Event: Data" to logcat, one entry per line; a line longer than an entry's buffer continues in
+	// the entries that follow, so none of it is lost.
+	static void WriteLogcat( const TCHAR* Event, const TCHAR* Data )
+	{
+		ANSICHAR Entry[1024];
+		INT Len = 0;
+		const TCHAR* Parts[] = { Event, TEXT(": "), Data };
+		for( INT p=0; p<ARRAY_COUNT(Parts); p++ )
+		{
+			for( const TCHAR* C=Parts[p]; *C; C++ )
+			{
+				if( Len == ARRAY_COUNT(Entry)-1 )
+				{
+					Entry[Len] = 0;
+					__android_log_write( ANDROID_LOG_INFO, "HP2", Entry );
+					Len = 0;
+				}
+				Entry[Len++] = *C;
+			}
+		}
+		Entry[Len] = 0;
+		__android_log_write( ANDROID_LOG_INFO, "HP2", Entry );
+	}
+#endif
 };
 
 /*-----------------------------------------------------------------------------
