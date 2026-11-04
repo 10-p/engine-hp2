@@ -44,7 +44,7 @@ Source/        every source folder of the drop (C++ packages and UnrealScript Cl
 Config/System/ the shipped Default.ini and DefUser.ini; web/ is the web boot set (preloaded to /System);
                android/ is generated from web/ by tools/dev/sync-android-ini.py (the APK installs it)
 Thirdparty/    the closed and vendored libraries the original build linked (no target links them)
-vendor/glue/   ue_abi.h, net-shim.js, wasmfs-shim.js from @ufront/glue (ABI version 2)
+vendor/glue/   ue_abi.h, net-shim.js, wasmfs-shim.js, webgl-shim.js from @ufront/glue (ABI version 2)
 vendor/release/ package.py, the release packer from the frontend's packages/build/engine-release/ (re-vendor, never
                edit); release/release.json is its data for both branches, picked by HP2_TARGET_ID (BUILD.md,
                "Release archives")
