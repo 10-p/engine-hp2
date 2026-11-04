@@ -121,7 +121,8 @@ sweep check the layout. The UTGLR fork rounds its pointers through the engine's 
 1. `cmake --build --preset wasm-perf` → `build-wasm-perf/SDLLaunch/`. The boot config is
    `Config/System/web/{Default,DefUser}.ini`, preloaded to `/System/` (`Config/System/web/README.md`). The ABI shims
    are `vendor/glue/{ue_abi.h,net-shim.js,wasmfs-shim.js}` (ABI version 2, written into `meta.json`, with
-   `targetId` `hp2-retail-exp` from `HP2_TARGET_ID` in `Source/CMakeLists.txt`; `main` builds `hp2-proto`).
+   `targetId` `hp2-retail-exp` from `HP2_TARGET_ID` in `Source/CMakeLists.txt`; `main` builds `hp2-proto`), and
+   `vendor/glue/webgl-shim.js` replaces Emscripten's canvas resize with one that survives a lost WebGL context.
 2. In the frontend (`$W/unreal-frontend-arch-private`; asset paths come from its gitignored
    `.ufront/publish.local.json`):
    ```bash

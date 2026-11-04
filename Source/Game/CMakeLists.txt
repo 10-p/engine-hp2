@@ -141,6 +141,8 @@ if(EMSCRIPTEN)
     # Module.UE.net.*), wasmfs-shim.js the WasmFS backend and its worker bootstrap.
     "SHELL:--js-library ${CMAKE_SOURCE_DIR}/../vendor/glue/net-shim.js"
     "SHELL:--js-library ${CMAKE_SOURCE_DIR}/../vendor/glue/wasmfs-shim.js"
+    # Emscripten's canvas resize with the viewport read guarded: a lost WebGL context answers it with null.
+    "SHELL:--js-library ${CMAKE_SOURCE_DIR}/../vendor/glue/webgl-shim.js"
     # ufront_backbuffer_samples: a multisampled emulated back buffer for the render devices that draw into
     # framebuffer 0 (NOpenGLESDrv, OpenGLDrv/UTGLR).
     "SHELL:--js-library ${CMAKE_CURRENT_SOURCE_DIR}/msaa-backbuffer.js"
@@ -175,6 +177,7 @@ if(EMSCRIPTEN)
   set_property(TARGET ${PROJECT_NAME} APPEND PROPERTY LINK_DEPENDS
     "${CMAKE_SOURCE_DIR}/../vendor/glue/net-shim.js"
     "${CMAKE_SOURCE_DIR}/../vendor/glue/wasmfs-shim.js"
+    "${CMAKE_SOURCE_DIR}/../vendor/glue/webgl-shim.js"
     "${CMAKE_CURRENT_SOURCE_DIR}/msaa-backbuffer.js")
   # Bare loader: SDLLaunch.js (+ .wasm/.data), no .html, into build-<cfg>/SDLLaunch/. `SDLLaunch` is the
   # loader basename the host loads for every engine.
