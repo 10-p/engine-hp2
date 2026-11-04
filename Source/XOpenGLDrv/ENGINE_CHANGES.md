@@ -125,3 +125,13 @@ the frame is drawn into a multisampled `RenderFBO` (`UpdateRenderFBO`: RGBA8 and
 resolved each frame into `RenderResolvedFBO` with `glBlitFramebuffer`, and post-processed to the screen; screenshot
 reads go to the resolved frame. The same path runs natively and on WebGL 2. Natively, `NoAATiles` turns
 `GL_MULTISAMPLE` off while tiles draw; WebGL has no such switch.
+
+## Lightmap filter
+
+`UseBicubicLightmaps` in `[XOpenGLDrv.XOpenGLRenderDevice]` is read at start-up and is True when the key is absent; no
+shipped ini sets it. True: the BSP shader (`DrawComplexSurface`, Lumos surfaces included) samples each lightmap with a
+cubic B-spline filter built from four bilinear taps over the lightmap's written texels (`UClamp` x `VClamp` of its
+power-of-two texture), so static lighting shows no texel lattice; False: one bilinear tap. With `NoFiltering`
+lightmaps are unfiltered either way. `Init` logs the filter in use, `XOpenGL: lightmap filter
+bicubic|bilinear|unfiltered (UseBicubicLightmaps=True|False)`. Light and fog maps clamp to their edge (on their
+sampler objects). The same code runs on every build: native, Windows, Android and web.
