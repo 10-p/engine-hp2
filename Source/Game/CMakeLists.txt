@@ -137,6 +137,10 @@ if(EMSCRIPTEN)
     # openal-soft reports every AL error by throwing and catching it, so catching must be on (the first AL
     # error would otherwise abort). Only its objects are built with -fexceptions.
     -sNO_DISABLE_EXCEPTION_CATCHING
+    # A C++ exception nothing catches (an appThrowf, an appError's throw) reaches the page as an Error named after
+    # the thrown type, with what() as its message and the stack from the throw site, so the crash report says what
+    # was thrown where. The stack is captured at a throw only.
+    -sEXCEPTION_STACK_TRACES
     # The thin shims: net-shim.js defines the ABI's ue_net_* imports (forwarding to the host's
     # Module.UE.net.*), wasmfs-shim.js the WasmFS backend and its worker bootstrap.
     "SHELL:--js-library ${CMAKE_SOURCE_DIR}/../vendor/glue/net-shim.js"
