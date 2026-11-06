@@ -67,3 +67,35 @@ of every build here, does not override it.
 
 Change the web config here, never in the asset tree. `../android/` is this pair with the Android deltas applied by
 `tools/dev/sync-android-ini.py`; change it there, by changing this folder or the script's delta list.
+
+## Config version
+
+Every default ini a build ships (this pair, `../Default.ini` and `../DefUser.ini`, and `../android/`) opens with a
+section of its own (in `Default.ini` here, after the file's opening comment):
+
+```ini
+[ConfigVersion]
+Version=1
+```
+
+`appInit( TEXT("Game") )` makes a player's `Game.ini` and `User.ini` from `Default.ini` and `DefUser.ini` when they are
+absent and never refreshes them, so the `Version` they keep says which defaults they were copied from. A live ini
+without the section was made before the number. Right after the config cache starts, before the `-ini:` overrides,
+`appInit` adds `Version=0` to each live ini (`Game.ini` and `User.ini`, or the files `INI=` and `USERINI=` name) when it
+has no `[ConfigVersion] Version` key and writes that file alone, as any save writes it (comment lines left out), logging
+`Config: <file> has no [ConfigVersion]: Version=0 added`; the section then comes last in the file, and a `Version` that
+is there is never changed. That marker is the only thing the engine writes into a player's ini for the config version:
+nothing reads the number to change anything, and a player's ini is never migrated. No class owns the section, so no
+`SaveConfig` or `ResetConfig` touches it and the config cache writes it back as it is. All six files carry the same
+number; `tools/dev/sync-android-ini.py` keeps the section first. `retail` shares this number: it merges `main`, and a
+bump made there alone is merged back by taking the higher number plus one.
+
+The rule: a commit that adds a default, changes a default value or removes a key in one of these inis, or adds or
+changes a compiled or script default of a setting the engine saves to the ini, bumps `Version` by one in all of them
+and adds the new number's row below, saying what a player on the version before lacks. Comment-only and
+whitespace-only changes do not bump. The frontend's `ini-config-version` pre-commit gate checks the inis; its
+`docs/CONVENTIONS.md` § Ini config version has the rule in full.
+
+| Version | What a player on the version before lacks |
+|---------|-------------------------------------------|
+| 1 | The defaults when the number was introduced: a live ini without the section may lack any of them. |
