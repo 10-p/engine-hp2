@@ -104,6 +104,8 @@ docs/          SOURCE-LAYOUT.md (drop → repository mapping) and the porting re
 - Names follow behaviour. Shared CMake options take the `UE_` prefix; engine-specific ones keep theirs. Do not rename
   ini sections or keys players may have saved, the `WebRTCDrv` package, `UWebRTCNetDriver`, the `NetworkDevice=`
   value, exported ABI symbols, or log lines the frontend matches.
+- Ini config version: a commit that adds, changes or removes a default the engine keeps in the ini bumps
+  `[ConfigVersion] Version` in every default ini and adds its row (`Config/System/web/README.md`, "Config version").
 - Commit subjects name the feature (`fix(core): …`, `feat: …`, `build: …`), never a stage number or a date.
 - Do not change the ABI (`vendor/glue/`) by hand: it is vendored from `@ufront/glue`, and the engines and the glue
   move together.
