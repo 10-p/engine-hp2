@@ -181,8 +181,7 @@ sweep check the layout. The UTGLR fork rounds its pointers through the engine's 
   every frame, as a held key does; on the web the press that made the browser list the pad is read from
   `navigator.getGamepads()` and given to the game as a tap. On foot, the left stick tilted out of its dead zone (radially;
   each axis keeps its own dead zone, so a push ahead does not turn Harry) gives the direction at full length on the
-  bindings, so Harry sets off at once as on a key, and the tilt sets the speed: where this machine decides the player's movement (a standalone game, a listen server's host), the tilt past the dead zone is that share of full speed (`GMoveStickPawn`, `GMoveStickSpeed`, read in `APawn::calcVelocity`). A client's server decides its
-  speed, so there a tilt below `[NSDLDrv.NSDLClient] PadWalkTilt` (0.5 of the stick's travel; 0 never) walks, as the
+  bindings, so Harry sets off at once as on a key, and, with `[NSDLDrv.NSDLClient] PadTiltSpeed` (on unless the ini says False), the tilt past the dead zone is that share of full speed (`GMoveStickPawn`, `GMoveStickSpeed`, read in `APawn::calcVelocity`). On a client of a server the server moves the player at its own speed and corrects the client. With the switch off, a tilt below `[NSDLDrv.NSDLClient] PadWalkTilt` (0.5 of the stick's travel; 0 never) walks, as the
   Walking button does: the stick keeps a bit of its own set in the player's `bRun` (the Walking key writes the whole
   byte; the stick sets its bit again the next tick). Off the ground, on the broom or in the air, X and Y go to their
   bindings as they are. The compiled defaults

@@ -137,7 +137,8 @@ class NSDLDRV_API UNSDLClient : public UClient, public FNotifyHook
 	FLOAT ScaleRUV;
 	FLOAT DeadZoneXYZ;
 	FLOAT DeadZoneRUV;
-	FLOAT PadWalkTilt;	// the move stick out of its dead zone but tilted less than this (0..1) walks; 0: never
+	UBOOL PadTiltSpeed;	// the move stick's tilt past its dead zone is that share of full speed
+	FLOAT PadWalkTilt;	// with PadTiltSpeed off, the move stick out of its dead zone but tilted less than this (0..1) walks; 0: never
 
 	// Constructors.
 	UNSDLClient();
