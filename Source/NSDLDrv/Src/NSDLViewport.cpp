@@ -1271,23 +1271,34 @@ void UNSDLViewport::ReleasePad()
 static const BYTE PadWalkBit = 0x40;
 
 //
-// The left stick, the move stick. Its dead zone is radial, so a direction between the axes keeps both parts; out of
-// it, X and Y go to their bindings, and a tilt below PadWalkTilt walks.
+// The left stick, the move stick. Its dead zone is radial. On foot, out of it, the direction goes to the X and Y bindings
+// at full length, so the player sets off at once as on a key. With PadTiltSpeed the tilt past the dead zone is that share
+// of full speed; off, a tilt below PadWalkTilt walks. A client's server moves the player at its own speed and corrects the
+// client. Off the ground, on a broom or in the air, X and Y go to their bindings as they are.
 //
 void UNSDLViewport::TickMoveStick( FLOAT DeltaTime )
 {
 	guard(UNSDLViewport::TickMoveStick);
 	const FLOAT X = MoveStick[0] / 32767.f, Y = MoveStick[1] / 32767.f;
-	const FLOAT Tilt = Min( (FLOAT)appSqrt( X*X + Y*Y ), 1.f );
+	const FLOAT Length = appSqrt( X*X + Y*Y );
+	const FLOAT Tilt = Min( Length, 1.f );
 	UBOOL Walk = 0;
+	GMoveStickPawn = NULL;
 	if( Tilt > 0.f && Tilt >= Client->DeadZoneXYZ )
 	{
-		const FLOAT Scale = Client->ScaleXYZ * DeltaTime;
+		const UBOOL OnFoot = Actor && Actor->Physics == PHYS_Walking;
+		const FLOAT Scale = Client->ScaleXYZ * DeltaTime / ( OnFoot ? Length : 1.f );
 		if( X != 0.f )
 			CauseInputEvent( IK_JoyX, IST_Axis, X * Scale * JoyAxisDefaultScale[SDL_CONTROLLER_AXIS_LEFTX] );
 		if( Y != 0.f )
 			CauseInputEvent( IK_JoyY, IST_Axis, Y * Scale * JoyAxisDefaultScale[SDL_CONTROLLER_AXIS_LEFTY] * ( Client->InvertY ? -1.f : 1.f ) );
-		Walk = Tilt < Client->PadWalkTilt;
+		if( OnFoot && Client->PadTiltSpeed )
+		{
+			GMoveStickPawn = Actor;
+			GMoveStickSpeed = ( Tilt - Client->DeadZoneXYZ ) / Max( 1.f - Client->DeadZoneXYZ, 0.01f );
+		}
+		else
+			Walk = Tilt < Client->PadWalkTilt;
 	}
 	if( Actor )
 	{
