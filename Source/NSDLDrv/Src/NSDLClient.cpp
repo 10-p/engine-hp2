@@ -29,6 +29,7 @@ void UNSDLClient::StaticConstructor()
 	new(GetClass(), "ScaleRUV",          RF_Public)UFloatProperty(CPP_PROPERTY(ScaleRUV),         "Joystick", CPF_Config );
 	new(GetClass(), "InvertY",           RF_Public)UBoolProperty(CPP_PROPERTY(InvertY),           "Joystick", CPF_Config );
 	new(GetClass(), "InvertV",           RF_Public)UBoolProperty(CPP_PROPERTY(InvertV),           "Joystick", CPF_Config );
+	new(GetClass(), "PadTiltSpeed",      RF_Public)UBoolProperty(CPP_PROPERTY(PadTiltSpeed),      "Joystick", CPF_Config );
 	new(GetClass(), "PadWalkTilt",       RF_Public)UFloatProperty(CPP_PROPERTY(PadWalkTilt),      "Joystick", CPF_Config );
 
 	// Compiled defaults. Registering an option assigns no value (UClient::StaticConstructor assigns none either),
@@ -70,7 +71,8 @@ void UNSDLClient::StaticConstructor()
 	ScaleRUV            = 500.0f;
 	InvertY             = 0;
 	InvertV             = 0;
-	PadWalkTilt         = 0.5f;	// the move stick walks below half its travel
+	PadTiltSpeed        = 1;	// the move stick's tilt sets the player's speed
+	PadWalkTilt         = 0.5f;	// with PadTiltSpeed off, the move stick walks below half its travel
 
 	// HP2 433: UClient's two extra config keys (registered in UnCamMgr.cpp); retail Default.ini values.
 	NoFractalAnim       = 0;

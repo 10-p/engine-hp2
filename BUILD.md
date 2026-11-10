@@ -179,10 +179,12 @@ sweep check the layout. The UTGLR fork rounds its pointers through the engine's 
   are read from the pad's state each tick, and the sticks (the touch move stick on Android too) are given to the
   player once a frame for the frame's own length (`UNSDLViewport::ReadInput`), so a held stick has the same value
   every frame, as a held key does; on the web the press that made the browser list the pad is read from
-  `navigator.getGamepads()` and given to the game as a tap. The left stick tilted out of its dead zone (radially;
-  each axis keeps its own dead zone, so a push ahead does not turn Harry) but below `[NSDLDrv.NSDLClient] PadWalkTilt`
-  (0.5 of the stick's travel; 0 never) walks, as the Walking button does: the stick keeps a bit of its own set in the player's
-  `bRun` (the Walking key writes the whole byte; the stick sets its bit again the next tick). The compiled defaults
+  `navigator.getGamepads()` and given to the game as a tap. On foot, the left stick tilted out of its dead zone (radially;
+  each axis keeps its own dead zone, so a push ahead does not turn Harry) gives the direction at full length on the
+  bindings, so Harry sets off at once as on a key, and, with `[NSDLDrv.NSDLClient] PadTiltSpeed` (on unless the ini says False), the tilt past the dead zone is that share of full speed (`GMoveStickPawn`, `GMoveStickSpeed`, read in `APawn::calcVelocity`). On a client of a server the server moves the player at its own speed and corrects the client. With the switch off, a tilt below `[NSDLDrv.NSDLClient] PadWalkTilt` (0.5 of the stick's travel; 0 never) walks, as the
+  Walking button does: the stick keeps a bit of its own set in the player's `bRun` (the Walking key writes the whole
+  byte; the stick sets its bit again the next tick). Off the ground, on the broom or in the air, X and Y go to their
+  bindings as they are. The compiled defaults
   (Scale, dead zones) are in `UNSDLClient::StaticConstructor`. Log lines: `NSDLClient: game pad connected: <name>`, `disconnected`, `buttons held
   at the connect given to the game: 0x<mask>`, `game pads on|off (UseJoystick)`.
 - **Render device** (`Source/Game/Src/Launch.cpp`). `-XOPENGLRENDERER`, `-UTGLRRENDERER`, `-NOPENGLESRENDERER`,
